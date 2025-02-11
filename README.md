@@ -2,11 +2,8 @@
 
 [![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
-[![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 The most powerful and fast username availability checker that searches across hundreds of websites using [WhatsMyName](https://github.com/WebBreacher/WhatsMyName) dataset. Naminter features full support of WhatsMyName data scheme, a beautiful console interface, browser impersonating, concurrent checking, and extensive configuration options.
-
-![Naminter Demo](demo.gif)
 
 ## ✨ Features
 
@@ -61,7 +58,7 @@ naminter username \
 | `username` | Username to check |
 | `-m, --max-tasks` | Maximum concurrent tasks (default: 50) |
 | `-t, --timeout` | Request timeout in seconds (default: 30) |
-| `-i, --impersonate` | Browser to impersonate (chrome/safari/edge) |
+| `-i, --impersonate` | Browser to impersonate (none/chrome/chrome_android/safari/safari_ios/edge) |
 | `-ic, --include-categories` | Categories to include |
 | `-ec, --exclude-categories` | Categories to exclude |
 | `-p, --proxy` | Proxy URL |
@@ -72,48 +69,8 @@ naminter username \
 | `--verify-ssl` | Verify SSL certificates |
 | `--self-test` | Run self-test mode |
 | `-d, --debug` | Enable debug output |
-
-## 📝 Configuration
-
-### Categories
-
-Available website categories:
-- Social
-- Gaming
-- Tech
-- Business
-- Art
-- Blog
-- Dating
-- Finance
-- Health
-- Images
-- Music
-- News
-- Shopping
-- Video
-- And more...
-
-### Browser Impersonation
-
-Supported browser profiles:
-- Chrome (Desktop)
-- Chrome (Android)
-- Safari (Desktop)
-- Safari (iOS)
-- Edge
-- None
+| `--no-color` | Disable colored output |
 
 ## 📄 License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request. For major changes, please open an issue first to discuss what you would like to change.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
