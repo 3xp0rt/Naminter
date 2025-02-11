@@ -138,106 +138,6 @@ class UsernameChecker:
             CheckStatus.UNKNOWN: Style(color=THEME['warning']),
             CheckStatus.ERROR: Style(color=THEME['error'], bold=True),
         }
-
-    def _create_header_panel(self, wmn_info: Dict[str, Any]) -> Panel:
-        """Creates an enhanced configuration panel."""
-        main_grid = Table.grid(padding=0)
-        main_grid.add_column(ratio=1)
-        main_grid.add_column(ratio=1)
-
-        main_grid.add_row(
-            self._create_essential_table(wmn_info),
-            self._create_technical_table()
-        )
-
-        subtitle_text = (
-            f"[{THEME['muted']}]Running self check across {wmn_info['sites_count']} sites[/]"
-            if self.config.self_check
-            else f"[{THEME['muted']}]Checking {self.config.username} across {wmn_info['sites_count']} sites[/]"
-        )
-
-        return Panel(
-            main_grid,
-            title=f"[bold {THEME['primary']}]:mag: Naminter[/]",
-            subtitle=subtitle_text,
-            border_style=THEME['primary'],
-            box=rich.box.ROUNDED,
-            padding=(1, 2)
-        )
-
-    def _create_essential_table(self, wmn_info: Dict) -> Table:
-        """Creates table with essential configuration items."""
-        table = Table.grid(padding=0)
-
-        def truncate_text(text: str, max_length: int = 50) -> str:
-            return text if len(text) <= max_length else text[:max_length-3] + "..."
-
-        categories = wmn_info.get("categories", [])
-        if categories:
-            if len(categories) > 3:
-                categories_text = f"{', '.join(categories[:3])} +{len(categories)-3}"
-            else:
-                categories_text = ", ".join(categories)
-        else:
-            categories_text = "None"
-
-        essential_items = [
-            ("📦 Version", self.config.version),
-            ("🌐 Total Sites", str(wmn_info["sites_count"])),
-            ("📑 Categories", categories_text)
-        ]
-        
-        if not self.config.self_check:
-            essential_items.insert(1, ("👤 Username", self.config.username))
-        else:
-            essential_items.insert(1, ("👤 Self check", "✓" if self.config.self_check else "✗"))
-
-        if self.config.include_categories:
-            essential_items.append(("✅ Include", ", ".join(self.config.include_categories)))
-        if self.config.exclude_categories:
-            essential_items.append(("❌ Exclude", ", ".join(self.config.exclude_categories)))
-        if self.config.proxy:
-            essential_items.append(("🔄 Proxy", truncate_text(self.config.proxy)))
-        if self.config.local_list_path:
-            essential_items.append(("📁 Local List", truncate_text(self.config.local_list_path)))
-        if self.config.remote_list_url:
-            essential_items.append(("🌍 Remote URL", truncate_text(self.config.remote_list_url)))
-
-        for label, value in essential_items:
-            table.add_row(f"[{THEME['muted']}]{label}:[/] [{THEME['primary']}]{value}[/]")
-        return table
-
-    def _create_technical_table(self) -> Table:
-        """Creates table with technical settings and minimal spacing."""
-        table = Table.grid(padding=0)
-        
-        technical_settings = [
-            ("⚡ Max Tasks", str(self.config.max_tasks)),
-            (":clock1: Timeout", f"{self.config.timeout}s"),
-            ("🔍 Mode", "Weak" if self.config.weak_mode else "Strict"),
-            ("🔒 SSL Verify", "✓" if self.config.verify_ssl else "✗"),
-            (":arrows_counterclockwise: Redirects", "✓" if self.config.allow_redirects else "✗"),
-            ("🌍 Browser", self.config.impersonate.upper() if self.config.impersonate else "✗"),
-        ]
-        
-        for label, value in technical_settings:
-            table.add_row(f"[{THEME['muted']}]{label}:[/] [{THEME['primary']}]{value}[/]")
-        return table
-    
-    def _get_optional_settings(self) -> List[tuple]:
-        """Returns list of optional settings."""
-        optional = []
-        if self.config.include_categories:
-            optional.append(("✅ Include", ", ".join(self.config.include_categories)))
-        if self.config.exclude_categories:
-            optional.append(("❌ Exclude", ", ".join(self.config.exclude_categories)))
-        if self.config.proxy:
-            optional.append(("🔄 Proxy", self.config.proxy))
-        if self.config.local_list_path:
-            optional.append(("📁 Local List", self.config.local_list_path))
-        if self.config.remote_list_url:
-            optional.append(("🌍 Remote URL", self.config.remote_list_url))
-        return optional
     
     def _format_result(self, result: TestResult) -> Optional[Text]:
         """Formats a single result for console printing."""
@@ -274,7 +174,6 @@ class UsernameChecker:
             CheckStatus.NOT_VALID: "x",
         }
 
-        # Determine overall status
         overall_status = next((
             status for status in [
                 CheckStatus.ERROR,
@@ -283,7 +182,6 @@ class UsernameChecker:
             ] if any(test.check_status == status for test in self_check.results)
         ), CheckStatus.UNKNOWN)
 
-        # Create root label
         root_label = Text()
         root_label.append(status_symbols.get(overall_status, "?"), 
             style=self._status_styles.get(overall_status)
@@ -339,7 +237,6 @@ class UsernameChecker:
                 await naminter.fetch_remote_list()
 
             wmn_info = await naminter.get_wmn_info()
-            console.print(self._create_header_panel(wmn_info))
 
             if self.config.self_check:
                 sites_data = naminter._wmn_data.get("sites", [])
@@ -348,7 +245,7 @@ class UsernameChecker:
 
                 with self._create_progress_bar() as progress:
                     task_id = progress.add_task(
-                        f"[{THEME['info']}]Running self-check...[/]",  # Added color
+                        f"[{THEME['info']}]Running self-check...[/]",
                         total=tracker.total_sites
                     )
                     try:
@@ -366,7 +263,7 @@ class UsernameChecker:
                 tracker = ResultsTracker(wmn_info["sites_count"], self.config.max_tasks)
                 with self._create_progress_bar() as progress:
                     task_id = progress.add_task(
-                        f"[{THEME['info']}]Running enumerating...[/]",  # Added color
+                        f"[{THEME['info']}]Running enumerating...[/]",
                         total=tracker.total_sites
                     )
                     try:
@@ -418,11 +315,16 @@ def main(
     weak_mode: bool = typer.Option(False, "--weak", "-w"),
     self_check: bool = typer.Option(False, "--self-check"),
     debug: bool = typer.Option(False, "--debug", "-d"),
+    no_color: bool = typer.Option(False, "--no-color", help="Disable colored output"),
     ctx: typer.Context = None
 ):
     """Main CLI entry point."""
     if ctx and ctx.invoked_subcommand:
         return
+
+    if no_color:
+        global console
+        console = Console(no_color=True)
 
     if not self_check and not username:
         console.print(f"[{THEME['error']}]Error:[/] Username is required")
