@@ -67,7 +67,7 @@ naminter username \
 | `-w, --weak` | Enable weak matching mode |
 | `--allow-redirects` | Allow HTTP redirects |
 | `--verify-ssl` | Verify SSL certificates |
-| `--self-test` | Run self-test mode |
+| `--self-check` | Run self-test mode |
 | `-d, --debug` | Enable debug output |
 | `--no-color` | Disable colored output |
 
