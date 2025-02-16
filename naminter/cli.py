@@ -23,7 +23,7 @@ from .naminter import Naminter
 from .models import CheckStatus, TestResult, SelfTestResult
 from .settings import SITES_LIST_REMOTE_URL
 
-__version__ = "1.0.2"
+__version__ = "1.0.3"
 __author__ = "3xp0rt"
 __description__ = "The most powerful and fast username availability checker that searches across hundreds of websites using WhatsMyName dataset."
 
