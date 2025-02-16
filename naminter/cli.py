@@ -240,7 +240,8 @@ class UsernameChecker:
     def _open_profile(self, url: str) -> None:
         """Opens a single profile URL in the browser."""
         try:
-            webbrowser.open(url)
+            if self.config.browse:
+                webbrowser.open(url)
         except Exception as e:
             console.print(f"[{THEME['error']}]Failed to open {url}: {str(e)}[/]")
 
