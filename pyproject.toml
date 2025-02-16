@@ -1,3 +1,36 @@
-[build-system]
-requires = ["setuptools>=42", "wheel"]
-build-backend = "setuptools.build_meta"
+[project]
+name = "naminter"
+version = "1.0.0"
+description = "The most powerful and fast username availability checker that searches across hundreds of websites using WhatsMyName dataset"
+readme = "README.md"
+authors = [
+    { name = "3xp0rt" }
+]
+license = { text = "MIT" }
+requires-python = ">=3.8"
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License", 
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Internet",
+    "Topic :: Utilities"
+]
+dependencies = [
+    "typer>=0.15.1",
+    "rich>=13.9.4",
+    "curl-cffi>=0.7.4",
+]
+
+[project.urls]
+Homepage = "https://github.com/3xp0rt/naminter"
+Repository = "https://github.com/3xp0rt/naminter"
+
+[project.scripts]
+naminter = "naminter.cli:entry_point"

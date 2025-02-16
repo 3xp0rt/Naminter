@@ -32,52 +32,52 @@ class Naminter:
         allow_redirects: Optional[bool] = HTTP_ALLOW_REDIRECTS,
         proxy: Optional[str] = None,
     ) -> None:
-        try:
-            if max_tasks is not None and max_tasks < 1:
-                raise ConfigurationError("max_tasks must be at least 1")
-            
-            if timeout is not None and timeout < 1:
-                raise ConfigurationError("timeout must be at least 1 second")
-            
-            if proxy and not isinstance(proxy, str):
-                raise ConfigurationError("proxy must be a string")
+        # Validate configuration parameters.
+        if max_tasks is not None and max_tasks < 1:
+            raise ConfigurationError("max_tasks must be at least 1")
+        if timeout is not None and timeout < 1:
+            raise ConfigurationError("timeout must be at least 1 second")
+        if proxy and not isinstance(proxy, str):
+            raise ConfigurationError("proxy must be a string")
 
+        # Configure logging using the provided LOGGING_FORMAT.
+        if debug:
             logging.basicConfig(
-                level=logging.DEBUG if debug else logging.INFO,
-                format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+                level=logging.DEBUG,
+                format=LOGGING_FORMAT
             )
-            self.logger = logging.getLogger(__name__)
+        self.logger = logging.getLogger(__name__)
 
-            self.debug = debug
-            self.max_tasks = max_tasks
-            self.impersonate = impersonate
-            self.verify_ssl = verify_ssl
-            self.timeout = timeout
-            self.allow_redirects = allow_redirects
-            self.proxy = {"http": proxy, "https": proxy} if proxy else None
+        self.debug = debug
+        self.max_tasks = max_tasks
+        self.impersonate = impersonate
+        self.verify_ssl = verify_ssl
+        self.timeout = timeout
+        self.allow_redirects = allow_redirects
+        self.proxy = {"http": proxy, "https": proxy} if proxy else None
 
-            self._semaphore = asyncio.Semaphore(max_tasks if max_tasks else 10)
-            self._session: Optional[AsyncSession] = None
-            self._wmn_data: Optional[Dict[str, Any]] = None
-
-        except Exception as e:
-            raise ConfigurationError(f"Failed to initialize Naminter: {str(e)}") from e
+        self._semaphore = asyncio.Semaphore(self.max_tasks)
+        self._session: Optional[AsyncSession] = None
+        self._wmn_data: Optional[Dict[str, Any]] = None
 
     async def __aenter__(self):
+        """Enter asynchronous context and create an HTTP session."""
         try:
             self._session = await self._create_session()
             return self
         except Exception as e:
-            raise NetworkError(f"Failed to create session: {str(e)}") from e
+            raise NetworkError(f"Failed to create session: {e}") from e
 
     async def __aexit__(self, exc_type, exc_val, exc_tb):
+        """Exit asynchronous context and close the HTTP session."""
         if self._session:
             try:
                 await self._session.close()
             except Exception as e:
-                self.logger.error(f"Error closing session: {str(e)}")
+                self.logger.error(f"Error closing session: {e}")
 
     async def _create_session(self) -> AsyncSession:
+        """Create and configure an asynchronous HTTP session."""
         try:
             session = AsyncSession(
                 impersonate=self.impersonate,
@@ -88,24 +88,25 @@ class Naminter:
             )
             return session
         except Exception as e:
-            raise NetworkError(f"Failed to create session: {str(e)}") from e
+            raise NetworkError(f"Failed to create session: {e}") from e
 
     async def fetch_remote_list(self, remote_list_url: Optional[str] = SITES_LIST_REMOTE_URL) -> Dict[str, Any]:
+        """
+        Fetch the remote WMN list from a given URL and validate its contents.
+        """
         if not self._session:
-            raise NetworkError("Session not initialized. Use async with context manager.")
+            raise NetworkError("Session not initialized. Use async context manager.")
 
         self.logger.debug("Fetching WMN data from: %s", remote_list_url)
-
         try:
             response = await self._session.get(remote_list_url)
             response.raise_for_status()
 
             data = response.json()
-
             if not isinstance(data, dict):
                 raise DataError("Remote data must be a JSON object")
 
-            sites = data.get('sites')
+            sites = data.get("sites")
             if not sites:
                 raise DataError("Remote data missing required 'sites' field")
 
@@ -122,6 +123,9 @@ class Naminter:
             raise NaminterError(f"Unexpected error fetching remote list: {e}") from e
 
     async def load_local_list(self, local_list_path: Union[str, Path]) -> Dict[str, Any]:
+        """
+        Load and parse a local WMN list from the specified file path.
+        """
         path = Path(local_list_path)
         if not path.is_file():
             self.logger.error("Local list file not found: %s", path)
@@ -142,11 +146,15 @@ class Naminter:
 
         self.logger.debug("Successfully loaded JSON data from: %s", path)
         return self._wmn_data
-    
-    async def get_wmn_info(self) -> Dict[str, Any]:
+
+    async def get_wmn_info(self) -> Optional[Dict[str, Any]]:
+        """
+        Retrieve metadata from the loaded WMN data.
+        Returns None if no data is loaded.
+        """
         if not self._wmn_data:
-            return None
-        
+            raise DataError("WMN data is not loaded")
+
         return {
             "license": self._wmn_data.get("license", []),
             "authors": self._wmn_data.get("authors", []),
@@ -158,7 +166,7 @@ class Naminter:
         self, 
         site: Dict[str, Any], 
         username: str, 
-        weak_mode: bool = False,
+        fuzzy_mode: bool = False,
     ) -> SiteResult:
         site_name = site.get("name", "unknown")
         category = site.get("cat") or site.get("category", "unknown")
@@ -204,13 +212,12 @@ class Naminter:
             )
         except Exception as e:
             self.logger.debug("Error accessing site %s", site_name)
-            elapsed = 0.0
             return SiteResult(
                 site_name=site_name,
                 site_url=uri_pretty,
                 category=category,
                 check_status=CheckStatus.ERROR,
-                elapsed=elapsed,
+                elapsed=0.0,
                 error=str(e),
             )
 
@@ -222,7 +229,7 @@ class Naminter:
         not_exists_status_matches = status_code == site.get("m_code")
         not_exists_string_matches = site.get("m_string", "") in response_text
 
-        if weak_mode:
+        if fuzzy_mode:
             if exists_status_matches or exists_string_matches:
                 check_status = CheckStatus.FOUND
             elif not_exists_status_matches or not_exists_string_matches:
@@ -247,7 +254,7 @@ class Naminter:
             not_exists_status_matches,
             not_exists_string_matches,
             elapsed,
-            "weak" if weak_mode else "full",
+            "fuzzy" if fuzzy_mode else "full",
         )
 
         return SiteResult(
@@ -262,36 +269,39 @@ class Naminter:
     async def check_username(
         self, 
         username: str,
-        weak_mode: bool = False,
+        fuzzy_mode: bool = False,
         as_generator: bool = False
     ) -> Union[List[SiteResult], AsyncGenerator[SiteResult, None]]:
         if self._wmn_data is None:
-            return None
+            raise DataError("WMN data is not loaded")
 
-        sites = self._wmn_data.get('sites', [])
+        sites = self._wmn_data.get("sites", [])
 
         async def generate_results():
-            tasks = [self.check_site(site, username, weak_mode) for site in sites]
-            for result in asyncio.as_completed(tasks):
-                yield await result
+            tasks = [self.check_site(site, username, fuzzy_mode) for site in sites]
+            for task in asyncio.as_completed(tasks):
+                yield await task
 
-        return generate_results() if as_generator else [result async for result in generate_results()]    
+        if as_generator:
+            return generate_results()
+        return [result async for result in generate_results()]
 
     async def self_check(
         self,
-        weak_mode: bool = False,
+        fuzzy_mode: bool = False,
         as_generator: bool = False
     ) -> Union[List[SelfTestResult], AsyncGenerator[SelfTestResult, None]]:
         if self._wmn_data is None:
-            return None
+            raise DataError("WMN data is not loaded")
 
-        sites = self._wmn_data.get('sites', [])
+        sites = self._wmn_data.get("sites", [])
 
         async def check_site_with_users(site) -> Optional[SelfTestResult]:
-            if not (known_list := site.get("known")):
+            known_list = site.get("known")
+            if not known_list:
                 self.logger.debug(
                     "Site '%s' has no 'known' accounts defined. Skipping check.",
-                    site.get('name', 'Unknown')
+                    site.get("name", "Unknown")
                 )
                 return None
 
@@ -299,7 +309,7 @@ class Naminter:
             category = site.get("cat") or site.get("category", "unknown")
             
             site_results = await asyncio.gather(
-                *[self.check_site(site, username, weak_mode) for username in known_list]
+                *[self.check_site(site, username, fuzzy_mode) for username in known_list]
             )
             
             results = [
@@ -321,8 +331,11 @@ class Naminter:
 
         async def generate_results():
             tasks = [check_site_with_users(site) for site in sites]
-            for result in asyncio.as_completed(tasks):
-                if site_result := await result:
+            for task in asyncio.as_completed(tasks):
+                site_result = await task
+                if site_result:
                     yield site_result
 
-        return generate_results() if as_generator else [result async for result in generate_results()]
+        if as_generator:
+            return generate_results()
+        return [result async for result in generate_results()]

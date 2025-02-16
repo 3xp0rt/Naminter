@@ -1,5 +1,6 @@
 import asyncio
 import time
+import webbrowser
 from enum import Enum
 from pathlib import Path
 from dataclasses import dataclass
@@ -22,11 +23,16 @@ from .naminter import Naminter
 from .models import CheckStatus, TestResult, SelfTestResult
 from .settings import SITES_LIST_REMOTE_URL
 
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 __author__ = "3xp0rt"
-__description__ = "Username availability checker across multiple websites"
+__description__ = "The most powerful and fast username availability checker that searches across hundreds of websites using WhatsMyName dataset."
 
-app = typer.Typer(help="Username availability checker", add_completion=False, rich_markup_mode="rich")
+app = typer.Typer(
+    help="Username availability checker",
+    add_completion=False,
+    rich_markup_mode="rich",
+    no_args_is_help=True
+)
 console = Console()
 
 THEME = {
@@ -47,7 +53,7 @@ class BrowserImpersonation(str, Enum):
     SAFARI_IOS = "safari_ios" 
     EDGE = "edge"
 
-@dataclass
+@dataclass(frozen=True)
 class CheckerConfig:
     """Configuration for the UsernameChecker."""
     # Core settings
@@ -70,11 +76,12 @@ class CheckerConfig:
 
     # Browser settings
     impersonate: Optional[str]
+    browse: bool = False
 
     # Validation settings
-    weak_mode: bool
+    fuzzy_mode: bool
     self_check: bool
-    
+
     # Debug options
     debug: bool
     version: str = __version__
@@ -103,6 +110,7 @@ class ResultsTracker:
         errors = self.status_counts.get(CheckStatus.ERROR, 0)
 
         speed_indicators = [
+            (15.0, f"[{THEME['success']}]LIGHTNING[/]", "⚡️⚡️"),
             (10.0, f"[{THEME['success']}]BLAZING[/]", "⚡️"),
             (7.0, f"[{THEME['success']}]FAST[/]", "🚀"),
             (5.0, f"[{THEME['primary']}]GOOD[/]", "✨"),
@@ -156,6 +164,10 @@ class UsernameChecker:
         text.append(status_symbols[result.check_status], style=self._status_styles[result.check_status])
         text.append(" [", style=THEME['muted'])
         text.append(result.site_name or "Unknown", style=THEME['info'])
+        """
+        text.append("/", style=THEME['muted'])
+        text.append(result.category or "Unknown", style=THEME['warning'])
+        """
         text.append("] ", style=THEME['muted'])
         text.append(result.site_url, style=THEME['primary'])
 
@@ -191,7 +203,7 @@ class UsernameChecker:
         root_label.append("]", style=THEME["muted"])
 
         tree = Tree(root_label, guide_style=THEME["muted"], expanded=True)
-        
+
         for test in self_check.results:
             url_text = Text()
             url_text.append(status_symbols.get(test.check_status, "?"),
@@ -199,9 +211,9 @@ class UsernameChecker:
             )
             url_text.append(" ", style=THEME["muted"])
             url_text.append(test.site_url, style=THEME["primary"])
-            
+
             url_branch = tree.add(url_text)
-            
+
             details_text = Text()
             if test.status_code is not None:
                 details_text.append(f"Status: {test.status_code}", style=THEME["info"])
@@ -221,6 +233,13 @@ class UsernameChecker:
             return None
         return self.config.impersonate
 
+    def _open_profile(self, url: str) -> None:
+        """Opens a single profile URL in the browser."""
+        try:
+            webbrowser.open(url)
+        except Exception as e:
+            console.print(f"[{THEME['error']}]Failed to open {url}: {str(e)}[/]")
+
     async def run(self) -> None:
         """Main execution method with progress tracking."""
         async with Naminter(
@@ -234,7 +253,7 @@ class UsernameChecker:
             if self.config.local_list_path:
                 await naminter.load_local_list(self.config.local_list_path)
             else:
-                await naminter.fetch_remote_list()
+                await naminter.fetch_remote_list(self.config.remote_list_url)
 
             wmn_info = await naminter.get_wmn_info()
 
@@ -249,7 +268,7 @@ class UsernameChecker:
                         total=tracker.total_sites
                     )
                     try:
-                        results = await naminter.self_check(weak_mode=self.config.weak_mode, as_generator=True)
+                        results = await naminter.self_check(fuzzy_mode=self.config.fuzzy_mode, as_generator=True)
                         async for site_result in results:
                             num_tests = len(site_result.results)
                             for test in site_result.results:
@@ -267,11 +286,12 @@ class UsernameChecker:
                         total=tracker.total_sites
                     )
                     try:
-                        results = await naminter.check_username(self.config.username, self.config.weak_mode, as_generator=True)
+                        results = await naminter.check_username(self.config.username, self.config.fuzzy_mode, as_generator=True)
                         async for result in results:
                             tracker.add_result(result)
                             if result.check_status == CheckStatus.FOUND:
                                 self._found_results.append(result)
+                                self._open_profile(result.site_url)
                             if formatted := self._format_result(result):
                                 console.print(formatted)
                             progress.update(task_id, advance=1, description=tracker.get_progress_text())
@@ -284,11 +304,15 @@ class UsernameChecker:
             TextColumn(""),
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
-            BarColumn(complete_style=THEME['primary'], finished_style=THEME['success']),
+            BarColumn(
+                complete_style=THEME['primary'], 
+                finished_style=THEME['success'],
+            ),
             TaskProgressColumn(),
             TimeElapsedColumn(),
             TextColumn("•"),
             TimeRemainingColumn(),
+            TextColumn(""),
             console=console,
         )
 
@@ -299,26 +323,51 @@ class UsernameChecker:
             console.print_exception()
         raise typer.Exit(1)
 
+def display_version():
+    """Display version and metadata of the application."""
+    version_table = Table.grid(padding=(0, 2))
+    version_table.add_column(style=THEME['info'])
+    version_table.add_column(style="bold")
+
+    version_table.add_row("Version:", __version__)
+    version_table.add_row("Author:", __author__)
+    version_table.add_row("Description:", __description__)
+
+    panel = Panel(
+        version_table,
+        title="[bold]:mag: Naminter[/]",
+        border_style=THEME['muted'],
+        box=rich.box.ROUNDED
+    )
+
+    console.print(panel)
+
 @app.callback(invoke_without_command=True)
 def main(
-    username: Optional[str] = typer.Argument(None, help="Username to check"),
-    local_list: Optional[Path] = typer.Option(None, "--local-list", "-l", show_default=False),
-    remote_list_url: Optional[str] = typer.Option(SITES_LIST_REMOTE_URL, "--remote-url", "-r"),
-    include_categories: Optional[List[str]] = typer.Option(None, "--include-categories", "-ic", show_default=False),
-    exclude_categories: Optional[List[str]] = typer.Option(None, "--exclude-categories", "-ec", show_default=False),
-    max_tasks: int = typer.Option(50, "--max-tasks", "-m"),
-    timeout: int = typer.Option(30, "--timeout", "-t"),
-    proxy: Optional[str] = typer.Option(None, "--proxy", "-p", show_default=False),
-    allow_redirects: bool = typer.Option(False, "--allow-redirects"),
-    verify_ssl: bool = typer.Option(False, "--verify-ssl"),
-    impersonate: BrowserImpersonation = typer.Option(BrowserImpersonation.CHROME, "--impersonate", "-i"),
-    weak_mode: bool = typer.Option(False, "--weak", "-w"),
-    self_check: bool = typer.Option(False, "--self-check"),
+    username: Optional[str] = typer.Argument(None, help="Username to search"),
+    version: bool = typer.Option(False, "--version", "-v", help="Show version information"),
+    local_list: Optional[Path] = typer.Option(None, "--local-list", "-l", show_default=False, help="Path to a local file containing list of sites to check"),
+    remote_list_url: Optional[str] = typer.Option(SITES_LIST_REMOTE_URL, "--remote-url", "-r", help="URL to fetch remote list of sites to check"),
+    self_check: bool = typer.Option(False, "--self-check", help="Perform self-check of the application"),
+    include_categories: Optional[List[str]] = typer.Option(None, "--include-categories", "-ic", show_default=False, help="Categories of sites to include in the search"),
+    exclude_categories: Optional[List[str]] = typer.Option(None, "--exclude-categories", "-ec", show_default=False, help="Categories of sites to exclude from the search"),
+    proxy: Optional[str] = typer.Option(None, "--proxy", "-p", show_default=False, help="Proxy server to use for requests"),
+    timeout: int = typer.Option(30, "--timeout", "-t", help="Maximum time in seconds to wait for each request"),
+    allow_redirects: bool = typer.Option(False, "--allow-redirects", help="Whether to follow URL redirects"),
+    verify_ssl: bool = typer.Option(False, "--verify-ssl", help="Whether to verify SSL certificates"),
+    impersonate: BrowserImpersonation = typer.Option(BrowserImpersonation.CHROME, "--impersonate", "-i", help="Browser to impersonate in requests"),
+    max_tasks: int = typer.Option(50, "--max-tasks", "-m", help="Maximum number of concurrent tasks"),
+    fuzzy_mode: bool = typer.Option(False, "--fuzzy", "-f", help="Enable fuzzy validation mode"),
     debug: bool = typer.Option(False, "--debug", "-d"),
     no_color: bool = typer.Option(False, "--no-color", help="Disable colored output"),
-    ctx: typer.Context = None
+    browse: bool = typer.Option(False, "--browse", "-b", help="Open found profiles in web browser"),
+    ctx: typer.Context = None,
 ):
     """Main CLI entry point."""
+    if version:
+        display_version()
+        raise typer.Exit()
+
     if ctx and ctx.invoked_subcommand:
         return
 
@@ -330,12 +379,15 @@ def main(
         console.print(f"[{THEME['error']}]Error:[/] Username is required")
         raise typer.Exit(1)
 
-    """
-    if local_list and remote_list_url:
+    if proxy and not proxy.startswith(("http://", "https://", "socks://")):
+        console.print(f"[{THEME['error']}]Error:[/] Proxy must start with http://, https://, or socks://")
+        raise typer.Exit(1)
+
+    """if local_list and remote_list_url:
         console.print(f"[{THEME['error']}]Error:[/] Cannot specify both --local-list and --remote-url")
         raise typer.Exit(1)
     """
-    
+
     try:
         config = CheckerConfig(
             username=username or "",
@@ -343,15 +395,16 @@ def main(
             remote_list_url=remote_list_url,
             include_categories=include_categories,
             exclude_categories=exclude_categories,
-            max_tasks=int(max_tasks),
-            timeout=int(timeout),
+            max_tasks=max_tasks,
+            timeout=timeout,
             proxy=proxy,
             allow_redirects=allow_redirects,
             verify_ssl=verify_ssl,
             impersonate=impersonate,
-            weak_mode=weak_mode,
+            fuzzy_mode=fuzzy_mode,
             self_check=self_check,
-            debug=debug
+            debug=debug,
+            browse=browse
         )
         checker = UsernameChecker(config)
         asyncio.run(checker.run())
@@ -364,28 +417,8 @@ def main(
             console.print_exception()
         raise typer.Exit(1)
 
-@app.command()
-def version():    
-    """Display version and metadata of the application."""
-    version_table = Table.grid(padding=(0, 2))
-    version_table.add_column(style=THEME['info'])
-    version_table.add_column(style="bold")
-    
-    version_table.add_row("Version:", __version__)
-    version_table.add_row("Author:", __author__)
-    version_table.add_row("Description:", __description__)
-    
-    panel = Panel(
-        version_table,
-        title="[bold]🔍  WMNPY Version Information[/]",
-        border_style=THEME['muted'],
-        box=rich.box.ROUNDED
-    )
-    
-    console.print(panel)
-
 def entry_point() -> None:
     typer.run(main)
-    
+
 if __name__ == "__main__":
     app()

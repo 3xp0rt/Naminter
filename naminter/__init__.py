@@ -1,4 +1,4 @@
 from .naminter import Naminter
 
 __version__ = "0.1.0"
-__all__ = ["Naminter"]
+__all__ = ['Naminter']
