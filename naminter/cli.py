@@ -23,7 +23,7 @@ from .naminter import Naminter
 from .models import CheckStatus, TestResult, SelfTestResult
 from .settings import SITES_LIST_REMOTE_URL
 
-__version__ = "1.0.1"
+__version__ = "1.0.2"
 __author__ = "3xp0rt"
 __description__ = "The most powerful and fast username availability checker that searches across hundreds of websites using WhatsMyName dataset."
 
@@ -53,10 +53,12 @@ class BrowserImpersonation(str, Enum):
     SAFARI_IOS = "safari_ios" 
     EDGE = "edge"
 
+from dataclasses import dataclass
+from typing import Optional, List
+
 @dataclass(frozen=True)
 class CheckerConfig:
     """Configuration for the UsernameChecker."""
-    # Core settings
     username: str 
 
     # Input sources
@@ -76,10 +78,12 @@ class CheckerConfig:
 
     # Browser settings
     impersonate: Optional[str]
-    browse: bool = False
+    browse: bool
 
     # Validation settings
     fuzzy_mode: bool
+
+    # Self check setting
     self_check: bool
 
     # Debug options
