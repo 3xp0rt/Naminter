@@ -105,7 +105,7 @@ class ResultsTracker:
         self.status_counts[result.check_status] += 1
 
     def get_progress_text(self) -> str:
-        """Returns formatted progress text with enhanced speed indicators."""
+        """Returns formatted progress text focusing on request speed and statistics."""
         elapsed = time.time() - self.start_time
         req_per_sec = self.results_count / elapsed if elapsed > 0 else 0
         found = self.status_counts.get(CheckStatus.FOUND, 0)
@@ -113,24 +113,8 @@ class ResultsTracker:
         unknown = self.status_counts.get(CheckStatus.UNKNOWN, 0)
         errors = self.status_counts.get(CheckStatus.ERROR, 0)
 
-        speed_indicators = [
-            (15.0, f"[{THEME['success']}]LIGHTNING[/]", "⚡️⚡️"),
-            (10.0, f"[{THEME['success']}]BLAZING[/]", "⚡️"),
-            (7.0, f"[{THEME['success']}]FAST[/]", "🚀"),
-            (5.0, f"[{THEME['primary']}]GOOD[/]", "✨"),
-            (3.0, f"[{THEME['warning']}]MODERATE[/]", "⚙️"),
-            (1.0, f"[{THEME['warning']}]STEADY[/]", "🔄"),
-            (0.0, f"[{THEME['error']}]SLOW[/]", "🐌")
-        ]
-
-        speed_text = next(
-            (f"{indicator} {emoji}" for threshold, indicator, emoji in speed_indicators 
-            if req_per_sec >= threshold),
-            f"[{THEME['error']}]INITIALIZING[/] ⏳"
-        )
-
         sections = [
-            f"{speed_text} ({req_per_sec:.1f} req/s)",
+            f"[{THEME['primary']}]{req_per_sec:.1f} req/s[/]",
             f"[{THEME['success']}]✓ {found}[/]",
             f"[{THEME['error']}]× {not_found}[/]",
             f"[{THEME['warning']}]? {unknown}[/]" if unknown > 0 else "",
