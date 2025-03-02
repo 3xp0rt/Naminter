@@ -280,7 +280,7 @@ class UsernameChecker:
                             tracker.add_result(result)
                             if result.check_status == CheckStatus.FOUND:
                                 self._found_results.append(result)
-                                self._open_profile(result.site_url)
+                                self._open_result(result.site_url)
                             if formatted := self._format_result(result):
                                 console.print(formatted)
                             progress.update(task_id, advance=1, description=tracker.get_progress_text())
