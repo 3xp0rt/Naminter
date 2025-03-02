@@ -221,7 +221,7 @@ class UsernameChecker:
             return None
         return self.config.impersonate
 
-    def _open_profile(self, url: str) -> None:
+    def _open_result(self, url: str) -> None:
         """Opens a single profile URL in the browser."""
         try:
             if self.config.browse:
