@@ -23,9 +23,9 @@ classifiers = [
     "Topic :: Utilities"
 ]
 dependencies = [
-    "typer>=0.15.1",
+    "typer>=0.15.2",
     "rich>=13.9.4",
-    "curl-cffi>=0.7.4",
+    "curl-cffi>=0.9.0",
 ]
 
 [project.urls]
