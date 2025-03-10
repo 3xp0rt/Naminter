@@ -145,7 +145,7 @@ SiteResult(site_name='ebay_stores', site_url='https://www.ebay.com/str/example_u
 | `-f, --fuzzy`               | Enable fuzzy matching mode                                 |
 | `--allow-redirects`         | Allow HTTP redirects                                       |
 | `--verify-ssl`              | Verify SSL certificates                                    |
-| `--self-test`               | Run self-test mode                                         |
+| `--self-check`              | Run self-check mode for a provided list                    |
 | `-b, --browse`              | Open found profiles in web browser                         |
 | `--no-color`                | Disable colored output                                     |
 | `-d, --debug`               | Enable debug output                                        |
