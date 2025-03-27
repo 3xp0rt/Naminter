@@ -23,7 +23,7 @@ from .naminter import Naminter
 from .models import CheckStatus, TestResult, SelfTestResult
 from .settings import SITES_LIST_REMOTE_URL
 
-__version__ = "1.0.3"
+__version__ = "1.0.4"
 __author__ = "3xp0rt"
 __description__ = "The most powerful and fast username availability checker that searches across hundreds of websites using WhatsMyName dataset."
 
@@ -52,42 +52,25 @@ class BrowserImpersonation(str, Enum):
     SAFARI = "safari"
     SAFARI_IOS = "safari_ios" 
     EDGE = "edge"
-
-from dataclasses import dataclass
-from typing import Optional, List
+    FIREFOX = "firefox"
 
 @dataclass(frozen=True)
 class CheckerConfig:
-    """Configuration for the UsernameChecker."""
-    username: str 
-
-    # Input sources
-    local_list_path: Optional[str]
-    remote_list_url: Optional[str]
-
-    # Category filters 
-    include_categories: Optional[List[str]]
-    exclude_categories: Optional[List[str]]
-
-    # HTTP settings
-    max_tasks: int
-    timeout: int
-    proxy: Optional[str]
-    allow_redirects: bool
-    verify_ssl: bool
-
-    # Browser settings
-    impersonate: Optional[str]
-    browse: bool
-
-    # Validation settings
-    fuzzy_mode: bool
-
-    # Self check setting
-    self_check: bool
-
-    # Debug options
-    debug: bool
+    username: str
+    local_list_path: Optional[str] = None
+    remote_list_url: Optional[str] = SITES_LIST_REMOTE_URL
+    include_categories: Optional[List[str]] = None
+    exclude_categories: Optional[List[str]] = None
+    max_tasks: int = 50
+    timeout: int = 30
+    proxy: Optional[str] = None
+    allow_redirects: bool = False
+    verify_ssl: bool = False
+    impersonate: Optional[str] = BrowserImpersonation.CHROME.value
+    browse: bool = False
+    fuzzy_mode: bool = False
+    self_check: bool = False
+    debug: bool = False
     version: str = __version__
 
 class ResultsTracker:
@@ -216,10 +199,7 @@ class UsernameChecker:
         return tree
 
     def _get_impersonation_value(self) -> Optional[str]:
-        """Returns browser impersonation value."""
-        if self.config.impersonate == "none":
-            return None
-        return self.config.impersonate
+        return None if self.config.impersonate == BrowserImpersonation.NONE.value else self.config.impersonate
 
     def _open_result(self, url: str) -> None:
         """Opens a single profile URL in the browser."""

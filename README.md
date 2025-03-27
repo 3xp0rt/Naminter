@@ -136,7 +136,7 @@ SiteResult(site_name='ebay_stores', site_url='https://www.ebay.com/str/example_u
 | `username`                  | Username to check                                          |
 | `-m, --max-tasks`           | Maximum concurrent tasks (default: 50)                     |
 | `-t, --timeout`             | Request timeout in seconds (default: 30)                   |
-| `-i, --impersonate`         | Browser to impersonate (none/chrome/chrome_android/safari/safari_ios/edge) |
+| `-i, --impersonate`         | Browser to impersonate (none/chrome/chrome_android/safari/safari_ios/edge/firefox) |
 | `-ic, --include-categories` | Categories to include                                      |
 | `-ec, --exclude-categories` | Categories to exclude                                      |
 | `-p, --proxy`               | Proxy URL                                                  |

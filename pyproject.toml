@@ -1,6 +1,6 @@
 [project]
 name = "naminter"
-version = "1.0.3"
+version = "1.0.4"
 description = "The most powerful and fast username availability checker that searches across hundreds of websites using WhatsMyName dataset"
 readme = "README.md"
 authors = [
@@ -25,7 +25,7 @@ classifiers = [
 dependencies = [
     "typer>=0.15.2",
     "rich>=13.9.4",
-    "curl-cffi>=0.9.0",
+    "curl-cffi>=0.10.0",
 ]
 
 [project.urls]
