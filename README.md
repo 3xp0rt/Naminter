@@ -8,6 +8,10 @@
 
 Naminter is a powerful, fast, and flexible username enumeration tool and Python package. Leveraging the comprehensive [WhatsMyName](https://github.com/WebBreacher/WhatsMyName) list, Naminter efficiently enumerates usernames across hundreds of websites. With advanced features like browser impersonation, concurrent checking, and customizable filtering, it can be used both as a command-line tool and as a library in your Python projects.
 
+<p align="center">
+<img width="70%" height="70%" src="preview.png"/>
+</p>
+
 ## Table of Contents
 
 - [Features](#features)
