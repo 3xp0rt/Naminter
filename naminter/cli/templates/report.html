@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Naminter Analysis Report</title>
+    <style>
+        @page {
+            margin: 0;
+        }
+        /* Base styles */
+        :root {
+            --bg-primary: #fff;
+            --bg-secondary: #f5f5f5;
+            --border-color: #bbb;
+            --text-primary: #111;
+            --text-secondary: #555;
+            --accent-color: #222;
+            --accent-hover: #000;
+            --table-stripe: #eee;
+            --table-hover: #ddd;
+            --page-width: 1100px;
+        }
+        
+        @media (prefers-color-scheme: light) {
+            :root {
+                --bg-primary: #fff;
+                --bg-secondary: #f5f5f5;
+                --border-color: #bbb;
+                --text-primary: #111;
+                --text-secondary: #555;
+                --table-stripe: #eee;
+                --table-hover: #ddd;
+            }
+        }
+        
+        @media print {
+            body {
+                font-size: 11pt;
+                background: white;
+                color: black;
+            }
+            .container {
+                max-width: 100%;
+                margin: 0;
+                padding: 0;
+                background: white;
+            }
+            .page-break {
+                page-break-before: always;
+            }
+        }
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            font-family: Inter, system-ui, -apple-system, sans-serif;
+            line-height: 1.6;
+            color: var(--text-primary);
+            background: var(--bg-primary);
+            padding: 0;
+            margin: 0;
+        }
+        .container {
+            max-width: var(--page-width);
+            margin: 0 auto;
+            padding: 2rem;
+            background: var(--bg-primary);
+        }
+        a {
+            color: var(--accent-color);
+            text-decoration: underline;
+            transition: color 0.2s ease;
+        }
+        a:hover {
+            color: var(--accent-hover);
+        }
+        .report-header {
+            margin-bottom: 2.5rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 1.5rem;
+        }
+        .report-title {
+            font-size: 2.2rem;
+            color: var(--text-primary);
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+        .report-subtitle {
+            color: var(--text-secondary);
+            font-size: 1.1rem;
+            margin-bottom: 1rem;
+        }
+        .report-meta {
+            color: var(--text-secondary);
+            font-size: 0.9rem;
+        }
+        .report-summary {
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: 4px;
+            padding: 1.5rem;
+            margin-bottom: 2.5rem;
+        }
+        .summary-title {
+            font-size: 1.4rem;
+            color: var(--text-primary);
+            margin-bottom: 1rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 0.5rem;
+        }
+        .summary-stats {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 2rem;
+            margin-bottom: 1rem;
+        }
+        .stat-item {
+            flex: 1;
+            min-width: 150px;
+        }
+        .stat-label {
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.2rem;
+        }
+        .stat-value {
+            font-size: 1.8rem;
+            font-weight: 600;
+            color: var(--accent-color);
+        }
+        .category-section {
+            margin-bottom: 1.5rem;
+            padding-top: 1.5rem;
+        }
+        .category-header {
+            background-color: var(--bg-secondary);
+            padding: 1rem 1.5rem;
+            border-left: 5px solid var(--accent-color);
+            margin-bottom: 1.5rem;
+        }
+        .category-title {
+            font-size: 1.4rem;
+            color: var(--text-primary);
+            margin: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .category-count {
+            font-size: 0.85rem;
+            background-color: var(--accent-color);
+            color: var(--bg-primary);
+            padding: 0.2rem 0.8rem;
+            border-radius: 12px;
+        }
+        .data-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 1rem;
+            box-shadow: 0 1px 3px #ccc;
+        }
+        .data-table th {
+            background-color: var(--bg-secondary);
+            color: var(--text-primary);
+            text-align: left;
+            padding: 0.8rem 1rem;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+            border-bottom: 2px solid var(--accent-color);
+        }
+        .data-table td {
+            padding: 0.8rem 1rem;
+            border-top: 1px solid var(--border-color);
+            vertical-align: top;
+        }
+        .data-table tr:nth-child(even) {
+            background-color: var(--table-stripe);
+        }
+        .data-table tr:hover {
+            background-color: var(--table-hover);
+        }
+        .field-name {
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+        .field-value {
+            word-break: break-word;
+            color: var(--text-primary);
+        }
+        .field-value a {
+            color: var(--accent-color);
+            text-decoration: underline;
+        }
+        .field-value a:hover {
+            color: var(--accent-hover);
+        }
+        @media (max-width: 768px) {
+            .category-header {
+                padding: 1rem 0.5rem;
+            }
+            .container {
+                padding: 1rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="report-header">
+            <h1 class="report-title">Naminter</h1>
+            <p class="report-subtitle">Naminter username discovery report</p>
+            <div class="report-meta">
+                <p>Scanned Usernames: {{ usernames|join(', ') }}</p>
+                <p>Generated on: {{ current_time }}</p>
+                <p>Version: {{ version }}</p>
+            </div>
+        </div>
+        <div class="report-summary">
+            <h2 class="summary-title">Executive Summary</h2>
+            <div class="summary-stats">
+                <div class="stat-item">
+                    <div class="stat-label">Total Results</div>
+                    <div class="stat-value">{{ total_count }}</div>
+                </div>
+                <div class="stat-item">
+                    <div class="stat-label">Categories</div>
+                    <div class="stat-value">{{ category_count }}</div>
+                </div>
+            </div>
+            <p>This report contains information discovered by the Naminter tool. The data is organized by categories for easy analysis.</p>
+        </div>
+
+        {% for category, results in grouped_results.items() %}
+        <div class="category-section" id="category-{{ loop.index }}">
+            <div class="category-header">
+                <h2 class="category-title">
+                    <span>{{ category }}</span>
+                    <span class="category-count">{{ results|length }} results</span>
+                </h2>
+            </div>
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        {% for field in display_fields %}
+                        <th>{{ field|replace('_', ' ')|title }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in results %}
+                    <tr>
+                        {% for field in display_fields %}
+                        <td>
+                            <div class="field-value">
+                                {% if 'url' in field.lower() or field.lower() in ['link', 'website'] %}
+                                <a href="{{ row[field] }}" target="_blank" rel="noopener noreferrer">{{ row[field] }}</a>
+                                {% else %}
+                                {{ row[field] }}
+                                {% endif %}
+                            </div>
+                        </td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endfor %}
+
+        <div class="report-footer">
+            <p>This report was automatically generated by the Naminter tool. For more information, visit <a href="https://github.com/3xp0rt/Naminter" target="_blank">the Naminter GitHub repository</a>.</p>
+        </div>
+    </div>
+</body>
+</html>

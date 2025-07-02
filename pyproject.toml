@@ -1,36 +1,74 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
 [project]
 name = "naminter"
-version = "1.0.4"
+version = "1.0.5"
 description = "The most powerful and fast username availability checker that searches across hundreds of websites using WhatsMyName dataset"
 readme = "README.md"
-authors = [
-    { name = "3xp0rt" }
-]
+authors = [{ name = "3xp0rt", email = "contact@3xp0rt.com" }]
 license = { text = "MIT" }
 requires-python = ">=3.8"
+
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
     "Intended Audience :: End Users/Desktop",
-    "License :: OSI Approved :: MIT License", 
+    "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.8",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Internet",
     "Topic :: Utilities"
 ]
+
 dependencies = [
-    "typer>=0.15.2",
-    "rich>=13.9.4",
-    "curl-cffi>=0.10.0",
+    "typer>=0.16.0",
+    "rich>=14.0.0",
+    "curl-cffi>=0.11.4",
+    "jsonschema>=4.24.0",
+    "jinja2>=3.1.6",
+    "weasyprint>=65.1"
+]
+
+maintainers = [{ name = "3xp0rt" }]
+
+keywords = [
+    "osint",
+    "username",
+    "availability",
+    "checker",
+    "whatsmyname",
+    "reconnaissance",
+    "cybersecurity",
+    "investigation",
+    "naminter"
 ]
 
 [project.urls]
-Homepage = "https://github.com/3xp0rt/naminter"
-Repository = "https://github.com/3xp0rt/naminter"
+Homepage     = "https://github.com/3xp0rt/naminter"
+Repository   = "https://github.com/3xp0rt/naminter"
+BugTracker   = "https://github.com/3xp0rt/naminter/issues"
+Documentation= "https://github.com/3xp0rt/naminter#readme"
+Source       = "https://github.com/3xp0rt/naminter"
 
 [project.scripts]
-naminter = "naminter.cli:entry_point"
+naminter = "naminter.cli.main:entry_point"
+
+[tool.setuptools]
+package-dir = {"" = "."}
+include-package-data = true
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["naminter*"]
+
+[tool.setuptools.package-data]
+"naminter.cli.templates" = ["*.html"]
+"naminter" = ["cli/templates/*.html"]
