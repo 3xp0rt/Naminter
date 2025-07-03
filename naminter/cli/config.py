@@ -77,9 +77,7 @@ class NaminterConfig:
                 "using known usernames from site configurations instead."
             )
         if not self.self_check and not self.usernames:
-            error_msg = "No usernames provided and self-check not enabled."
-            display_error(error_msg)
-            raise ValueError(error_msg)
+            raise ValueError("No usernames provided and self-check not enabled.")
         try:
             if self.local_list_paths:
                 self.local_list_paths = [str(p) for p in self.local_list_paths]
@@ -88,9 +86,7 @@ class NaminterConfig:
             if not self.local_list_paths and not self.remote_list_urls:
                 self.remote_list_urls = [WMN_REMOTE_URL]
         except Exception as e:
-            error_msg = f"Configuration validation failed: {e}"
-            display_error(error_msg)
-            raise ValueError(error_msg) from e
+            raise ValueError(f"Configuration validation failed: {e}") from e
         self.impersonate = self.get_impersonation()
 
     def get_impersonation(self) -> Optional[str]:

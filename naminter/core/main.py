@@ -327,9 +327,7 @@ class Naminter:
             
         has_placeholder = ACCOUNT_PLACEHOLDER in uri_check_template or (post_body_template and ACCOUNT_PLACEHOLDER in post_body_template)
         if not has_placeholder:
-            error_msg = f"Site '{site_name}' missing {ACCOUNT_PLACEHOLDER} placeholder"
-            self._logger.error(error_msg)
-            return SiteResult(site_name, category, username, ResultStatus.ERROR, error=error_msg)
+            return SiteResult(site_name, category, username, ResultStatus.ERROR, error=f"Site '{site_name}' missing {ACCOUNT_PLACEHOLDER} placeholder")
 
         matchers = {
             'e_code':  e_code,
@@ -368,9 +366,7 @@ class Naminter:
         
         clean_username = username.translate(str.maketrans("", "", site.get("strip_bad_char", "")))
         if not clean_username:
-            error_msg = f"Username '{username}' became empty after character stripping"
-            self._logger.error(error_msg)
-            return SiteResult(site_name, category, username, ResultStatus.ERROR, error=error_msg)
+            return SiteResult(site_name, category, username, ResultStatus.ERROR, error=f"Username '{username}' became empty after character stripping")
 
         uri_check = uri_check_template.replace(ACCOUNT_PLACEHOLDER, clean_username)
         uri_pretty = site.get("uri_pretty", uri_check_template).replace(ACCOUNT_PLACEHOLDER, clean_username)

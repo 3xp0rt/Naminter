@@ -3,18 +3,20 @@ import json
 import logging
 import webbrowser
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Annotated, Any, Dict, List, Optional, Tuple, Union
 
 import typer
 from curl_cffi import requests
+from rich import box
+from rich.panel import Panel
+from rich.table import Table
 
 from ..cli.config import BrowserImpersonation, NaminterConfig
 from ..cli.console import (
     console,
-    THEME,
     display_error,
-    display_version,
     display_warning,
+    display_version,
     ResultFormatter,
 )
 from ..cli.exporters import Exporter
@@ -23,10 +25,7 @@ from ..core.models import ResultStatus, SiteResult, SelfCheckResult
 from ..core.main import Naminter
 from ..core.constants import MAX_CONCURRENT_TASKS, HTTP_REQUEST_TIMEOUT_SECONDS, HTTP_ALLOW_REDIRECTS, HTTP_SSL_VERIFY, WMN_REMOTE_URL, WMN_SCHEMA_URL
 from ..core.exceptions import DataError, ConfigurationError
-
-__version__ = "1.0.5"
-__author__ = "3xp0rt"
-__description__ = "WhatsMyName Enumeration Tool"
+from .. import __description__, __version__
 
 app = typer.Typer(
     help=__description__,
@@ -136,42 +135,32 @@ class NaminterCLI:
 
     async def run(self) -> None:
         """Main execution method with progress tracking."""
-        try:
-            wmn_data, wmn_schema = self._load_wmn_lists(
-                local_list_paths=self.config.local_list_paths,
-                remote_list_urls=self.config.remote_list_urls,
-                skip_validation=self.config.skip_validation
-            )
+        wmn_data, wmn_schema = self._load_wmn_lists(
+            local_list_paths=self.config.local_list_paths,
+            remote_list_urls=self.config.remote_list_urls,
+            skip_validation=self.config.skip_validation
+        )
+        
+        async with Naminter(
+            wmn_data=wmn_data,
+            wmn_schema=wmn_schema,
+            max_tasks=self.config.max_tasks,
+            timeout=self.config.timeout,
+            impersonate=self.config.impersonate,
+            verify_ssl=self.config.verify_ssl,
+            allow_redirects=self.config.allow_redirects,
+            proxy=self.config.proxy,
+        ) as naminter:
+            if self.config.self_check:
+                results = await self._run_self_check(naminter)
+            else:
+                results = await self._run_check(naminter)
             
-            async with Naminter(
-                wmn_data=wmn_data,
-                wmn_schema=wmn_schema,
-                max_tasks=self.config.max_tasks,
-                timeout=self.config.timeout,
-                impersonate=self.config.impersonate,
-                verify_ssl=self.config.verify_ssl,
-                allow_redirects=self.config.allow_redirects,
-                proxy=self.config.proxy,
-            ) as naminter:
-                if self.config.self_check:
-                    results = await self._run_self_check(naminter)
-                else:
-                    results = await self._run_check(naminter)
-                
-                filtered_results = [r for r in results if self._should_include_result(r)]
-                
-                if self.config.export_formats:
-                    export_manager = Exporter(self.config.usernames or [], __version__)
-                    export_manager.export(filtered_results, self.config.export_formats)
-        except KeyboardInterrupt:
-            display_warning("Operation interrupted")
-            raise typer.Exit(1)
-        except asyncio.TimeoutError:
-            display_error("Operation timed out")
-            raise typer.Exit(1)
-        except Exception as e:
-            display_error(f"Unexpected error: {e}")
-            raise typer.Exit(1)
+            filtered_results = [r for r in results if self._should_include_result(r)]
+            
+            if self.config.export_formats:
+                export_manager = Exporter(self.config.usernames or [], __version__)
+                export_manager.export(filtered_results, self.config.export_formats)
 
     async def _run_check(self, naminter: Naminter) -> List[SiteResult]:
         """Run the username check functionality."""
@@ -313,14 +302,18 @@ class NaminterCLI:
         
         return response_file
 
-@app.callback(invoke_without_command=True)
+def version_callback(value: bool):
+    """Callback to handle version display."""
+    if value:
+        display_version()
+        raise typer.Exit()
+
 def main(
     usernames: Optional[List[str]] = typer.Option(None, "--username", "-u", help="Username(s) to search for across social media platforms", show_default=False),
     site_names: Optional[List[str]] = typer.Option(None, "--site", "-s", help="Specific site name(s) to check (e.g., 'GitHub', 'Twitter')", show_default=False),
-    version: bool = typer.Option(False, "--version", help="Display version information and exit"),
+    version: Annotated[Optional[bool], typer.Option("--version", help="Show version information and exit", callback=version_callback, is_eager=True)] = None,
     no_color: bool = typer.Option(False, "--no-color", help="Disable colored console output"),
     no_progressbar: bool = typer.Option(False, "--no-progressbar", help="Disable progress bar during execution"),
-    ctx: typer.Context = None,
 
     # Input lists
     local_list: Optional[List[Path]] = typer.Option(
@@ -391,16 +384,9 @@ def main(
 ) -> None:
     """Main CLI entry point."""
     
-    if ctx and ctx.invoked_subcommand:
-        return
-
     if no_color:
         console.no_color = True
 
-    if version:
-        display_version(__version__, __author__, __description__)
-        raise typer.Exit()
-    
     try:
         config = NaminterConfig(
             usernames=usernames,
@@ -472,7 +458,7 @@ def main(
 
 def entry_point() -> None:
     """Entry point for the application."""
-    app()
+    typer.run(main)
 
 if __name__ == "__main__":
     entry_point()
