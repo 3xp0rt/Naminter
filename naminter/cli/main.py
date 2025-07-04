@@ -262,7 +262,9 @@ class NaminterCLI:
             return True
         elif self.config.filter_unknown and status == ResultStatus.UNKNOWN:
             return True
-        elif not any([self.config.filter_errors, self.config.filter_not_found, self.config.filter_unknown]):
+        elif self.config.filter_ambiguous and status == ResultStatus.AMBIGUOUS:
+            return True
+        elif not any([self.config.filter_errors, self.config.filter_not_found, self.config.filter_unknown, self.config.filter_ambiguous]):
             return status == ResultStatus.FOUND
         
         return False
@@ -381,6 +383,7 @@ def main(
     filter_errors: bool = typer.Option(False, "--filter-errors", help="Show only error results in console output and exports"),
     filter_not_found: bool = typer.Option(False, "--filter-not-found", help="Show only not found results in console output and exports"),
     filter_unknown: bool = typer.Option(False, "--filter-unknown", help="Show only unknown results in console output and exports"),
+    filter_ambiguous: bool = typer.Option(False, "--filter-ambiguous", help="Show only ambiguous results in console output and exports"),
 ) -> None:
     """Main CLI entry point."""
     
@@ -425,6 +428,7 @@ def main(
             filter_errors=filter_errors,
             filter_not_found=filter_not_found,
             filter_unknown=filter_unknown,
+            filter_ambiguous=filter_ambiguous,
             no_progressbar=no_progressbar,
         )
 

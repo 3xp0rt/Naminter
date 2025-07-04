@@ -51,6 +51,7 @@ class ResultsTracker:
         unknown = self.status_counts[ResultStatus.UNKNOWN]
         errors = self.status_counts[ResultStatus.ERROR]
         not_valid = self.status_counts[ResultStatus.NOT_VALID]
+        ambiguous = self.status_counts[ResultStatus.AMBIGUOUS]
 
         sections = [
             f"[{THEME['primary']}]{rate:.1f} req/s[/]",
@@ -60,6 +61,8 @@ class ResultsTracker:
         
         if unknown > 0:
             sections.append(f"[{THEME['warning']}]? {unknown}[/]")
+        if ambiguous > 0:
+            sections.append(f"[{THEME['warning']}]* {ambiguous}[/]")
         if errors > 0:
             sections.append(f"[{THEME['error']}]! {errors}[/]")
         if not_valid > 0:

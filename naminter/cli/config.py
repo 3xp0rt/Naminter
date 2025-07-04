@@ -36,6 +36,7 @@ class NaminterConfig:
     filter_errors: bool = False
     filter_not_found: bool = False
     filter_unknown: bool = False
+    filter_ambiguous: bool = False
 
     # Network and concurrency
     max_tasks: int = MAX_CONCURRENT_TASKS
@@ -155,5 +156,6 @@ class NaminterConfig:
             "filter_errors": self.filter_errors,
             "filter_not_found": self.filter_not_found,
             "filter_unknown": self.filter_unknown,
+            "filter_ambiguous": self.filter_ambiguous,
             "no_progressbar": self.no_progressbar,
         }

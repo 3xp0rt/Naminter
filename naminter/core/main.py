@@ -416,7 +416,7 @@ class Naminter:
         response_text = response.text
         response_code = response.status_code
 
-        result_status = SiteResult.determine_result_status(
+        result_status = SiteResult.get_result_status(
             response_code=response_code,
             response_text=response_text,
             e_code=e_code,

@@ -29,6 +29,7 @@ _STATUS_SYMBOLS: Dict[ResultStatus, str] = {
     ResultStatus.UNKNOWN: "?",
     ResultStatus.ERROR: "!",
     ResultStatus.NOT_VALID: "X",
+    ResultStatus.AMBIGUOUS: "*",
 }
 
 _STATUS_STYLES: Dict[ResultStatus, Style] = {
@@ -37,6 +38,7 @@ _STATUS_STYLES: Dict[ResultStatus, Style] = {
     ResultStatus.UNKNOWN: Style(color=THEME['warning']),
     ResultStatus.ERROR: Style(color=THEME['error'], bold=True),
     ResultStatus.NOT_VALID: Style(color=THEME['error']),
+    ResultStatus.AMBIGUOUS: Style(color=THEME['warning'], bold=True),
 }
 
 class ResultFormatter:
