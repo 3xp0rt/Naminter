@@ -61,6 +61,20 @@ cd naminter
 pip install -e .
 ```
 
+### Using Docker
+
+All needed folders are mounted on the first start of the docker compose run command.
+
+```bash
+# Clone the repository
+git clone https://github.com/3xp0rt/naminter.git
+cd naminter
+# Build the Docker image locally
+docker build -t naminter .
+# Run naminter inside the docker container
+docker compose run --rm naminter --username john_doe
+```
+
 ## Usage
 
 ### Basic CLI Usage

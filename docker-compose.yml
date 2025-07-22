@@ -1,0 +1,14 @@
+services:
+  naminter:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: naminter:latest
+    container_name: naminter
+    volumes:
+      - ./output:/app/output
+      - ./responses:/app/responses
+      - ./custom-lists:/app/custom-lists
+    environment:
+      - PYTHONUNBUFFERED=1
+    command: ["--help"]
