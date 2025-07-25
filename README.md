@@ -18,6 +18,7 @@ Naminter is a powerful, fast, and flexible username enumeration tool and Python 
 - [Installation](#installation)
   - [From PyPI](#from-pypi)
   - [From Source](#from-source)
+  - [From Docker](#using-docker)
 - [Usage](#usage)
   - [Basic CLI Usage](#basic-cli-usage)
   - [Advanced CLI Options](#advanced-cli-options)
@@ -59,6 +60,20 @@ Clone the repository and install in editable mode:
 git clone https://github.com/3xp0rt/naminter.git
 cd naminter
 pip install -e .
+```
+
+### Using Docker
+
+All needed folders are mounted on the first start of the docker compose run command.
+
+```bash
+# Using the prebuilt docker image from the GitHub registry
+docker run --rm -it ghcr.io/3xp0rt/naminter --username john_doe
+
+# Build the docker from the source yourself
+git clone https://github.com/3xp0rt/naminter.git && cd naminter
+docker build -t naminter .
+docker compose run --rm naminter --username john_doe
 ```
 
 ## Usage
