@@ -17,6 +17,13 @@ from ..core.exceptions import (
     ValidationError,
     ConcurrencyError,
 )
+from ..core.utils import (
+    validate_schema,
+    validate_numeric_values,
+    configure_proxy,
+    validate_usernames,
+    filter_sites,
+)
 from ..core.constants import (
     HTTP_REQUEST_TIMEOUT_SECONDS,
     HTTP_SSL_VERIFY,
@@ -64,21 +71,14 @@ class Naminter:
         self.impersonate = impersonate if impersonate is not None else BROWSER_IMPERSONATE_AGENT
         self.verify_ssl = verify_ssl if verify_ssl is not None else HTTP_SSL_VERIFY
         self.allow_redirects = allow_redirects if allow_redirects is not None else HTTP_ALLOW_REDIRECTS
-        self.proxy = self._configure_proxy(proxy)
+        self.proxy = configure_proxy(proxy)
         
-        self._validate_numeric_values(self.max_tasks, self.timeout)
-        self._validate_schema(wmn_data, wmn_schema)
+        validate_numeric_values(self.max_tasks, self.timeout)
+        validate_schema(wmn_data, wmn_schema)
 
         self._wmn_data = wmn_data
         self._wmn_schema = wmn_schema
-        
-        try:
-            self._semaphore = asyncio.Semaphore(self.max_tasks)
-            self._logger.debug("Semaphore created with max_tasks=%d", self.max_tasks)
-        except Exception as e:
-            self._logger.critical("Failed to create semaphore: %s", e)
-            raise ConcurrencyError(f"Failed to create semaphore with max_tasks={self.max_tasks}: {e}") from e
-        
+        self._semaphore = asyncio.Semaphore(self.max_tasks)
         self._session: Optional[AsyncSession] = None
         
         sites_count = len(self._wmn_data.get("sites", [])) if self._wmn_data else 0
@@ -88,120 +88,15 @@ class Naminter:
             self.impersonate, self.verify_ssl, bool(self.proxy)
         )
 
-    def _validate_schema(self, data: Dict[str, Any], schema: Optional[Dict[str, Any]]) -> None:
-        """Validate WMN data against schema."""
-        if not data:
-            self._logger.error("No WMN data provided during initialization.")
-            raise DataError("No WMN data provided during initialization.")
-
-        if schema:
-            try:
-                self._logger.debug("Validating WMN data against schema.")
-                jsonschema.validate(instance=data, schema=schema)
-                self._logger.info("WMN data validated successfully against schema.")
-            except jsonschema.ValidationError as e:
-                self._logger.error("WMN data does not match schema: %s", e.message)
-                raise SchemaValidationError(f"WMN data does not match schema: {e.message}") from e
-            except jsonschema.SchemaError as e:
-                self._logger.error("Invalid WMN schema: %s", e.message)
-                raise SchemaValidationError(f"Invalid WMN schema: {e.message}") from e
-        else:
-            self._logger.warning("WMN data provided without schema. Skipping validation.")
-
-    def _validate_numeric_values(self, max_tasks: int, timeout: int) -> None:
-        """Validate numeric configuration values."""
-        self._logger.debug("Validating numeric values: max_tasks=%d, timeout=%d", max_tasks, timeout)
-        if not (MIN_TASKS <= max_tasks <= MAX_TASKS_LIMIT):
-            self._logger.error("max_tasks out of range: %d not in [%d-%d]", max_tasks, MIN_TASKS, MAX_TASKS_LIMIT)
-            raise ConfigurationError(f"Invalid max_tasks: {max_tasks} must be between {MIN_TASKS} and {MAX_TASKS_LIMIT}")
-        if not (MIN_TIMEOUT <= timeout <= MAX_TIMEOUT):
-            self._logger.error("timeout out of range: %d not in [%d-%d]", timeout, MIN_TIMEOUT, MAX_TIMEOUT)
-            raise ConfigurationError(f"Invalid timeout: {timeout} must be between {MIN_TIMEOUT} and {MAX_TIMEOUT} seconds")
-        
-        if max_tasks > HIGH_CONCURRENCY_THRESHOLD and timeout < HIGH_CONCURRENCY_MIN_TIMEOUT:
-            self._logger.warning(
-                "High concurrency (%d tasks) with low timeout (%ds) may cause failures. Increase timeout or reduce max_tasks.",
-                max_tasks, timeout
-            )
-        elif max_tasks > VERY_HIGH_CONCURRENCY_THRESHOLD and timeout < VERY_HIGH_CONCURRENCY_MIN_TIMEOUT:
-            self._logger.warning(
-                "Very high concurrency (%d tasks) with very low timeout (%ds) may cause connection issues. Recommend timeout >= %ds for max_tasks > %d.",
-                max_tasks, timeout, HIGH_CONCURRENCY_MIN_TIMEOUT, VERY_HIGH_CONCURRENCY_THRESHOLD
-            )
-        
-        if max_tasks > EXTREME_CONCURRENCY_THRESHOLD:
-            self._logger.warning(
-                "Extremely high concurrency (%d tasks) may overwhelm servers or cause rate limiting. Lower value recommended.",
-                max_tasks
-            )
-        
-        if timeout < LOW_TIMEOUT_WARNING_THRESHOLD:
-            self._logger.warning(
-                "Very low timeout (%ds) may cause legitimate requests to fail. Increase timeout for better accuracy.",
-                timeout
-            )
-        
-        self._logger.debug("Numeric configuration validation successful.")
-
-    def _configure_proxy(self, proxy: Optional[Union[str, Dict[str, str]]]) -> Optional[Dict[str, str]]:
-        """Validate and configure proxy settings."""
-        if proxy is None:
-            self._logger.debug("No proxy configuration provided.")
-            return None
-        
-        self._logger.debug("Validating and configuring proxy: %s", type(proxy).__name__)
-        if isinstance(proxy, str):
-            if not proxy.strip():
-                self._logger.error("Proxy validation failed: empty string.")
-                raise ConfigurationError("Invalid proxy: proxy string cannot be empty")
-            if not (proxy.startswith('http://') or proxy.startswith('https://') or proxy.startswith('socks5://')):
-                self._logger.error("Proxy validation failed: invalid protocol in '%s'", proxy)
-                raise ConfigurationError("Invalid proxy: must be http://, https://, or socks5:// URL")
-            self._logger.info("Proxy string validated and configured successfully.")
-            return {"http": proxy, "https": proxy}
-        elif isinstance(proxy, dict):
-            for protocol, proxy_url in proxy.items():
-                if protocol not in ['http', 'https']:
-                    self._logger.error("Proxy validation failed: invalid protocol '%s' in dict.", protocol)
-                    raise ConfigurationError(f"Invalid proxy protocol: {protocol}")
-                if not isinstance(proxy_url, str) or not proxy_url.strip():
-                    self._logger.error("Proxy validation failed: empty or invalid URL for protocol '%s'.", protocol)
-                    raise ConfigurationError(f"Invalid proxy URL for {protocol}: must be non-empty string")
-            self._logger.info("Proxy dict validated and configured successfully.")
-            return proxy
-        else:
-            self._logger.error("Proxy validation failed: not a string or dict. Value: %r", proxy)
-            raise ConfigurationError("Invalid proxy: must be string or dict")
-
-    def _validate_usernames(self, usernames: List[str]) -> List[str]:
-        """Validate and deduplicate usernames."""
-        self._logger.debug("Validating and deduplicating usernames: %r", usernames)
-        unique_usernames = list({u.strip() for u in usernames if isinstance(u, str) and u.strip()})
-        if not unique_usernames:
-            self._logger.error("No valid usernames provided after validation.")
-            raise ValidationError("No valid usernames provided")
-        self._logger.info("Validated usernames: %r", unique_usernames)
-        return unique_usernames
-
-    async def __aenter__(self) -> 'Naminter':
-        """Async context manager entry."""
-        self._logger.debug("Entering async context manager for Naminter.")
-        try:
-            self._session = await self._create_session()
-            if self._session is None:
-                self._logger.critical("Session creation failed: No session returned in __aenter__.")
-                raise SessionError("Session creation failed: No session returned")
-            self._logger.info("Async context manager entry successful.")
-            return self
-        except Exception as e:
-            self._logger.error("Failed to enter async context: %s", e, exc_info=True)
-            if self._session:
-                try:
-                    await self._session.close()
-                except Exception:
-                    pass
-                self._session = None
-            raise SessionError(f"Failed to initialize session: {str(e)}") from e
+    async def __aenter__(self) -> "Naminter":
+        self._session = AsyncSession(
+            impersonate=self.impersonate,
+            verify=self.verify_ssl,
+            timeout=self.timeout,
+            allow_redirects=self.allow_redirects,
+            proxies=self.proxy,
+        )
+        return self
     
     async def __aexit__(self, exc_type: Optional[type], exc_val: Optional[BaseException], exc_tb: Optional[Any]) -> None:
         """Async context manager exit."""
@@ -234,21 +129,6 @@ class Naminter:
         except Exception as e:
             self._logger.critical("Failed to create session: %s", e, exc_info=True)
             raise SessionError(f"Failed to create session: {e}") from e
-
-    async def _close_session(self) -> None:
-        """Helper method to close the session safely."""
-        if self._session:
-            try:
-                self._logger.debug("Closing session.")
-                await self._session.close()
-                self._session = None
-                self._logger.info("Session closed successfully.")
-            except Exception as e:
-                self._logger.error("Error closing session: %s", e, exc_info=True)
-                self._session = None
-                raise NetworkError(f"Failed to close session: {e}") from e
-        else:
-            self._logger.debug("No session to close.")
 
     async def get_wmn_info(self) -> Dict[str, Any]:
         """Get WMN metadata information."""
@@ -454,21 +334,10 @@ class Naminter:
         as_generator: bool = False,
     ) -> Union[List[SiteResult], AsyncGenerator[SiteResult, None]]:
         """Check one or multiple usernames across all loaded sites."""
-        usernames = self._validate_usernames(usernames)
+        usernames = validate_usernames(usernames)
         self._logger.info("Checking %d username(s): %s", len(usernames), usernames)
         
-        sites = self._wmn_data.get("sites")
-
-        if site_names:
-            site_names_set = set(site_names)
-            available_sites_set = set(site.get("name", "") for site in sites)
-            missing_sites = [name for name in site_names if name not in available_sites_set]
-            if missing_sites:
-                self._logger.error("Site names not found in WMN data: %s", missing_sites)
-                raise DataError(f"Site names not found in WMN data: {missing_sites}")
-            sites = [site for site in sites if site.get("name", "") in site_names_set]
-            self._logger.info("Filtered sites to only include: %s", site_names)
-
+        sites = await filter_sites(site_names, self._wmn_data.get("sites", []))
         self._logger.info("Checking against %d sites in %s mode.", len(sites), "fuzzy" if fuzzy_mode else "full")
 
         tasks: List[Coroutine[Any, Any, SiteResult]] = [
@@ -496,17 +365,7 @@ class Naminter:
         as_generator: bool = False,
     ) -> Union[List[SelfCheckResult], AsyncGenerator[SelfCheckResult, None]]:
         """Run self-checks using known accounts for each site."""
-        sites = self._wmn_data.get("sites", []) if isinstance(self._wmn_data, dict) else []
-
-        if site_names:
-            site_names_set = set(site_names)
-            available_sites_set = set(site.get("name", "") for site in sites)
-            missing_sites = [name for name in site_names if name not in available_sites_set]
-            if missing_sites:
-                self._logger.error("Site names not found in WMN data: %s", missing_sites)
-                raise DataError(f"Site names not found in WMN data: {missing_sites}")
-            sites = [site for site in sites if site.get("name", "") in site_names_set]
-            self._logger.info("Filtered sites to only include: %s", site_names)
+        sites = await filter_sites(site_names, self._wmn_data.get("sites", []))
 
         self._logger.info("Starting self-check for %d sites (fuzzy_mode=%s)", len(sites), fuzzy_mode)
 
