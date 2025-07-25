@@ -25,7 +25,7 @@ from .constants import (
 logger = logging.getLogger(__name__)
 
 
-def validate_schema(data: Dict[str, Any], schema: Optional[Dict[str, Any]]) -> None:
+def validate_wmn_data(data: Dict[str, Any], schema: Optional[Dict[str, Any]]) -> None:
     """Validate WMN data against schema."""
     if not data:
         logger.error("No WMN data provided during initialization.")
@@ -34,7 +34,7 @@ def validate_schema(data: Dict[str, Any], schema: Optional[Dict[str, Any]]) -> N
     if schema:
         try:
             jsonschema.validate(instance=data, schema=schema)
-            logger.info("WMN data validated successfully against schema.")
+            logger.info("WMN data validation successful")
         except jsonschema.ValidationError as e:
             logger.error(f"WMN data does not match schema: {e.message}")
             raise SchemaValidationError(f"WMN data does not match schema: {e.message}") from e
@@ -42,7 +42,7 @@ def validate_schema(data: Dict[str, Any], schema: Optional[Dict[str, Any]]) -> N
             logger.error(f"Invalid WMN schema: {e.message}")
             raise SchemaValidationError(f"Invalid WMN schema: {e.message}") from e
     else:
-        logger.warning("WMN data provided without schema. Skipping validation.")
+        logger.warning("No schema provided - skipping WMN data validation")
 
 
 def validate_numeric_values(max_tasks: int, timeout: int) -> None:
@@ -59,21 +59,21 @@ def validate_numeric_values(max_tasks: int, timeout: int) -> None:
 
     if max_tasks > HIGH_CONCURRENCY_THRESHOLD and timeout < HIGH_CONCURRENCY_MIN_TIMEOUT:
         logger.warning(
-            f"High concurrency ({max_tasks} tasks) with low timeout ({timeout}s) may cause failures. Increase timeout or reduce max_tasks."
+            f"High concurrency ({max_tasks} tasks) with low timeout ({timeout}s) may cause failures - consider increasing timeout or reducing max_tasks"
         )
     elif max_tasks > VERY_HIGH_CONCURRENCY_THRESHOLD and timeout < VERY_HIGH_CONCURRENCY_MIN_TIMEOUT:
         logger.warning(
-            f"Very high concurrency ({max_tasks} tasks) with very low timeout ({timeout}s) may cause connection issues. Recommend timeout >= {HIGH_CONCURRENCY_MIN_TIMEOUT}s for max_tasks > {VERY_HIGH_CONCURRENCY_THRESHOLD}."
+            f"Very high concurrency ({max_tasks} tasks) with very low timeout ({timeout}s) may cause connection issues - recommend timeout >= {HIGH_CONCURRENCY_MIN_TIMEOUT}s for max_tasks > {VERY_HIGH_CONCURRENCY_THRESHOLD}"
         )
 
     if max_tasks > EXTREME_CONCURRENCY_THRESHOLD:
         logger.warning(
-            f"Extremely high concurrency ({max_tasks} tasks) may overwhelm servers or cause rate limiting. Lower value recommended."
+            f"Extremely high concurrency ({max_tasks} tasks) may overwhelm servers or cause rate limiting - lower value recommended"
         )
 
     if timeout < LOW_TIMEOUT_WARNING_THRESHOLD:
         logger.warning(
-            f"Very low timeout ({timeout}s) may cause legitimate requests to fail. Increase timeout for better accuracy."
+            f"Very low timeout ({timeout}s) may cause legitimate requests to fail - increase timeout for better accuracy"
         )
 
 
@@ -91,7 +91,7 @@ def configure_proxy(proxy: Optional[Union[str, Dict[str, str]]]) -> Optional[Dic
             logger.error(f"Proxy validation failed: invalid protocol in '{proxy}'")
             raise ConfigurationError("Invalid proxy: must be http://, https://, or socks5:// URL")
         
-        logger.info("Proxy string validated and configured successfully.")
+        logger.info("Proxy configuration validated successfully")
         return {"http": proxy, "https": proxy}
     
     elif isinstance(proxy, dict):
@@ -104,7 +104,7 @@ def configure_proxy(proxy: Optional[Union[str, Dict[str, str]]]) -> Optional[Dic
                 logger.error(f"Proxy validation failed: empty or invalid URL for protocol '{protocol}'.")
                 raise ConfigurationError(f"Invalid proxy URL for {protocol}: must be non-empty string")
         
-        logger.info("Proxy dict validated and configured successfully.")
+        logger.info("Proxy dictionary configuration validated successfully")
         return proxy
     
     else:
