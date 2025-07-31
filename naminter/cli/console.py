@@ -10,6 +10,7 @@ from rich.text import Text
 from rich.tree import Tree
 
 from ..core.models import ResultStatus, SiteResult, SelfCheckResult
+from .. import __description__, __version__, __author__, __license__, __email__, __url__
 
 console: Console = Console()
 
@@ -28,6 +29,7 @@ _STATUS_SYMBOLS: Dict[ResultStatus, str] = {
     ResultStatus.UNKNOWN: "?",
     ResultStatus.ERROR: "!",
     ResultStatus.NOT_VALID: "X",
+    ResultStatus.AMBIGUOUS: "*",
 }
 
 _STATUS_STYLES: Dict[ResultStatus, Style] = {
@@ -36,6 +38,7 @@ _STATUS_STYLES: Dict[ResultStatus, Style] = {
     ResultStatus.UNKNOWN: Style(color=THEME['warning']),
     ResultStatus.ERROR: Style(color=THEME['error'], bold=True),
     ResultStatus.NOT_VALID: Style(color=THEME['error']),
+    ResultStatus.AMBIGUOUS: Style(color=THEME['warning'], bold=True),
 }
 
 class ResultFormatter:
@@ -142,19 +145,18 @@ class ResultFormatter:
         if error:
             node.add(Text(f"Error: {error}", style=THEME['error']))
 
-def display_version(version: str, author: str, description: str) -> None:
+def display_version() -> None:
     """Display version and metadata of the application."""
-    
-    if not all([version and version.strip(), author and author.strip(), description and description.strip()]):
-        raise ValueError("Version, author, and description must be non-empty strings")
-    
     version_table = Table.grid(padding=(0, 2))
     version_table.add_column(style=THEME['info'])
     version_table.add_column(style="bold")
 
-    version_table.add_row("Version:", version)
-    version_table.add_row("Author:", author)
-    version_table.add_row("Description:", description)
+    version_table.add_row("Version:", __version__)
+    version_table.add_row("Author:", __author__)
+    version_table.add_row("Description:", __description__)
+    version_table.add_row("License:", __license__)
+    version_table.add_row("Email:", __email__)
+    version_table.add_row("GitHub:", __url__)
 
     panel = Panel(
         version_table,
