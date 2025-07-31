@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "naminter"
-version = "1.0.5"
+version = "1.0.6"
 description = "The most powerful and fast username availability checker that searches across hundreds of websites using WhatsMyName dataset"
 readme = "README.md"
 authors = [{ name = "3xp0rt", email = "contact@3xp0rt.com" }]
