@@ -19,7 +19,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  build-and-push:
+  docker-build:
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -65,13 +65,15 @@ jobs:
             type=semver,pattern={{major}}.{{minor}}
             type=semver,pattern={{major}}
             type=raw,value=latest,enable={{is_default_branch}}
-            # add commit sha for unique identification
             type=sha,prefix={{branch}}-
           labels: |
             org.opencontainers.image.title=Naminter
             org.opencontainers.image.description=The most powerful and fast username availability checker
             org.opencontainers.image.vendor=3xp0rt
             org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.created=${{ steps.meta.outputs.created }}
             
       - name: Build and push Docker image
         id: build
@@ -85,6 +87,8 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+          provenance: true
+          sbom: true
           
       - name: Generate artifact attestation
         if: github.event_name != 'pull_request'
