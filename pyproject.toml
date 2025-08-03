@@ -29,13 +29,13 @@ classifiers = [
 ]
 
 dependencies = [
-    "click>=8.0.0",
-    "rich>=14.0.0",
-    "rich-click>=1.8.0",
-    "curl-cffi>=0.11.4",
-    "jsonschema>=4.24.0",
+    "click>=8.2.1",
+    "curl-cffi>=0.12.0",
     "jinja2>=3.1.6",
-    "weasyprint>=65.1"
+    "jsonschema>=4.25.0",
+    "rich>=14.1.0",
+    "rich-click>=1.8.9",
+    "weasyprint>=66.0"
 ]
 
 maintainers = [{ name = "3xp0rt" }]
