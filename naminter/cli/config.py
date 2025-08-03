@@ -9,7 +9,8 @@ from ..core.constants import (
     WMN_REMOTE_URL,
     WMN_SCHEMA_URL,
 )
-from ..core.models import BrowserImpersonation
+from curl_cffi import BrowserTypeLiteral, ExtraFingerprints
+
 
 @dataclass
 class NaminterConfig:
@@ -44,7 +45,10 @@ class NaminterConfig:
     proxy: Optional[str] = None
     allow_redirects: bool = False
     verify_ssl: bool = False
-    impersonate: BrowserImpersonation = BrowserImpersonation.CHROME
+    impersonate: BrowserTypeLiteral = "chrome"
+    ja3: Optional[str] = None
+    akamai: Optional[str] = None
+    extra_fp: Optional[Union[ExtraFingerprints, Dict[str, Any]]] = None
     browse: bool = False
     fuzzy_mode: bool = False
     self_check: bool = False
@@ -91,8 +95,8 @@ class NaminterConfig:
         self.impersonate = self.get_impersonation()
 
     def get_impersonation(self) -> Optional[str]:
-        """Return impersonation string or None if impersonation is NONE."""
-        return None if self.impersonate == BrowserImpersonation.NONE else self.impersonate.value
+        """Return impersonation string or None if impersonation is 'none'."""
+        return None if self.impersonate == "none" else self.impersonate
 
     @property
     def response_dir(self) -> Optional[Path]:
@@ -134,7 +138,10 @@ class NaminterConfig:
             "proxy": self.proxy,
             "allow_redirects": self.allow_redirects,
             "verify_ssl": self.verify_ssl,
-            "impersonate": self.impersonate.value if isinstance(self.impersonate, BrowserImpersonation) else self.impersonate,
+            "impersonate": self.impersonate,
+            "ja3": self.ja3,
+            "akamai": self.akamai,
+            "extra_fp": self.extra_fp.to_dict() if isinstance(self.extra_fp, ExtraFingerprints) else self.extra_fp,
             "browse": self.browse,
             "fuzzy_mode": self.fuzzy_mode,
             "self_check": self.self_check,

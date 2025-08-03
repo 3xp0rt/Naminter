@@ -29,8 +29,9 @@ classifiers = [
 ]
 
 dependencies = [
-    "typer>=0.16.0",
+    "click>=8.0.0",
     "rich>=14.0.0",
+    "rich-click>=1.8.0",
     "curl-cffi>=0.11.4",
     "jsonschema>=4.24.0",
     "jinja2>=3.1.6",

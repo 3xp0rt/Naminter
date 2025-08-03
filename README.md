@@ -225,7 +225,6 @@ asyncio.run(main())
 ```python
 import asyncio
 from naminter import Naminter
-from naminter.core.models import BrowserImpersonation
 
 async def main():
     wmn_data, wmn_schema = await load_wmn_data()
@@ -236,7 +235,7 @@ async def main():
         wmn_schema=wmn_schema,
         max_tasks=100,
         timeout=15,
-        impersonate=BrowserImpersonation.CHROME,
+        impersonate="chrome",
         verify_ssl=True,
         proxy="http://proxy:8080"
     ) as naminter:

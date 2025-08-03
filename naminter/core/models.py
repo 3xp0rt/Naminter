@@ -1,7 +1,8 @@
 from dataclasses import dataclass, asdict, field
 from enum import Enum
-from typing import Optional, Dict, Any, List, Union, Set
+from typing import Optional, Dict, Any, List, Union, Set, Literal, TypedDict
 from datetime import datetime
+from curl_cffi import BrowserTypeLiteral, CurlSslVersion, ExtraFingerprints
 
 class ResultStatus(Enum):
     """Status of username search results."""
@@ -11,16 +12,6 @@ class ResultStatus(Enum):
     UNKNOWN = "unknown"
     AMBIGUOUS = "ambiguous"
     NOT_VALID = "not_valid"
-
-class BrowserImpersonation(str, Enum):
-    """Browser impersonation options."""
-    NONE = "none"
-    CHROME = "chrome"
-    CHROME_ANDROID = "chrome_android"
-    SAFARI = "safari"
-    SAFARI_IOS = "safari_ios"
-    EDGE = "edge"
-    FIREFOX = "firefox"
 
 @dataclass
 class SiteResult:

@@ -7,7 +7,8 @@ from typing import Any, AsyncGenerator, Coroutine, Dict, List, Optional, Union
 import jsonschema
 from curl_cffi.requests import AsyncSession, RequestsError
 
-from ..core.models import BrowserImpersonation, ResultStatus, SiteResult, SelfCheckResult
+from curl_cffi import BrowserTypeLiteral, ExtraFingerprints
+from ..core.models import ResultStatus, SiteResult, SelfCheckResult
 from ..core.exceptions import (
     ConfigurationError,
     NetworkError,
@@ -52,18 +53,21 @@ class Naminter:
         wmn_schema: Optional[Dict[str, Any]] = None,
         max_tasks: int = MAX_CONCURRENT_TASKS,
         timeout: int = HTTP_REQUEST_TIMEOUT_SECONDS,
-        impersonate: Optional[BrowserImpersonation] = BROWSER_IMPERSONATE_AGENT,
+        proxy: Optional[Union[str, Dict[str, str]]] = None,
         verify_ssl: bool = HTTP_SSL_VERIFY,
         allow_redirects: bool = HTTP_ALLOW_REDIRECTS,
-        proxy: Optional[Union[str, Dict[str, str]]] = None,
+        impersonate: Optional[BrowserTypeLiteral] = BROWSER_IMPERSONATE_AGENT,
+        ja3: Optional[str] = None,
+        akamai: Optional[str] = None,
+        extra_fp: Optional[Union[ExtraFingerprints, Dict[str, Any]]] = None,
     ) -> None:
         """Initialize Naminter with configuration parameters."""
         self._logger = logging.getLogger(__name__)
         self._logger.addHandler(logging.NullHandler())
 
         self._logger.info(
-            "Initializing Naminter with configuration: max_tasks=%d, timeout=%ds, browser=%s, ssl_verify=%s, allow_redirects=%s, proxy=%s", 
-            max_tasks, timeout, impersonate, verify_ssl, allow_redirects, bool(proxy)
+            "Initializing Naminter with configuration: max_tasks=%d, timeout=%ds, browser=%s, ssl_verify=%s, allow_redirects=%s, proxy=%s, ja3=%s, akamai=%s", 
+            max_tasks, timeout, impersonate, verify_ssl, allow_redirects, bool(proxy), ja3, akamai
         )
 
         self.max_tasks = max_tasks if max_tasks is not None else MAX_CONCURRENT_TASKS
@@ -72,6 +76,9 @@ class Naminter:
         self.verify_ssl = verify_ssl if verify_ssl is not None else HTTP_SSL_VERIFY
         self.allow_redirects = allow_redirects if allow_redirects is not None else HTTP_ALLOW_REDIRECTS
         self.proxy = configure_proxy(proxy)
+        self.ja3 = ja3
+        self.akamai = akamai
+        self.extra_fp = extra_fp
         
         validate_numeric_values(self.max_tasks, self.timeout)
         validate_wmn_data(wmn_data, wmn_schema)
@@ -83,18 +90,24 @@ class Naminter:
         
         sites_count = len(self._wmn_data.get("sites", [])) if self._wmn_data else 0
         self._logger.info(
-            "Naminter initialized successfully: loaded %d sites, max_tasks=%d, timeout=%ds, browser=%s, ssl_verify=%s, proxy=%s",
+            "Naminter initialized successfully: loaded %d sites, max_tasks=%d, timeout=%ds, browser=%s, ssl_verify=%s, proxy=%s, ja3=%s, akamai=%s",
             sites_count, self.max_tasks, self.timeout,
-            self.impersonate, self.verify_ssl, bool(self.proxy)
+            self.impersonate, self.verify_ssl, bool(self.proxy), self.ja3, self.akamai
         )
 
     async def __aenter__(self) -> "Naminter":
+        # Convert ExtraFingerprints to dict if needed
+        extra_fp_value = self.extra_fp.to_dict() if isinstance(self.extra_fp, ExtraFingerprints) else self.extra_fp
+        
         self._session = AsyncSession(
-            impersonate=self.impersonate,
+            proxies=self.proxy,
             verify=self.verify_ssl,
             timeout=self.timeout,
             allow_redirects=self.allow_redirects,
-            proxies=self.proxy,
+            impersonate=self.impersonate,
+            ja3=self.ja3,
+            akamai=self.akamai,
+            extra_fp=extra_fp_value,
         )
         return self
     
