@@ -89,16 +89,16 @@ class SelfCheckResult:
     site_name: str
     category: str
     results: List[SiteResult]
-    overall_status: ResultStatus = field(init=False)
+    result_status: ResultStatus = field(init=False)
     error: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.now)
 
     def __post_init__(self) -> None:
-        """Calculate overall status from results."""
-        self.overall_status = self._get_overall_status()
+        """Calculate result status from results."""
+        self.result_status = self.get_result_status()
 
-    def _get_overall_status(self) -> ResultStatus:
-        """Determine overall status from results."""
+    def get_result_status(self) -> ResultStatus:
+        """Determine result status from results."""
         if self.error:
             return ResultStatus.ERROR
             
@@ -123,7 +123,7 @@ class SelfCheckResult:
         return {
             'site_name': self.site_name,
             'category': self.category,
-            'overall_status': self.overall_status.value,
+            'result_status': self.result_status.value,
             'results': [result.to_dict(exclude_response_text=exclude_response_text) for result in self.results],
             'created_at': self.created_at.isoformat(),
             'error': self.error,

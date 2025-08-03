@@ -97,10 +97,10 @@ class ResultFormatter:
         
         site_name = self_check_result.site_name
         test_results = self_check_result.results
-        overall_status = self_check_result.overall_status
+        result_status = self_check_result.result_status
 
         root_label = Text()
-        root_label.append(_STATUS_SYMBOLS.get(overall_status, "?"), style=_STATUS_STYLES.get(overall_status, Style()))
+        root_label.append(_STATUS_SYMBOLS.get(result_status, "?"), style=_STATUS_STYLES.get(result_status, Style()))
         root_label.append(" [", style=THEME["muted"])
         root_label.append(site_name, style=THEME["info"])
         root_label.append("]", style=THEME["muted"])

@@ -249,7 +249,7 @@ class NaminterCLI:
     def _should_include_result(self, result: Union[SiteResult, SelfCheckResult]) -> bool:
         """Determine if a result should be included in output based on filter settings."""
         if isinstance(result, SelfCheckResult):
-            status = result.overall_status
+            status = result.result_status
         else:
             status = result.result_status
         
