@@ -1,13 +1,11 @@
 import asyncio
-import json
 import logging
 import webbrowser
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Union
 import typing
 
 import rich_click as click
-from curl_cffi import requests
 from rich import box
 from rich.panel import Panel
 from rich.table import Table
@@ -23,9 +21,10 @@ from ..cli.console import (
 )
 from ..cli.exporters import Exporter
 from ..cli.progress import ProgressManager, ResultsTracker
+from ..cli.utils import load_wmn_lists
 from ..core.models import ResultStatus, SiteResult, SelfCheckResult
 from ..core.main import Naminter
-from ..core.constants import MAX_CONCURRENT_TASKS, HTTP_REQUEST_TIMEOUT_SECONDS, HTTP_ALLOW_REDIRECTS, HTTP_SSL_VERIFY, WMN_REMOTE_URL, WMN_SCHEMA_URL
+from ..core.constants import MAX_CONCURRENT_TASKS, HTTP_REQUEST_TIMEOUT_SECONDS, HTTP_ALLOW_REDIRECTS, HTTP_SSL_VERIFY, WMN_SCHEMA_URL
 from ..core.exceptions import DataError, ConfigurationError
 from .. import __description__, __version__
 
@@ -62,79 +61,16 @@ class NaminterCLI:
         sanitized = sanitized.strip(' .')[:200] if sanitized.strip(' .') else 'unnamed'
         return sanitized
 
-    def _load_wmn_lists(self, local_list_paths: Optional[List[Path]] = None, remote_list_urls: Optional[List[str]] = None, skip_validation: bool = False) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
-        """Load and merge WMN lists from local and remote sources."""
-        wmn_data = {"sites": [], "categories": [], "authors": [], "license": []}
-        wmn_schema = None
-        
-        def _fetch_json(url: str, timeout: int = 30) -> Dict[str, Any]:
-            """Helper to fetch and parse JSON from URL."""
-            if not url or not isinstance(url, str) or not url.strip():
-                raise ValueError(f"Invalid URL: {url}")
-            
-            try:
-                response = requests.get(url, timeout=timeout)
-                response.raise_for_status()
-                return response.json()
-            except requests.exceptions.RequestException as e:
-                raise DataError(f"Failed to fetch from {url}: {e}") from e
-            except json.JSONDecodeError as e:
-                raise DataError(f"Failed to parse JSON from {url}: {e}") from e
 
-        def _merge_data(data: Dict[str, Any]) -> None:
-            """Helper to merge data into wmn_data."""
-            if isinstance(data, dict):
-                for key in ["sites", "categories", "authors", "license"]:
-                    if key in data and isinstance(data[key], list):
-                        wmn_data[key].extend(data[key])
-        
-        if not skip_validation:
-            try:
-                if self.config.local_schema_path:
-                    wmn_schema = json.loads(Path(self.config.local_schema_path).read_text())
-                elif self.config.remote_schema_url:
-                    wmn_schema = _fetch_json(self.config.remote_schema_url)
-            except Exception:
-                pass
-        
-        sources = []
-        if remote_list_urls:
-            sources.extend([(url, True) for url in remote_list_urls])
-        if local_list_paths:
-            sources.extend([(path, False) for path in local_list_paths])
-        
-        if not sources:
-            sources = [(WMN_REMOTE_URL, True)]
-        
-        for source, is_remote in sources:
-            try:
-                if is_remote:
-                    data = _fetch_json(source)
-                else:
-                    data = json.loads(Path(source).read_text())
-                _merge_data(data)
-            except Exception as e:
-                if not sources or source == WMN_REMOTE_URL:
-                    raise DataError(f"Failed to load WMN data from {source}: {e}") from e
-        
-        if not wmn_data["sites"]:
-            raise DataError("No sites loaded from any source")
-        
-        unique_sites = {site["name"]: site for site in wmn_data["sites"] 
-                       if isinstance(site, dict) and site.get("name")}
-        wmn_data["sites"] = list(unique_sites.values())
-        wmn_data["categories"] = sorted(set(wmn_data["categories"]))
-        wmn_data["authors"] = sorted(set(wmn_data["authors"]))
-        wmn_data["license"] = list(dict.fromkeys(wmn_data["license"]))
-        
-        return wmn_data, wmn_schema
 
     async def run(self) -> None:
         """Main execution method with progress tracking."""
-        wmn_data, wmn_schema = self._load_wmn_lists(
+        wmn_data, wmn_schema = load_wmn_lists(
             local_list_paths=self.config.local_list_paths,
             remote_list_urls=self.config.remote_list_urls,
-            skip_validation=self.config.skip_validation
+            skip_validation=self.config.skip_validation,
+            local_schema_path=self.config.local_schema_path,
+            remote_schema_url=self.config.remote_schema_url
         )
         
         async with Naminter(
