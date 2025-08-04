@@ -21,7 +21,7 @@ from ..cli.console import (
 )
 from ..cli.exporters import Exporter
 from ..cli.progress import ProgressManager, ResultsTracker
-from ..cli.utils import load_wmn_lists
+from ..cli.utils import load_wmn_lists, sanitize_filename
 from ..core.models import ResultStatus, SiteResult, SelfCheckResult
 from ..core.main import Naminter
 from ..core.constants import MAX_CONCURRENT_TASKS, HTTP_REQUEST_TIMEOUT_SECONDS, HTTP_ALLOW_REDIRECTS, HTTP_SSL_VERIFY, WMN_SCHEMA_URL
@@ -50,16 +50,6 @@ class NaminterCLI:
         except Exception as e:
             display_error(f"Cannot create/access response directory: {e}")
             return None
-
-    def _sanitize_filename(self, filename: str) -> str:
-        """Sanitize filename for cross-platform compatibility."""
-        if not filename or not str(filename).strip():
-            return "unnamed"
-            
-        invalid_chars = '<>:"|?*\\/\0'
-        sanitized = ''.join('_' if c in invalid_chars or ord(c) < 32 else c for c in str(filename))    
-        sanitized = sanitized.strip(' .')[:200] if sanitized.strip(' .') else 'unnamed'
-        return sanitized
 
 
 
@@ -218,8 +208,8 @@ class NaminterCLI:
         
         if self.config.save_response and result.response_text and self._response_dir:
             try:
-                safe_site_name = self._sanitize_filename(result.site_name)
-                safe_username = self._sanitize_filename(result.username)
+                safe_site_name = sanitize_filename(result.site_name)
+                safe_username = sanitize_filename(result.username)
                 status_str = result.result_status.value
                 created_at_str = result.created_at.strftime('%Y%m%d_%H%M%S')
                 
