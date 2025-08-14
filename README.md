@@ -1,6 +1,6 @@
 # 🔍 Naminter
 
-[![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)](https://www.python.org/downloads/)
+[![Python Version](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![GitHub Stars](https://img.shields.io/github/stars/3xp0rt/naminter?style=social)](https://github.com/3xp0rt/naminter)
 [![PyPI Version](https://img.shields.io/pypi/v/naminter)](https://pypi.org/project/naminter/)
@@ -156,7 +156,7 @@ async def load_wmn_data():
             wmn_data = await response.json()
         
         # Optionally load the schema for validation
-        async with session.get("https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn_schema.json") as response:
+        async with session.get("https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data-schema.json") as response:
             wmn_schema = await response.json()
     
     return wmn_data, wmn_schema
@@ -167,7 +167,7 @@ def load_local_wmn_data():
     with open("wmn-data.json", "r") as f:
         wmn_data = json.load(f)
     
-    with open("wmn_schema.json", "r") as f:
+    with open("wmn-data-schema.json", "r") as f:
         wmn_schema = json.load(f)
     
     return wmn_data, wmn_schema
@@ -288,17 +288,12 @@ async def main():
     
     async with Naminter(wmn_data, wmn_schema) as naminter:
         # Get information about the loaded WMN data
-        info = await naminter.get_wmn_info()
+        info = await naminter.get_wmn_summary()
         print(f"Total sites: {info['sites_count']}")
         print(f"Categories: {', '.join(info['categories'])}")
         
-        # List all available sites
-        sites = naminter.list_sites()
-        print(f"Available sites: {sites[:10]}...")  # Show first 10
-        
-        # List all categories
-        categories = naminter.list_categories()
-        print(f"All categories: {categories}")
+        # Summaries include sites_count, categories and categories_count
+        # Use this data to derive lists as needed.
 
 asyncio.run(main())
 ```

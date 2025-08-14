@@ -1,5 +1,4 @@
 from typing import Final
-from curl_cffi import BrowserTypeLiteral
 
 # Remote data source configuration
 WMN_REMOTE_URL: Final[str] = "https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data.json"
@@ -11,7 +10,6 @@ HTTP_SSL_VERIFY: Final[bool] = False
 HTTP_ALLOW_REDIRECTS: Final[bool] = False
 
 # Browser impersonation settings
-# To disable browser impersonation by default, change this to "none"
 BROWSER_IMPERSONATE_AGENT: Final[str] = "chrome"
 
 # Concurrency settings

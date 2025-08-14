@@ -132,24 +132,3 @@ def validate_usernames(usernames: List[str]) -> List[str]:
     
     logger.info(f"Validated {len(unique_usernames)} unique usernames")
     return unique_usernames
-
-
-async def filter_sites(
-    site_names: Optional[List[str]],
-    sites: List[Dict[str, Any]],
-) -> List[Dict[str, Any]]:
-    """Filter the list of sites by the provided site names."""
-    if not site_names:
-        return sites
-    
-    # Convert to set for O(1) lookup performance
-    site_names_set = set(site_names)
-    available = {site.get("name") for site in sites}
-    missing = site_names_set - available
-    
-    if missing:
-        raise DataError(f"Unknown site names: {missing}")
-    
-    filtered_sites = [site for site in sites if site.get("name") in site_names_set]
-    logger.info(f"Filtered to {len(filtered_sites)} sites from {len(sites)} total")
-    return filtered_sites

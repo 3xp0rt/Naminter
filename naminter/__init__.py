@@ -1,6 +1,6 @@
 from .core.main import Naminter
 
-__version__ = "1.0.6"
+__version__ = "1.0.7"
 __author__ = "3xp0rt"
 __description__ = "WhatsMyName Enumeration Tool"
 __license__ = "MIT"

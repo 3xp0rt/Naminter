@@ -27,18 +27,18 @@ _STATUS_SYMBOLS: Dict[ResultStatus, str] = {
     ResultStatus.FOUND: "+",
     ResultStatus.NOT_FOUND: "-",
     ResultStatus.UNKNOWN: "?",
+    ResultStatus.AMBIGUOUS: "*",
     ResultStatus.ERROR: "!",
     ResultStatus.NOT_VALID: "X",
-    ResultStatus.AMBIGUOUS: "*",
 }
 
 _STATUS_STYLES: Dict[ResultStatus, Style] = {
     ResultStatus.FOUND: Style(color=THEME['success'], bold=True),
     ResultStatus.NOT_FOUND: Style(color=THEME['error']),
     ResultStatus.UNKNOWN: Style(color=THEME['warning']),
+    ResultStatus.AMBIGUOUS: Style(color=THEME['warning'], bold=True),
     ResultStatus.ERROR: Style(color=THEME['error'], bold=True),
     ResultStatus.NOT_VALID: Style(color=THEME['error']),
-    ResultStatus.AMBIGUOUS: Style(color=THEME['warning'], bold=True),
 }
 
 class ResultFormatter:
@@ -54,7 +54,7 @@ class ResultFormatter:
         if site_result is None:
             raise ValueError("SiteResult cannot be None")
 
-        if not hasattr(site_result, 'result_status') or site_result.result_status not in ResultStatus:
+        if not hasattr(site_result, 'result_status') or not isinstance(site_result.result_status, ResultStatus):
             raise ValueError("SiteResult must have a valid result_status")
 
         root_label = Text()
@@ -82,13 +82,13 @@ class ResultFormatter:
 
     def format_self_check(self, self_check_result: SelfCheckResult, response_files: Optional[List[Optional[Path]]] = None) -> Tree:
         """Format self-check results into a tree structure."""
-        
+
         if not self_check_result:
             raise ValueError("SelfCheckResult cannot be None or empty")
-            
+
         if not isinstance(self_check_result, SelfCheckResult):
             raise ValueError("Parameter must be a SelfCheckResult instance")
-            
+
         if not self_check_result.site_name or not self_check_result.site_name.strip():
             raise ValueError("SelfCheckResult must have a valid site_name")
             
@@ -110,16 +110,15 @@ class ResultFormatter:
         for i, test in enumerate(test_results):
             if test is None:
                 continue
-                
+
             url_text = Text()
-            url_text.append(_STATUS_SYMBOLS.get(test.result_status, "?"), 
-                          style=_STATUS_STYLES.get(test.result_status, Style()))
+            url_text.append(_STATUS_SYMBOLS.get(test.result_status, "?"), style=_STATUS_STYLES.get(test.result_status, Style()))
             url_text.append(" ", style=THEME["muted"])
             url_text.append(f"{test.username}: ", style=THEME["info"])            
             url_text.append(test.result_url or "No URL", style=THEME["primary"])
-            
+
             test_node = tree.add(url_text)
-            
+
             if self.show_details:
                 response_file = response_files[i] if response_files and i < len(response_files) else None
                 self._add_debug_info(

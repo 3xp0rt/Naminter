@@ -10,7 +10,7 @@ from weasyprint import HTML
 from ..core.models import SiteResult
 from ..core.exceptions import ConfigurationError
 
-type FormatName = Literal['csv', 'json', 'html', 'pdf']
+FormatName = Literal['csv', 'json', 'html', 'pdf']
 ResultDict = Dict[str, Any]
 
 class ExportMethod(Protocol):

@@ -1,14 +1,16 @@
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import List, Optional, Union, Dict, Any
+import json
 
-from ..cli.console import display_error, display_warning
+from ..cli.console import display_warning
 from ..core.constants import (
     HTTP_REQUEST_TIMEOUT_SECONDS,
     MAX_CONCURRENT_TASKS,
     WMN_REMOTE_URL,
     WMN_SCHEMA_URL,
 )
+from ..core.exceptions import ConfigurationError
 from curl_cffi import BrowserTypeLiteral, ExtraFingerprints
 
 
@@ -38,6 +40,7 @@ class NaminterConfig:
     filter_not_found: bool = False
     filter_unknown: bool = False
     filter_ambiguous: bool = False
+    filter_not_valid: bool = False
 
     # Network and concurrency
     max_tasks: int = MAX_CONCURRENT_TASKS
@@ -45,10 +48,10 @@ class NaminterConfig:
     proxy: Optional[str] = None
     allow_redirects: bool = False
     verify_ssl: bool = False
-    impersonate: BrowserTypeLiteral = "chrome"
+    impersonate: Optional[BrowserTypeLiteral] = "chrome"
     ja3: Optional[str] = None
     akamai: Optional[str] = None
-    extra_fp: Optional[Union[ExtraFingerprints, Dict[str, Any]]] = None
+    extra_fp: Optional[Union[ExtraFingerprints, Dict[str, Any], str]] = None
     browse: bool = False
     fuzzy_mode: bool = False
     self_check: bool = False
@@ -81,8 +84,10 @@ class NaminterConfig:
                 "Self-check mode enabled: provided usernames will be ignored, "
                 "using known usernames from site configurations instead."
             )
+
         if not self.self_check and not self.usernames:
-            raise ValueError("No usernames provided and self-check not enabled.")
+            raise ValueError("At least one username is required")
+
         try:
             if self.local_list_paths:
                 self.local_list_paths = [str(p) for p in self.local_list_paths]
@@ -92,34 +97,45 @@ class NaminterConfig:
                 self.remote_list_urls = [WMN_REMOTE_URL]
         except Exception as e:
             raise ValueError(f"Configuration validation failed: {e}") from e
-        self.impersonate = self.get_impersonation()
 
-    def get_impersonation(self) -> Optional[str]:
-        """Return impersonation string or None if impersonation is 'none'."""
-        return None if self.impersonate == "none" else self.impersonate
+        if isinstance(self.impersonate, str) and self.impersonate.lower() == "none":
+            self.impersonate = None
+
+        if self.extra_fp is not None and isinstance(self.extra_fp, str):
+            try:
+                self.extra_fp = json.loads(self.extra_fp)
+            except json.JSONDecodeError as e:
+                raise ConfigurationError(f"Invalid JSON in extra_fp: {e}") from e
+            except TypeError as e:
+                raise ConfigurationError(f"Invalid data type in extra_fp: {e}") from e
+
 
     @property
     def response_dir(self) -> Optional[Path]:
         """Return response directory Path if save_response is enabled."""
         if not self.save_response:
             return None
+
         if self.response_path:
             return Path(self.response_path)
-        return Path.cwd()
+            
+        return Path.cwd() / "responses"
 
     @property
     def export_formats(self) -> Dict[str, Optional[str]]:
         """Return enabled export formats with their custom paths."""
-        formats: Dict[str, Optional[str]] = {}
-        if self.csv_export:
-            formats["csv"] = self.csv_path
-        if self.pdf_export:
-            formats["pdf"] = self.pdf_path
-        if self.html_export:
-            formats["html"] = self.html_path
-        if self.json_export:
-            formats["json"] = self.json_path
-        return formats
+        export_configs = [
+            ("csv", self.csv_export, self.csv_path),
+            ("pdf", self.pdf_export, self.pdf_path),
+            ("html", self.html_export, self.html_path),
+            ("json", self.json_export, self.json_path),
+        ]
+        
+        return {
+            format_name: path 
+            for format_name, is_enabled, path in export_configs 
+            if is_enabled
+        }
 
     def to_dict(self) -> Dict[str, Any]:
         """Convert configuration to a dictionary."""
@@ -164,5 +180,6 @@ class NaminterConfig:
             "filter_not_found": self.filter_not_found,
             "filter_unknown": self.filter_unknown,
             "filter_ambiguous": self.filter_ambiguous,
+            "filter_not_valid": self.filter_not_valid,
             "no_progressbar": self.no_progressbar,
         }

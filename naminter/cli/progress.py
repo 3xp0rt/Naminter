@@ -35,10 +35,8 @@ class ResultsTracker:
             raise ValueError("Result cannot be None")
         if not hasattr(result, 'result_status'):
             raise ValueError("Result must have a result_status attribute")
-            
-        if result.result_status not in (ResultStatus.ERROR, ResultStatus.NOT_VALID):
-            self.results_count += 1
-            
+
+        self.results_count += 1
         self.status_counts[result.result_status] += 1
 
     def get_progress_text(self) -> str:
@@ -100,7 +98,6 @@ class ProgressManager:
             TimeElapsedColumn(),
             TextColumn("•"),
             TimeRemainingColumn(),
-            TextColumn(""),
             console=self.console,
         )
         

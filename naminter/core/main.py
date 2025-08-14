@@ -1,29 +1,21 @@
 import asyncio
-import jsonschema
 import logging
 import time
-from typing import Any, AsyncGenerator, Coroutine, Dict, List, Optional, Union
+from typing import Any, AsyncGenerator, Dict, List, Optional, Union, Set
 
-import jsonschema
 from curl_cffi.requests import AsyncSession, RequestsError
 
 from curl_cffi import BrowserTypeLiteral, ExtraFingerprints
-from ..core.models import ResultStatus, SiteResult, SelfCheckResult
+from ..core.models import ResultStatus, SiteResult, SelfCheckResult, ValidationMode
 from ..core.exceptions import (
-    ConfigurationError,
-    NetworkError,
     DataError,
-    SessionError,
-    SchemaValidationError,
     ValidationError,
-    ConcurrencyError,
 )
 from ..core.utils import (
     validate_wmn_data,
     validate_numeric_values,
     configure_proxy,
     validate_usernames,
-    filter_sites,
 )
 from ..core.constants import (
     HTTP_REQUEST_TIMEOUT_SECONDS,
@@ -31,16 +23,6 @@ from ..core.constants import (
     HTTP_ALLOW_REDIRECTS,
     BROWSER_IMPERSONATE_AGENT,
     MAX_CONCURRENT_TASKS,
-    MIN_TASKS,
-    MAX_TASKS_LIMIT,
-    MIN_TIMEOUT,
-    MAX_TIMEOUT,
-    HIGH_CONCURRENCY_THRESHOLD,
-    HIGH_CONCURRENCY_MIN_TIMEOUT,
-    VERY_HIGH_CONCURRENCY_THRESHOLD,
-    VERY_HIGH_CONCURRENCY_MIN_TIMEOUT,
-    EXTREME_CONCURRENCY_THRESHOLD,
-    LOW_TIMEOUT_WARNING_THRESHOLD,
     ACCOUNT_PLACEHOLDER,
 )
 
@@ -70,15 +52,15 @@ class Naminter:
             max_tasks, timeout, impersonate, verify_ssl, allow_redirects, bool(proxy), ja3, akamai
         )
 
-        self.max_tasks = max_tasks if max_tasks is not None else MAX_CONCURRENT_TASKS
-        self.timeout = timeout if timeout is not None else HTTP_REQUEST_TIMEOUT_SECONDS
-        self.impersonate = impersonate if impersonate is not None else BROWSER_IMPERSONATE_AGENT
-        self.verify_ssl = verify_ssl if verify_ssl is not None else HTTP_SSL_VERIFY
-        self.allow_redirects = allow_redirects if allow_redirects is not None else HTTP_ALLOW_REDIRECTS
+        self.max_tasks = max_tasks
+        self.timeout = timeout
+        self.impersonate = impersonate
+        self.verify_ssl = verify_ssl
+        self.allow_redirects = allow_redirects
         self.proxy = configure_proxy(proxy)
         self.ja3 = ja3
         self.akamai = akamai
-        self.extra_fp = extra_fp
+        self.extra_fp = extra_fp.to_dict() if isinstance(extra_fp, ExtraFingerprints) else extra_fp
         
         validate_numeric_values(self.max_tasks, self.timeout)
         validate_wmn_data(wmn_data, wmn_schema)
@@ -86,20 +68,18 @@ class Naminter:
         self._wmn_data = wmn_data
         self._wmn_schema = wmn_schema
         self._semaphore = asyncio.Semaphore(self.max_tasks)
+        self._session_lock = asyncio.Lock()
         self._session: Optional[AsyncSession] = None
         
-        sites_count = len(self._wmn_data.get("sites", [])) if self._wmn_data else 0
         self._logger.info(
-            "Naminter initialized successfully: loaded %d sites, max_tasks=%d, timeout=%ds, browser=%s, ssl_verify=%s, proxy=%s, ja3=%s, akamai=%s",
-            sites_count, self.max_tasks, self.timeout,
+            "Naminter initialized successfully: max_tasks=%d, timeout=%ds, browser=%s, ssl_verify=%s, proxy=%s, ja3=%s, akamai=%s",
+            self.max_tasks, self.timeout,
             self.impersonate, self.verify_ssl, bool(self.proxy), self.ja3, self.akamai
         )
 
-    async def __aenter__(self) -> "Naminter":
-        # Convert ExtraFingerprints to dict if needed
-        extra_fp_value = self.extra_fp.to_dict() if isinstance(self.extra_fp, ExtraFingerprints) else self.extra_fp
-        
-        self._session = AsyncSession(
+    def _create_async_session(self) -> AsyncSession:
+        """Create and configure the underlying HTTP session."""
+        return AsyncSession(
             proxies=self.proxy,
             verify=self.verify_ssl,
             timeout=self.timeout,
@@ -107,12 +87,27 @@ class Naminter:
             impersonate=self.impersonate,
             ja3=self.ja3,
             akamai=self.akamai,
-            extra_fp=extra_fp_value,
+            extra_fp=self.extra_fp,
         )
-        return self
-    
-    async def __aexit__(self, exc_type: Optional[type], exc_val: Optional[BaseException], exc_tb: Optional[Any]) -> None:
-        """Async context manager exit."""
+
+    def open_session(self) -> None:
+        """Open the HTTP session for manual (non-context) usage."""
+        if self._session is None:
+            self._session = self._create_async_session()
+            self._logger.info("HTTP session opened successfully.")
+
+    async def ensure_session(self) -> None:
+        """Ensure the HTTP session is initialized (safe for concurrent calls)."""
+        if self._session is not None:
+            return
+            
+        async with self._session_lock:
+            if self._session is None:
+                self._session = self._create_async_session()
+                self._logger.info("HTTP session opened successfully.")
+
+    async def close_session(self) -> None:
+        """Close the HTTP session if it is open."""
         if self._session:
             try:
                 await self._session.close()
@@ -122,33 +117,111 @@ class Naminter:
             finally:
                 self._session = None
 
-    async def get_wmn_info(self) -> Dict[str, Any]:
-        """Get WMN metadata information."""
+    async def __aenter__(self) -> "Naminter":
+        await self.ensure_session()
+        return self
+    
+    async def __aexit__(self, exc_type: Optional[type], exc_val: Optional[BaseException], exc_tb: Optional[Any]) -> None:
+        """Async context manager exit."""
+        await self.close_session()
+
+    async def get_wmn_summary(
+        self,
+        site_names: Optional[List[str]] = None,
+        include_categories: Optional[List[str]] = None,
+        exclude_categories: Optional[List[str]] = None,
+    ) -> Dict[str, Any]:
+        """Get enriched WMN metadata information for diagnostics and UI.
+
+        Filters can be applied to compute statistics on a subset of sites.
+        """
         try:
-            info = {
-                "license": self._wmn_data.get("license", []),
-                "authors": self._wmn_data.get("authors", []),
-                "categories": list(set(site.get("cat", "") for site in self._wmn_data.get("sites", []))),
-                "sites_count": len(self._wmn_data.get("sites", []))
+            sites: List[Dict[str, Any]] = self._filter_sites(
+                site_names,
+                include_categories=include_categories,
+                exclude_categories=exclude_categories,
+            )
+
+            category_list: List[str] = [site.get("cat") for site in sites if site.get("cat")]
+            site_name_list: List[str] = [site.get("name") for site in sites if site.get("name")]
+            
+            total_known_accounts: int = 0
+            
+            for site in sites:
+                known_list = site.get("known")
+                if isinstance(known_list, list) and len(known_list) > 0:
+                    total_known_accounts += len(known_list)
+
+            info: Dict[str, Any] = {
+                "license": list(dict.fromkeys(self._wmn_data.get("license", []))),
+                "authors": list(dict.fromkeys(self._wmn_data.get("authors", []))),
+                "site_names": list(dict.fromkeys(site_name_list)),
+                "sites_count": len(sites),
+                "categories": list(dict.fromkeys(category_list)),
+                "categories_count": len(set(category_list)),
+                "known_accounts_total": total_known_accounts,
             }
-            self._logger.info("Retrieved WMN metadata: %d sites across %d categories", 
-                             info["sites_count"], len(info["categories"]))
+
+            self._logger.info(
+                "WMN info: %d sites, %d categories (filters - names: %s, include: %s, exclude: %s)",
+                info["sites_count"],
+                info["categories_count"],
+                bool(site_names),
+                bool(include_categories),
+                bool(exclude_categories),
+            )
             return info
         except Exception as e:
             self._logger.error("Error retrieving WMN metadata: %s", e, exc_info=True)
             return {"error": f"Failed to retrieve metadata: {e}"}
 
-    def list_sites(self) -> List[str]:
-        """List all site names."""
-        sites = [site.get("name", "") for site in self._wmn_data.get("sites", [])]
-        self._logger.info("Retrieved %d site names from WMN data", len(sites))
-        return sites
     
-    def list_categories(self) -> List[str]:
-        """List all unique categories."""
-        category_list = sorted({site.get("cat") for site in self._wmn_data.get("sites", []) if site.get("cat")})
-        self._logger.info("Retrieved %d unique categories from WMN data", len(category_list))
-        return category_list
+    def _filter_sites(
+        self,
+        site_names: Optional[List[str]],
+        include_categories: Optional[List[str]] = None,
+        exclude_categories: Optional[List[str]] = None,
+    ) -> List[Dict[str, Any]]:
+        """Filter sites by names and categories for the current WMN dataset."""
+        sites: List[Dict[str, Any]] = self._wmn_data.get("sites", [])
+
+        if site_names:
+            requested_site_names: Set[str] = set(site_names)
+            available_names: Set[str] = {site.get("name") for site in sites}
+            missing_names = requested_site_names - available_names
+            if missing_names:
+                raise DataError(f"Unknown site names: {missing_names}")
+        else:
+            requested_site_names = set()
+
+        filtered_sites: List[Dict[str, Any]] = sites
+
+        if requested_site_names:
+            filtered_sites = [
+                site for site in filtered_sites if site.get("name") in requested_site_names
+            ]
+
+        if include_categories:
+            include_set: Set[str] = set(include_categories)
+            filtered_sites = [
+                site for site in filtered_sites if site.get("cat") in include_set
+            ]
+
+        if exclude_categories:
+            exclude_set: Set[str] = set(exclude_categories)
+            filtered_sites = [
+                site for site in filtered_sites if site.get("cat") not in exclude_set
+            ]
+
+        self._logger.info(
+            "Filtered to %d sites from %d total (names: %s, include: %s, exclude: %s)",
+            len(filtered_sites),
+            len(sites),
+            bool(site_names),
+            bool(include_categories),
+            bool(exclude_categories),
+        )
+        return filtered_sites
     
     async def check_site(
         self,
@@ -157,6 +230,8 @@ class Naminter:
         fuzzy_mode: bool = False,
     ) -> SiteResult:
         """Check a single site for the given username."""
+        await self.ensure_session()
+
         site_name = site.get("name")
         category = site.get("cat")
         uri_check_template = site.get("uri_check")
@@ -208,32 +283,34 @@ class Naminter:
         if fuzzy_mode:
             if all(val is None for val in matchers.values()):
                 self._logger.error(
-                    "Site '%s' must define at least one matcher (e_code, e_string, m_code, or m_string) for fuzzy mode",
-                    site_name
+                    "Site '%s' must define at least one matcher (e_code, e_string, m_code, or m_string) for %s mode",
+                    site_name,
+                    ValidationMode.FUZZY,
                 )
                 return SiteResult(
                     site_name=site_name,
                     category=category,
                     username=username,
                     result_status=ResultStatus.ERROR,
-                    error="Site must define at least one matcher for fuzzy mode",
+                    error=f"Site must define at least one matcher for {ValidationMode.FUZZY} mode",
                 )
         else:
             missing = [name for name, val in matchers.items() if val is None]
             if missing:
                 self._logger.error(
-                    "Site '%s' missing required matchers for strict mode: %s",
-                    site_name, missing
+                    "Site '%s' missing required matchers for %s mode: %s",
+                    site_name, ValidationMode.STRICT, missing
                 )
                 return SiteResult(
                     site_name=site_name,
                     category=category,
                     username=username,
                     result_status=ResultStatus.ERROR,
-                    error=f"Site missing required matchers: {missing}",
+                    error=f"Site missing required matchers for {ValidationMode.STRICT} mode: {missing}",
                 )
-        
-        clean_username = username.translate(str.maketrans("", "", site.get("strip_bad_char", "")))
+
+        strip_bad_char = site.get("strip_bad_char", "")
+        clean_username = username.translate(str.maketrans("", "", strip_bad_char))
         if not clean_username:
             return SiteResult(site_name, category, username, ResultStatus.ERROR, error=f"Username '{username}' became empty after character stripping")
 
@@ -241,7 +318,7 @@ class Naminter:
         uri_pretty = site.get("uri_pretty", uri_check_template).replace(ACCOUNT_PLACEHOLDER, clean_username)
 
         self._logger.info("Checking site '%s' (category: %s) for username '%s' in %s mode", 
-                         site_name, category, username, "fuzzy" if fuzzy_mode else "strict")
+                         site_name, category, username, ValidationMode.FUZZY if fuzzy_mode else ValidationMode.STRICT)
 
         try:
             async with self._semaphore:
@@ -302,7 +379,7 @@ class Naminter:
             result_status.name,
             response_code,
             elapsed,
-            "fuzzy" if fuzzy_mode else "strict",
+            ValidationMode.FUZZY if fuzzy_mode else ValidationMode.STRICT,
         )
 
         return SiteResult(
@@ -320,41 +397,57 @@ class Naminter:
         self,
         usernames: List[str],
         site_names: Optional[List[str]] = None,
+        include_categories: Optional[List[str]] = None,
+        exclude_categories: Optional[List[str]] = None,
         fuzzy_mode: bool = False,
         as_generator: bool = False,
     ) -> Union[List[SiteResult], AsyncGenerator[SiteResult, None]]:
         """Check one or multiple usernames across all loaded sites."""
+        await self.ensure_session()
+
         usernames = validate_usernames(usernames)
         self._logger.info("Starting username enumeration for %d username(s): %s", len(usernames), usernames)
         
-        sites = await filter_sites(site_names, self._wmn_data.get("sites", []))
-        self._logger.info("Will check against %d sites in %s mode", len(sites), "fuzzy" if fuzzy_mode else "strict")
+        sites = self._filter_sites(
+            site_names,
+            include_categories=include_categories,
+            exclude_categories=exclude_categories,
+        )
+        self._logger.info("Will check against %d sites in %s mode", len(sites), ValidationMode.FUZZY if fuzzy_mode else ValidationMode.STRICT)
 
-        tasks: List[Coroutine[Any, Any, SiteResult]] = [
+        coroutines = [
             self.check_site(site, username, fuzzy_mode)
             for site in sites for username in usernames
         ]
 
-        async def generate_results() -> AsyncGenerator[SiteResult, None]:
-            for task in asyncio.as_completed(tasks):
-                yield await task
+        async def iterate_results() -> AsyncGenerator[SiteResult, None]:
+            for completed_task in asyncio.as_completed(coroutines):
+                yield await completed_task
 
         if as_generator:
-            return generate_results()
+            return iterate_results()
         
-        results = await asyncio.gather(*tasks)
+        results = await asyncio.gather(*coroutines)
         return results
 
     async def self_check(
         self,
         site_names: Optional[List[str]] = None,
+        include_categories: Optional[List[str]] = None,
+        exclude_categories: Optional[List[str]] = None,
         fuzzy_mode: bool = False,
-        as_generator: bool = False,
+        as_generator: bool = False
     ) -> Union[List[SelfCheckResult], AsyncGenerator[SelfCheckResult, None]]:
         """Run self-checks using known accounts for each site."""
-        sites = await filter_sites(site_names, self._wmn_data.get("sites", []))
+        await self.ensure_session()
 
-        self._logger.info("Starting self-check validation for %d sites in %s mode", len(sites), "fuzzy" if fuzzy_mode else "strict")
+        sites = self._filter_sites(
+            site_names,
+            include_categories=include_categories,
+            exclude_categories=exclude_categories,
+        )
+
+        self._logger.info("Starting self-check validation for %d sites in %s mode", len(sites), ValidationMode.FUZZY if fuzzy_mode else ValidationMode.STRICT)
 
         async def _check_known(site: Dict[str, Any]) -> SelfCheckResult:
             """Helper function to check a site with all its known users."""
@@ -392,13 +485,13 @@ class Naminter:
             self._logger.info("Self-checking site '%s' (category: %s) with %d known accounts", site_name, category, len(known))
 
             try:
-                tasks = [self.check_site(site, username, fuzzy_mode) for username in known]
-                site_results = await asyncio.gather(*tasks)
+                coroutines = [self.check_site(site, username, fuzzy_mode) for username in known]
+                results = await asyncio.gather(*coroutines)
 
                 return SelfCheckResult(
                     site_name=site_name,
                     category=category,
-                    results=site_results
+                    results=results
                 )
             except Exception as e:
                 self._logger.error("Unexpected error during self-check for site '%s': %s", site_name, e, exc_info=True)
@@ -409,16 +502,16 @@ class Naminter:
                     error=f"Unexpected error during self-check: {e}"
                 )
         
-        tasks: List[Coroutine[Any, Any, SelfCheckResult]] = [
+        coroutines = [
             _check_known(site) for site in sites if isinstance(site, dict)
         ]
 
-        async def generate_results() -> AsyncGenerator[SelfCheckResult, None]:
-            for task in asyncio.as_completed(tasks):
-                yield await task
+        async def iterate_results() -> AsyncGenerator[SelfCheckResult, None]:
+            for completed_task in asyncio.as_completed(coroutines):
+                yield await completed_task
 
         if as_generator:
-            return generate_results()
+            return iterate_results()
         
-        results = await asyncio.gather(*tasks)
+        results = await asyncio.gather(*coroutines)
         return results

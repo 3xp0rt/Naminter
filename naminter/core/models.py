@@ -1,19 +1,22 @@
 from dataclasses import dataclass, asdict, field
-from enum import Enum
-from typing import Optional, Dict, Any, List, Union, Set, Literal, TypedDict
+from enum import StrEnum, auto
+from typing import Optional, Dict, Any, List, Set
 from datetime import datetime
-from curl_cffi import BrowserTypeLiteral, CurlSslVersion, ExtraFingerprints
 
-class ResultStatus(Enum):
+class ValidationMode(StrEnum):
+    FUZZY = "fuzzy"
+    STRICT = "strict"
+
+class ResultStatus(StrEnum):
     """Status of username search results."""
-    FOUND = "found"
-    NOT_FOUND = "not_found"
-    ERROR = "error"
-    UNKNOWN = "unknown"
-    AMBIGUOUS = "ambiguous"
-    NOT_VALID = "not_valid"
+    FOUND = auto()
+    NOT_FOUND = auto()
+    ERROR = auto()
+    UNKNOWN = auto()
+    AMBIGUOUS = auto()
+    NOT_VALID = auto()
 
-@dataclass
+@dataclass(slots=True, frozen=True)
 class SiteResult:
     """Result of testing a username on a site."""
     site_name: str
@@ -83,7 +86,7 @@ class SiteResult:
             result.pop('response_text', None)
         return result
 
-@dataclass
+@dataclass(slots=True, frozen=True)
 class SelfCheckResult:
     """Result of a self-check for a username."""
     site_name: str
@@ -95,9 +98,9 @@ class SelfCheckResult:
 
     def __post_init__(self) -> None:
         """Calculate result status from results."""
-        self.result_status = self.get_result_status()
+        object.__setattr__(self, 'result_status', self._get_result_status())
 
-    def get_result_status(self) -> ResultStatus:
+    def _get_result_status(self) -> ResultStatus:
         """Determine result status from results."""
         if self.error:
             return ResultStatus.ERROR
