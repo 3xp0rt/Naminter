@@ -36,11 +36,12 @@ class NaminterConfig:
     include_categories: List[str] = field(default_factory=list)
     exclude_categories: List[str] = field(default_factory=list)
     filter_all: bool = False
-    filter_errors: bool = False
-    filter_not_found: bool = False
-    filter_unknown: bool = False
+    filter_found: bool = False
     filter_ambiguous: bool = False
+    filter_unknown: bool = False
+    filter_not_found: bool = False
     filter_not_valid: bool = False
+    filter_errors: bool = False
 
     # Network and concurrency
     max_tasks: int = MAX_CONCURRENT_TASKS
@@ -98,6 +99,17 @@ class NaminterConfig:
         except Exception as e:
             raise ValueError(f"Configuration validation failed: {e}") from e
 
+        filter_fields = [
+            self.filter_all,
+            self.filter_ambiguous,
+            self.filter_unknown,
+            self.filter_not_found,
+            self.filter_not_valid,
+            self.filter_errors
+        ]
+        if not any(filter_fields):
+            self.filter_found = True
+            
         if isinstance(self.impersonate, str) and self.impersonate.lower() == "none":
             self.impersonate = None
 
@@ -176,10 +188,11 @@ class NaminterConfig:
             "json_export": self.json_export,
             "json_path": self.json_path,
             "filter_all": self.filter_all,
-            "filter_errors": self.filter_errors,
-            "filter_not_found": self.filter_not_found,
-            "filter_unknown": self.filter_unknown,
+            "filter_found": self.filter_found,
             "filter_ambiguous": self.filter_ambiguous,
+            "filter_unknown": self.filter_unknown,
+            "filter_not_found": self.filter_not_found,
             "filter_not_valid": self.filter_not_valid,
+            "filter_errors": self.filter_errors,
             "no_progressbar": self.no_progressbar,
         }

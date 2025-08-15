@@ -10,11 +10,11 @@ class ValidationMode(StrEnum):
 class ResultStatus(StrEnum):
     """Status of username search results."""
     FOUND = auto()
-    NOT_FOUND = auto()
-    ERROR = auto()
-    UNKNOWN = auto()
     AMBIGUOUS = auto()
+    UNKNOWN = auto()
+    NOT_FOUND = auto()
     NOT_VALID = auto()
+    ERROR = auto()
 
 @dataclass(slots=True, frozen=True)
 class SiteResult:

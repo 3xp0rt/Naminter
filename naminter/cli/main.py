@@ -108,6 +108,7 @@ class NaminterCLI:
         )
         actual_site_count = int(summary.get("sites_count", 0))
         total_sites = actual_site_count * len(self.config.usernames)
+        
         tracker = ResultsTracker(total_sites)
         results: List[SiteResult] = []
         
@@ -126,7 +127,7 @@ class NaminterCLI:
             async for result in result_stream:
                 tracker.add_result(result)
 
-                if self._should_include_result(result):
+                if self._filter_result(result):
                     response_file_path = await self._process_result(result)
                     formatted_output = self._formatter.format_result(result, response_file_path)
                     console.print(formatted_output)
@@ -164,7 +165,7 @@ class NaminterCLI:
                     tracker.add_result(site_result)
                     progress_mgr.update(advance=1, description=tracker.get_progress_text())
 
-                if self._should_include_result(result):
+                if self._filter_result(result):
                     response_files: List[Optional[Path]] = []
                     for site_result in result.results:
                         response_file_path = await self._process_result(site_result)
@@ -179,29 +180,26 @@ class NaminterCLI:
         return results
 
     
-    def _should_include_result(self, result: Union[SiteResult, SelfCheckResult]) -> bool:
+    def _filter_result(self, result: Union[SiteResult, SelfCheckResult]) -> bool:
         """Determine if a result should be included in output based on filter settings."""
         status = result.result_status
         
         if self.config.filter_all:
             return True
         
-        filter_conditions = [
-            (self.config.filter_ambiguous, ResultStatus.AMBIGUOUS),
-            (self.config.filter_unknown, ResultStatus.UNKNOWN),
-            (self.config.filter_not_found, ResultStatus.NOT_FOUND),
-            (self.config.filter_not_valid, ResultStatus.NOT_VALID),
-            (self.config.filter_errors, ResultStatus.ERROR),
-        ]
+        filter_map = {
+            self.config.filter_found: ResultStatus.FOUND,
+            self.config.filter_ambiguous: ResultStatus.AMBIGUOUS,
+            self.config.filter_unknown: ResultStatus.UNKNOWN,
+            self.config.filter_not_found: ResultStatus.NOT_FOUND,
+            self.config.filter_not_valid: ResultStatus.NOT_VALID,
+            self.config.filter_errors: ResultStatus.ERROR,
+        }
         
-        for filter_enabled, expected_status in filter_conditions:
-            if filter_enabled and status == expected_status:
-                return True
-        
-        if not any(filter_enabled for filter_enabled, _ in filter_conditions):
-            return status == ResultStatus.FOUND
-        
-        return False
+        return any(
+            filter_enabled and status == expected_status 
+            for filter_enabled, expected_status in filter_map.items()
+        ) or not any(filter_map.keys())
 
     async def _open_browser(self, url: str) -> None:
         """Open a URL in the browser with error handling."""
@@ -308,6 +306,7 @@ class NaminterCLI:
 @click.option('--json', 'json_export', is_flag=True, help='Export results to JSON file')
 @click.option('--json-path', help='Custom path for JSON export')
 @click.option('--filter-all', is_flag=True, help='Include all results in console output and exports')
+@click.option('--filter-found', is_flag=True, help='Show only found results in console output and exports')
 @click.option('--filter-ambiguous', is_flag=True, help='Show only ambiguous results in console output and exports')
 @click.option('--filter-unknown', is_flag=True, help='Show only unknown results in console output and exports')
 @click.option('--filter-not-found', is_flag=True, help='Show only not found results in console output and exports')
@@ -361,11 +360,12 @@ def main(ctx: click.Context, **kwargs: Any) -> None:
             json_export=kwargs.get('json_export'),
             json_path=kwargs.get('json_path'),
             filter_all=kwargs.get('filter_all'),
-            filter_errors=kwargs.get('filter_errors'),
-            filter_not_found=kwargs.get('filter_not_found'),
-            filter_unknown=kwargs.get('filter_unknown'),
+            filter_found=kwargs.get('filter_found'),
             filter_ambiguous=kwargs.get('filter_ambiguous'),
+            filter_unknown=kwargs.get('filter_unknown'),
+            filter_not_found=kwargs.get('filter_not_found'),
             filter_not_valid=kwargs.get('filter_not_valid'),
+            filter_errors=kwargs.get('filter_errors'),
             no_progressbar=kwargs.get('no_progressbar'),
         )
 

@@ -45,11 +45,11 @@ class ResultsTracker:
         rate = self.results_count / elapsed if elapsed > 0 else 0.0
         
         found = self.status_counts[ResultStatus.FOUND]
-        not_found = self.status_counts[ResultStatus.NOT_FOUND]
-        unknown = self.status_counts[ResultStatus.UNKNOWN]
-        errors = self.status_counts[ResultStatus.ERROR]
-        not_valid = self.status_counts[ResultStatus.NOT_VALID]
         ambiguous = self.status_counts[ResultStatus.AMBIGUOUS]
+        unknown = self.status_counts[ResultStatus.UNKNOWN]
+        not_found = self.status_counts[ResultStatus.NOT_FOUND]
+        not_valid = self.status_counts[ResultStatus.NOT_VALID]
+        errors = self.status_counts[ResultStatus.ERROR]
 
         sections = [
             f"[{THEME['primary']}]{rate:.1f} req/s[/]",

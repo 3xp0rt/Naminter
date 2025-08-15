@@ -371,9 +371,12 @@ asyncio.run(main())
 | Option                      | Description                                                |
 |-----------------------------|------------------------------------------------------------|
 | `--filter-all`              | Include all results in console and exports                 |
-| `--filter-errors`           | Show only error results in console and exports             |
-| `--filter-not-found`        | Show only not found results in console and exports         |
+| `--filter-found`            | Show only found results in console and exports             |
+| `--filter-ambiguous`        | Show only ambiguous results in console and exports         |
 | `--filter-unknown`          | Show only unknown results in console and exports           |
+| `--filter-not-found`        | Show only not found results in console and exports         |
+| `--filter-not-valid`        | Show only not valid results in console and exports         |
+| `--filter-errors`           | Show only error results in console and exports             |
 
 
 ## Contributing

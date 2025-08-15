@@ -25,20 +25,20 @@ THEME: Dict[str, str] = {
 
 _STATUS_SYMBOLS: Dict[ResultStatus, str] = {
     ResultStatus.FOUND: "+",
-    ResultStatus.NOT_FOUND: "-",
-    ResultStatus.UNKNOWN: "?",
     ResultStatus.AMBIGUOUS: "*",
-    ResultStatus.ERROR: "!",
+    ResultStatus.UNKNOWN: "?",
+    ResultStatus.NOT_FOUND: "-",
     ResultStatus.NOT_VALID: "X",
+    ResultStatus.ERROR: "!",
 }
 
 _STATUS_STYLES: Dict[ResultStatus, Style] = {
     ResultStatus.FOUND: Style(color=THEME['success'], bold=True),
-    ResultStatus.NOT_FOUND: Style(color=THEME['error']),
-    ResultStatus.UNKNOWN: Style(color=THEME['warning']),
     ResultStatus.AMBIGUOUS: Style(color=THEME['warning'], bold=True),
-    ResultStatus.ERROR: Style(color=THEME['error'], bold=True),
+    ResultStatus.UNKNOWN: Style(color=THEME['warning']),
+    ResultStatus.NOT_FOUND: Style(color=THEME['error']),
     ResultStatus.NOT_VALID: Style(color=THEME['error']),
+    ResultStatus.ERROR: Style(color=THEME['error'], bold=True),
 }
 
 class ResultFormatter:
