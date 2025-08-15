@@ -22,7 +22,7 @@ from ..cli.exporters import Exporter
 from ..cli.progress import ProgressManager, ResultsTracker
 from ..cli.constants import RESPONSE_FILE_DATE_FORMAT, RESPONSE_FILE_EXTENSION
 from ..cli.utils import load_wmn_lists, sanitize_filename
-from ..core.models import ResultStatus, SiteResult, SelfCheckResult
+from ..core.models import ResultStatus, SiteResult, SelfEnumResult
 from ..core.main import Naminter
 from ..core.constants import MAX_CONCURRENT_TASKS, HTTP_REQUEST_TIMEOUT_SECONDS, HTTP_ALLOW_REDIRECTS, HTTP_SSL_VERIFY, WMN_SCHEMA_URL, LOGGING_FORMAT
 
@@ -39,7 +39,7 @@ def _version_callback(ctx: click.Context, param: click.Option, value: bool) -> N
 
 
 class NaminterCLI:
-    """Handles username availability checks."""
+    """Handles username enumeration operations."""
     
     def __init__(self, config: NaminterConfig) -> None:
         self.config: NaminterConfig = config
@@ -105,8 +105,8 @@ class NaminterCLI:
             akamai=self.config.akamai,
             extra_fp=self.config.extra_fp,
         ) as naminter:
-            if self.config.self_check:
-                results = await self._run_self_check(naminter)
+            if self.config.self_enum:
+                results = await self._run_self_enum(naminter)
             else:
                 results = await self._run_check(naminter)
 
@@ -115,7 +115,7 @@ class NaminterCLI:
                 export_manager.export(results, self.config.export_formats)
 
     async def _run_check(self, naminter: Naminter) -> List[SiteResult]:
-        """Run the username check functionality."""
+        """Run the username enumeration functionality."""
         summary = await naminter.get_wmn_summary(
             site_names=self.config.site_names,
             include_categories=self.config.include_categories,
@@ -128,9 +128,9 @@ class NaminterCLI:
         results: List[SiteResult] = []
         
         with ProgressManager(console, disabled=self.config.no_progressbar) as progress_mgr:
-            progress_mgr.start(total_sites, "Checking usernames...")
+            progress_mgr.start(total_sites, "Enumerating usernames...")
             
-            result_stream = await naminter.check_usernames(
+            result_stream = await naminter.enumerate_usernames(
                 usernames=self.config.usernames,
                 site_names=self.config.site_names,
                 include_categories=self.config.include_categories,
@@ -152,8 +152,8 @@ class NaminterCLI:
 
         return results
 
-    async def _run_self_check(self, naminter: Naminter) -> List[SelfCheckResult]:
-        """Run the self-check functionality."""
+    async def _run_self_enum(self, naminter: Naminter) -> List[SelfEnumResult]:
+        """Run the self-enum functionality."""
         summary = await naminter.get_wmn_summary(
             site_names=self.config.site_names,
             include_categories=self.config.include_categories,
@@ -162,12 +162,12 @@ class NaminterCLI:
         total_tests = int(summary.get("known_accounts_total", 0))
 
         tracker = ResultsTracker(total_tests)
-        results: List[SelfCheckResult] = []
+        results: List[SelfEnumResult] = []
 
         with ProgressManager(console, disabled=self.config.no_progressbar) as progress_mgr:
-            progress_mgr.start(total_tests, "Running self-check...")
+            progress_mgr.start(total_tests, "Running self-enum...")
             
-            result_stream = await naminter.self_check(
+            result_stream = await naminter.self_enum(
                 site_names=self.config.site_names,
                 include_categories=self.config.include_categories,
                 exclude_categories=self.config.exclude_categories,
@@ -188,13 +188,13 @@ class NaminterCLI:
                             response_files.append(response_file_path)
                         else:
                             response_files.append(None)
-                    formatted_output = self._formatter.format_self_check(result, response_files)
+                    formatted_output = self._formatter.format_self_enum(result, response_files)
                     console.print(formatted_output)
                     results.append(result)
 
         return results
     
-    def _filter_result(self, result: Union[SiteResult, SelfCheckResult]) -> bool:
+    def _filter_result(self, result: Union[SiteResult, SelfEnumResult]) -> bool:
         """Determine if a result should be included in output based on filter settings."""
         status = result.result_status
         
@@ -271,13 +271,13 @@ class NaminterCLI:
 @click.option('--no-color', is_flag=True, help='Disable colored console output')
 @click.option('--no-progressbar', is_flag=True, help='Disable progress bar during execution')
 @click.option('--username', '-u', multiple=True, help='Username(s) to search for across social media platforms')
-@click.option('--site', '-s', multiple=True, help='Specific site name(s) to check (e.g., "GitHub", "Twitter")')
+@click.option('--site', '-s', multiple=True, help='Specific site name(s) to enumerate (e.g., "GitHub", "Twitter")')
 @click.option('--local-list', type=click.Path(exists=True, path_type=Path), multiple=True, help='Path(s) to local JSON file(s) containing WhatsMyName site data')
 @click.option('--remote-list', multiple=True, help='URL(s) to fetch remote WhatsMyName site data')
 @click.option('--local-schema', type=click.Path(exists=True, path_type=Path), help='Path to local WhatsMyName JSON schema file for validation')
 @click.option('--remote-schema', default=WMN_SCHEMA_URL, help='URL to fetch custom WhatsMyName JSON schema for validation')
 @click.option('--skip-validation', is_flag=True, help='Skip JSON schema validation of WhatsMyName data')
-@click.option('--self-check', is_flag=True, help='Run self-check mode to validate site detection accuracy')
+@click.option('--self-enum', is_flag=True, help='Run self-enum mode to validate site detection accuracy')
 @click.option('--include-categories', multiple=True, help='Include only sites from specified categories (e.g., "social", "coding")')
 @click.option('--exclude-categories', multiple=True, help='Exclude sites from specified categories (e.g., "adult", "gaming")')
 @click.option('--proxy', help='Proxy server to use for requests (e.g., http://proxy:port, socks5://proxy:port)')
@@ -314,7 +314,7 @@ class NaminterCLI:
 @click.option('--filter-errors', is_flag=True, help='Show only error results in console output and exports')
 @click.pass_context
 def main(ctx: click.Context, **kwargs: Any) -> None:
-    """The most powerful and fast username availability checker that searches across hundreds of websites using WhatsMyName dataset."""
+    """Asynchronous OSINT username enumeration tool that searches hundreds of websites using the WhatsMyName dataset."""
 
     if ctx.invoked_subcommand is not None:
         return
@@ -343,7 +343,7 @@ def main(ctx: click.Context, **kwargs: Any) -> None:
             akamai=kwargs.get('akamai'),
             extra_fp=kwargs.get('extra_fp'),
             fuzzy_mode=kwargs.get('fuzzy_mode'),
-            self_check=kwargs.get('self_check'),
+            self_enum=kwargs.get('self_enum'),
             log_level=kwargs.get('log_level'),
             log_file=kwargs.get('log_file'),
             show_details=kwargs.get('show_details'),

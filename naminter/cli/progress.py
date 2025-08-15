@@ -17,7 +17,7 @@ from ..cli.console import THEME
 from ..core.models import ResultStatus, SiteResult
 
 class ResultsTracker:
-    """Tracks results for the username availability checks."""
+    """Tracks results for the username enumeration operations."""
     
     def __init__(self, total_sites: int) -> None:
         """Initialize the results tracker."""

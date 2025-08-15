@@ -9,7 +9,7 @@ from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
 
-from ..core.models import ResultStatus, SiteResult, SelfCheckResult
+from ..core.models import ResultStatus, SiteResult, SelfEnumResult
 from .. import __description__, __version__, __author__, __license__, __email__, __url__
 
 console: Console = Console()
@@ -80,24 +80,24 @@ class ResultFormatter:
 
         return tree
 
-    def format_self_check(self, self_check_result: SelfCheckResult, response_files: Optional[List[Optional[Path]]] = None) -> Tree:
-        """Format self-check results into a tree structure."""
+    def format_self_enum(self, self_enum_result: SelfEnumResult, response_files: Optional[List[Optional[Path]]] = None) -> Tree:
+        """Format self-enum results into a tree structure."""
 
-        if not self_check_result:
-            raise ValueError("SelfCheckResult cannot be None or empty")
+        if not self_enum_result:
+            raise ValueError("SelfEnumResult cannot be None or empty")
 
-        if not isinstance(self_check_result, SelfCheckResult):
-            raise ValueError("Parameter must be a SelfCheckResult instance")
+        if not isinstance(self_enum_result, SelfEnumResult):
+            raise ValueError("Parameter must be a SelfEnumResult instance")
 
-        if not self_check_result.site_name or not self_check_result.site_name.strip():
-            raise ValueError("SelfCheckResult must have a valid site_name")
+        if not self_enum_result.site_name or not self_enum_result.site_name.strip():
+            raise ValueError("SelfEnumResult must have a valid site_name")
             
-        if not self_check_result.results:
-            raise ValueError("SelfCheckResult must have test results")
+        if not self_enum_result.results:
+            raise ValueError("SelfEnumResult must have test results")
         
-        site_name = self_check_result.site_name
-        test_results = self_check_result.results
-        result_status = self_check_result.result_status
+        site_name = self_enum_result.site_name
+        test_results = self_enum_result.results
+        result_status = self_enum_result.result_status
 
         root_label = Text()
         root_label.append(_STATUS_SYMBOLS.get(result_status, "?"), style=_STATUS_STYLES.get(result_status, Style()))

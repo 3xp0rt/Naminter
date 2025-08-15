@@ -68,7 +68,7 @@ jobs:
             type=sha,prefix=sha-
           labels: |
             org.opencontainers.image.title=Naminter
-            org.opencontainers.image.description=The most powerful and fast username availability checker
+            org.opencontainers.image.description=Asynchronous OSINT username enumeration tool that searches hundreds of websites using the WhatsMyName dataset
             org.opencontainers.image.vendor=3xp0rt
             org.opencontainers.image.licenses=MIT
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}

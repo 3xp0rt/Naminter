@@ -6,7 +6,7 @@
 [![PyPI Version](https://img.shields.io/pypi/v/naminter)](https://pypi.org/project/naminter/)
 [![Downloads](https://img.shields.io/pypi/dm/naminter)](https://pypi.org/project/naminter/)
 
-Naminter is a powerful, fast, and flexible username enumeration tool and Python package. Leveraging the comprehensive [WhatsMyName](https://github.com/WebBreacher/WhatsMyName) list, Naminter efficiently enumerates usernames across hundreds of websites. With advanced features like browser impersonation, concurrent checking, and customizable filtering, it can be used both as a command-line tool and as a library in your Python projects.
+Naminter is an asynchronous OSINT username enumeration tool and Python package. Leveraging the comprehensive [WhatsMyName](https://github.com/WebBreacher/WhatsMyName) list, Naminter enumerates usernames across hundreds of websites. With advanced features like browser impersonation, asynchronous enumeration, and customizable filtering, it can be used both as a command-line tool and as a library in your Python projects.
 
 <p align="center">
 <img width="70%" height="70%" src="preview.png"/>
@@ -37,7 +37,7 @@ Naminter is a powerful, fast, and flexible username enumeration tool and Python 
 - **Category Filters:** Include or exclude sites by category
 - **Custom Site Lists:** Use your own or remote WhatsMyName-format lists and schemas
 - **Proxy & Network Options:** Full proxy support, SSL verification, and redirect control
-- **Self-Check Mode:** Validate detection methods for reliability
+- **Self-Enum Mode:** Validate detection methods for reliability
 - **Export Results:** Output to CSV, JSON, HTML, and PDF
 - **Response Handling:** Save/open HTTP responses for analysis
 - **Flexible Filtering:** Filter results by found, not found, errors, or unknown
@@ -80,13 +80,13 @@ docker compose run --rm naminter --username john_doe
 
 ### Basic CLI Usage
 
-Check a single username:
+Enumerate a single username:
 
 ```bash
 naminter --username john_doe
 ```
 
-Check multiple usernames:
+Enumerate multiple usernames:
 
 ```bash
 naminter --username user1 --username user2 --username user3
@@ -94,7 +94,7 @@ naminter --username user1 --username user2 --username user3
 
 ### Advanced CLI Options
 
-Customize the checker with various command-line arguments:
+Customize the enumerator with various command-line arguments:
 
 ```bash
 # Basic username enumeration with custom settings
@@ -127,8 +127,8 @@ naminter --username alice_bob \
     --html \
     --filter-all
 
-# Self-check with detailed output
-naminter --self-check \
+# Self-enum with detailed output
+naminter --self-enum \
     --show-details \
     --log-level DEBUG \
     --log-file debug.log
@@ -136,7 +136,7 @@ naminter --self-check \
 
 ### Using as a Python Package
 
-Naminter can be used programmatically in Python projects to check the availability of usernames across various platforms. The Naminter class requires WhatsMyName (WMN) data to operate. You can either load this data from local files or fetch it from remote sources.
+Naminter can be used programmatically in Python projects to enumerate usernames across various platforms. The Naminter class requires WhatsMyName (WMN) data to operate. You can either load this data from local files or fetch it from remote sources.
 
 #### Getting Started - Loading WMN Data
 
@@ -185,14 +185,14 @@ async def main():
     
     # Initialize Naminter with the WMN data
     async with Naminter(wmn_data, wmn_schema) as naminter:
-        results = await naminter.check_usernames(["example_username"])
+        results = await naminter.enumerate_usernames(["example_username"])
         for result in results:
             if result.result_status.value == "found":
                 print(f"✅ {result.username} found on {result.site_name}: {result.result_url}")
             elif result.result_status.value == "not_found":
                 print(f"❌ {result.username} not found on {result.site_name}")
             elif result.result_status.value == "error":
-                print(f"⚠️ Error checking {result.username} on {result.site_name}: {result.error}")
+                print(f"⚠️ Error enumerating {result.username} on {result.site_name}: {result.error}")
 
 asyncio.run(main())
 ```
@@ -210,7 +210,7 @@ async def main():
     
     async with Naminter(wmn_data, wmn_schema) as naminter:
         # Use as_generator=True for streaming results
-        results = await naminter.check_usernames(["example_username"], as_generator=True)
+        results = await naminter.enumerate_usernames(["example_username"], as_generator=True)
         async for result in results:
             if result.result_status.value == "found":
                 print(f"✅ {result.username} found on {result.site_name}: {result.result_url}")
@@ -240,7 +240,7 @@ async def main():
         proxy="http://proxy:8080"
     ) as naminter:
         usernames = ["user1", "user2", "user3"]
-        results = await naminter.check_usernames(usernames, fuzzy_mode=True)
+        results = await naminter.enumerate_usernames(usernames, fuzzy_mode=True)
         
         for result in results:
             if result.result_status.value == "found":
@@ -253,7 +253,7 @@ async def main():
 asyncio.run(main())
 ```
 
-#### Self-Check and Validation
+#### Self-Enum and Validation
 
 ```python
 import asyncio
@@ -263,10 +263,10 @@ async def main():
     wmn_data, wmn_schema = await load_wmn_data()
     
     async with Naminter(wmn_data, wmn_schema) as naminter:
-        # Perform self-check to validate site configurations
-        self_check_results = await naminter.self_check()
+        # Perform self-enum to validate site configurations
+        self_enum_results = await naminter.self_enum()
         
-        for site_result in self_check_results:
+        for site_result in self_enum_results:
             if site_result.error:
                 print(f"❌ {site_result.site_name}: {site_result.error}")
             else:
@@ -304,7 +304,7 @@ asyncio.run(main())
 | Option                      | Description                                                |
 |-----------------------------|------------------------------------------------------------|
 | `--username, -u`            | Username(s) to search                                      |
-| `--site, -s`                | Specific site name(s) to check                             |
+| `--site, -s`                | Specific site name(s) to enumerate                         |
 | `--version`                 | Show version information                                   |
 | `--no-color`                | Disable colored output                                     |
 | `--no-progressbar`          | Disable progress bar display                               |
@@ -312,16 +312,16 @@ asyncio.run(main())
 ### Input Lists
 | Option                      | Description                                                |
 |-----------------------------|------------------------------------------------------------|
-| `--local-list`              | Path(s) to local file(s) containing list of sites to check |
-| `--remote-list`             | URL(s) to fetch remote list(s) of sites to check           |
+| `--local-list`              | Path(s) to local file(s) containing list of sites to enumerate |
+| `--remote-list`             | URL(s) to fetch remote list(s) of sites to enumerate       |
 | `--skip-validation`         | Skip WhatsMyName schema validation for lists               |
 | `--local-schema`            | Path to local WhatsMyName schema file                      |
 | `--remote-schema`           | URL to fetch custom WhatsMyName schema                     |
 
-### Self-Check
+### Self-Enum
 | Option                      | Description                                                |
 |-----------------------------|------------------------------------------------------------|
-| `--self-check`              | Perform self-check of the application                      |
+| `--self-enum`              | Perform self-enum of the application                      |
 
 ### Category Filters
 | Option                      | Description                                                |

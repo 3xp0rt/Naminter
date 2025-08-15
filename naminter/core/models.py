@@ -87,8 +87,8 @@ class SiteResult:
         return result
 
 @dataclass(slots=True, frozen=True)
-class SelfCheckResult:
-    """Result of a self-check for a username."""
+class SelfEnumResult:
+    """Result of a self-enum for a username."""
     site_name: str
     category: str
     results: List[SiteResult]
@@ -122,7 +122,7 @@ class SelfCheckResult:
         return next(iter(statuses))
         
     def to_dict(self, exclude_response_text: bool = False) -> Dict[str, Any]:
-        """Convert SelfCheckResult to dict."""
+        """Convert SelfEnumResult to dict."""
         return {
             'site_name': self.site_name,
             'category': self.category,

@@ -4,11 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "naminter"
-dynamic = ["version"]
-description = "The most powerful and fast username availability checker that searches across hundreds of websites using WhatsMyName dataset"
+dynamic = ["version", "description", "authors", "license"]
 readme = "README.md"
-authors = [{ name = "3xp0rt", email = "contact@3xp0rt.com" }]
-license = { text = "MIT" }
 requires-python = ">=3.11"
 
 classifiers = [
@@ -62,6 +59,11 @@ naminter = "naminter.cli.main:entry_point"
 
 [tool.setuptools.dynamic]
 version = {attr = "naminter.__version__"}
+description = {attr = "naminter.__description__"}
+authors = [
+    {name = "naminter.__author__", email = "naminter.__author_email__"}
+]
+license = {text = "naminter.__license__"}
 
 [tool.setuptools]
 package-dir = {"" = "."}

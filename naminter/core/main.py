@@ -6,7 +6,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Union, Set
 from curl_cffi.requests import AsyncSession, RequestsError
 
 from curl_cffi import BrowserTypeLiteral, ExtraFingerprints
-from ..core.models import ResultStatus, SiteResult, SelfCheckResult, ValidationMode
+from ..core.models import ResultStatus, SiteResult, SelfEnumResult, ValidationMode
 from ..core.exceptions import (
     DataError,
     ValidationError,
@@ -223,13 +223,13 @@ class Naminter:
         )
         return filtered_sites
     
-    async def check_site(
+    async def enumerate_site(
         self,
         site: Dict[str, Any],
         username: str,
         fuzzy_mode: bool = False,
     ) -> SiteResult:
-        """Check a single site for the given username."""
+        """Enumerate a single site for the given username."""
         await self._ensure_session()
 
         site_name = site.get("name")
@@ -317,7 +317,7 @@ class Naminter:
         uri_check = uri_check_template.replace(ACCOUNT_PLACEHOLDER, clean_username)
         uri_pretty = site.get("uri_pretty", uri_check_template).replace(ACCOUNT_PLACEHOLDER, clean_username)
 
-        self._logger.info("Checking site '%s' (category: %s) for username '%s' in %s mode", 
+        self._logger.info("Enumerating site '%s' (category: %s) for username '%s' in %s mode", 
                          site_name, category, username, ValidationMode.FUZZY if fuzzy_mode else ValidationMode.STRICT)
 
         try:
@@ -340,7 +340,7 @@ class Naminter:
             self._logger.warning("Request to '%s' was cancelled", site_name)
             raise
         except RequestsError as e:
-            self._logger.warning("Network error while checking '%s': %s", site_name, e, exc_info=True)
+            self._logger.warning("Network error while enumerating '%s': %s", site_name, e, exc_info=True)
             return SiteResult(
                 site_name=site_name,
                 category=category,
@@ -350,7 +350,7 @@ class Naminter:
                 error=f"Network error: {e}",
             )
         except Exception as e:
-            self._logger.error("Unexpected error while checking '%s': %s", site_name, e, exc_info=True)
+            self._logger.error("Unexpected error while enumerating '%s': %s", site_name, e, exc_info=True)
             return SiteResult(
                 site_name=site_name,
                 category=category,
@@ -393,7 +393,7 @@ class Naminter:
             response_text=response_text,
         )
 
-    async def check_usernames(
+    async def enumerate_usernames(
         self,
         usernames: List[str],
         site_names: Optional[List[str]] = None,
@@ -402,7 +402,7 @@ class Naminter:
         fuzzy_mode: bool = False,
         as_generator: bool = False,
     ) -> Union[List[SiteResult], AsyncGenerator[SiteResult, None]]:
-        """Check one or multiple usernames across all loaded sites."""
+        """Enumerate one or multiple usernames across all loaded sites."""
         await self._ensure_session()
 
         usernames = validate_usernames(usernames)
@@ -413,10 +413,10 @@ class Naminter:
             include_categories=include_categories,
             exclude_categories=exclude_categories,
         )
-        self._logger.info("Will check against %d sites in %s mode", len(sites), ValidationMode.FUZZY if fuzzy_mode else ValidationMode.STRICT)
+        self._logger.info("Will enumerate against %d sites in %s mode", len(sites), ValidationMode.FUZZY if fuzzy_mode else ValidationMode.STRICT)
 
         coroutines = [
-            self.check_site(site, username, fuzzy_mode)
+            self.enumerate_site(site, username, fuzzy_mode)
             for site in sites for username in usernames
         ]
 
@@ -430,15 +430,15 @@ class Naminter:
         results = await asyncio.gather(*coroutines)
         return results
 
-    async def self_check(
+    async def self_enum(
         self,
         site_names: Optional[List[str]] = None,
         include_categories: Optional[List[str]] = None,
         exclude_categories: Optional[List[str]] = None,
         fuzzy_mode: bool = False,
         as_generator: bool = False
-    ) -> Union[List[SelfCheckResult], AsyncGenerator[SelfCheckResult, None]]:
-        """Run self-checks using known accounts for each site."""
+    ) -> Union[List[SelfEnumResult], AsyncGenerator[SelfEnumResult, None]]:
+        """Run self-enum using known accounts for each site."""
         await self._ensure_session()
 
         sites = self._filter_sites(
@@ -447,17 +447,17 @@ class Naminter:
             exclude_categories=exclude_categories,
         )
 
-        self._logger.info("Starting self-check validation for %d sites in %s mode", len(sites), ValidationMode.FUZZY if fuzzy_mode else ValidationMode.STRICT)
+        self._logger.info("Starting self-enum validation for %d sites in %s mode", len(sites), ValidationMode.FUZZY if fuzzy_mode else ValidationMode.STRICT)
 
-        async def _check_known(site: Dict[str, Any]) -> SelfCheckResult:
-            """Helper function to check a site with all its known users."""
+        async def _enumerate_known(site: Dict[str, Any]) -> SelfEnumResult:
+            """Helper function to enumerate a site with all its known users."""
             site_name = site.get("name")
             category = site.get("cat")
             known = site.get("known")
 
             if not site_name:
-                self._logger.error("Site configuration missing required 'name' field for self-check: %r", site)
-                return SelfCheckResult(
+                self._logger.error("Site configuration missing required 'name' field for self-enum: %r", site)
+                return SelfEnumResult(
                     site_name=site_name,
                     category=category,
                     results=[],
@@ -465,8 +465,8 @@ class Naminter:
                 )
 
             if not category:
-                self._logger.error("Site '%s' missing required 'cat' field for self-check", site_name)
-                return SelfCheckResult(
+                self._logger.error("Site '%s' missing required 'cat' field for self-enum", site_name)
+                return SelfEnumResult(
                     site_name=site_name,
                     category=category,
                     results=[],
@@ -474,39 +474,39 @@ class Naminter:
                 )
             
             if known is None:
-                self._logger.error("Site '%s' missing required 'known' field for self-check", site_name)
-                return SelfCheckResult(
+                self._logger.error("Site '%s' missing required 'known' field for self-enum", site_name)
+                return SelfEnumResult(
                     site_name=site_name,
                     category=category,
                     results=[],
                     error=f"Site '{site_name}' missing required field: known"
                 )
             
-            self._logger.info("Self-checking site '%s' (category: %s) with %d known accounts", site_name, category, len(known))
+            self._logger.info("Self-enuming site '%s' (category: %s) with %d known accounts", site_name, category, len(known))
 
             try:
-                coroutines = [self.check_site(site, username, fuzzy_mode) for username in known]
+                coroutines = [self.enumerate_site(site, username, fuzzy_mode) for username in known]
                 results = await asyncio.gather(*coroutines)
 
-                return SelfCheckResult(
+                return SelfEnumResult(
                     site_name=site_name,
                     category=category,
                     results=results
                 )
             except Exception as e:
-                self._logger.error("Unexpected error during self-check for site '%s': %s", site_name, e, exc_info=True)
-                return SelfCheckResult(
+                self._logger.error("Unexpected error during self-enum for site '%s': %s", site_name, e, exc_info=True)
+                return SelfEnumResult(
                     site_name=site_name,
                     category=category,
                     results=[],
-                    error=f"Unexpected error during self-check: {e}"
+                    error=f"Unexpected error during self-enum: {e}"
                 )
         
         coroutines = [
-            _check_known(site) for site in sites if isinstance(site, dict)
+            _enumerate_known(site) for site in sites if isinstance(site, dict)
         ]
 
-        async def iterate_results() -> AsyncGenerator[SelfCheckResult, None]:
+        async def iterate_results() -> AsyncGenerator[SelfEnumResult, None]:
             for completed_task in asyncio.as_completed(coroutines):
                 yield await completed_task
 

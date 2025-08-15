@@ -18,7 +18,7 @@ from curl_cffi import BrowserTypeLiteral, ExtraFingerprints
 class NaminterConfig:
     """Configuration for Naminter CLI tool.
     
-    Holds all configuration parameters for username checking operations, including network settings, export options, filtering, and validation parameters.
+    Holds all configuration parameters for username enumeration operations, including network settings, export options, filtering, and validation parameters.
     """
     # Required parameters
     usernames: List[str]
@@ -55,7 +55,7 @@ class NaminterConfig:
     extra_fp: Optional[Union[ExtraFingerprints, Dict[str, Any], str]] = None
     browse: bool = False
     fuzzy_mode: bool = False
-    self_check: bool = False
+    self_enum: bool = False
     no_progressbar: bool = False
 
     # Logging
@@ -80,13 +80,13 @@ class NaminterConfig:
 
     def __post_init__(self) -> None:
         """Validate and normalize configuration after initialization."""
-        if self.self_check and self.usernames:
+        if self.self_enum and self.usernames:
             display_warning(
-                "Self-check mode enabled: provided usernames will be ignored, "
+                "Self-enum mode enabled: provided usernames will be ignored, "
                 "using known usernames from site configurations instead."
             )
 
-        if not self.self_check and not self.usernames:
+        if not self.self_enum and not self.usernames:
             raise ValueError("At least one username is required")
 
         try:
@@ -172,7 +172,7 @@ class NaminterConfig:
             "extra_fp": self.extra_fp.to_dict() if isinstance(self.extra_fp, ExtraFingerprints) else self.extra_fp,
             "browse": self.browse,
             "fuzzy_mode": self.fuzzy_mode,
-            "self_check": self.self_check,
+            "self_enum": self.self_enum,
             "log_level": self.log_level,
             "log_file": self.log_file,
             "show_details": self.show_details,
