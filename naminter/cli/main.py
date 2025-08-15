@@ -67,6 +67,20 @@ class NaminterCLI:
             display_error(f"Unexpected error setting up response directory: {e}")
             return None
 
+    @staticmethod
+    def _setup_logging(config: NaminterConfig) -> None:
+        """Setup logging configuration if log level and file are specified."""
+        if config.log_level and config.log_file:
+            log_path = Path(config.log_file)
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            level_value = getattr(logging, str(config.log_level).upper(), logging.INFO)
+            logging.basicConfig(
+                level=level_value,
+                format=LOGGING_FORMAT,
+                filename=str(log_path),
+                filemode="a",
+            )
+    
     async def run(self) -> None:
         """Main execution method with progress tracking."""
         wmn_data, wmn_schema = load_wmn_lists(
@@ -178,7 +192,6 @@ class NaminterCLI:
                     results.append(result)
 
         return results
-
     
     def _filter_result(self, result: Union[SiteResult, SelfCheckResult]) -> bool:
         """Determine if a result should be included in output based on filter settings."""
@@ -200,25 +213,6 @@ class NaminterCLI:
             filter_enabled and status == expected_status 
             for filter_enabled, expected_status in filter_map.items()
         ) or not any(filter_map.keys())
-
-    async def _open_browser(self, url: str) -> None:
-        """Open a URL in the browser with error handling."""
-        try:
-            await asyncio.to_thread(webbrowser.open, url)
-        except Exception as e:
-            display_error(f"Error opening browser for {url}: {e}")
-
-    async def _write_file(self, file_path: Path, content: str) -> None:
-        """Write content to a file with error handling."""
-        try:
-            async with aiofiles.open(file_path, "w", encoding="utf-8") as file:
-                await file.write(content)
-        except PermissionError as e:
-            display_error(f"Permission denied writing to {file_path}: {e}")
-        except OSError as e:
-            display_error(f"OS error writing to {file_path}: {e}")
-        except Exception as e:
-            display_error(f"Failed to write to {file_path}: {e}")
 
     async def _process_result(self, result: SiteResult) -> Optional[Path]:
         """Process a single result: handle browser opening, response saving, and console output."""
@@ -251,19 +245,24 @@ class NaminterCLI:
 
         return response_file
 
-    @staticmethod
-    def _setup_logging(config: NaminterConfig) -> None:
-        """Setup logging configuration if log level and file are specified."""
-        if config.log_level and config.log_file:
-            log_path = Path(config.log_file)
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            level_value = getattr(logging, str(config.log_level).upper(), logging.INFO)
-            logging.basicConfig(
-                level=level_value,
-                format=LOGGING_FORMAT,
-                filename=str(log_path),
-                filemode="a",
-            )
+    async def _open_browser(self, url: str) -> None:
+        """Open a URL in the browser with error handling."""
+        try:
+            await asyncio.to_thread(webbrowser.open, url)
+        except Exception as e:
+            display_error(f"Error opening browser for {url}: {e}")
+
+    async def _write_file(self, file_path: Path, content: str) -> None:
+        """Write content to a file with error handling."""
+        try:
+            async with aiofiles.open(file_path, "w", encoding="utf-8") as file:
+                await file.write(content)
+        except PermissionError as e:
+            display_error(f"Permission denied writing to {file_path}: {e}")
+        except OSError as e:
+            display_error(f"OS error writing to {file_path}: {e}")
+        except Exception as e:
+            display_error(f"Failed to write to {file_path}: {e}")
 
 
 @click.group(invoke_without_command=True, no_args_is_help=True, context_settings=dict(help_option_names=['-h', '--help']))
