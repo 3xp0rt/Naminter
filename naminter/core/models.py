@@ -4,8 +4,8 @@ from typing import Optional, Dict, Any, List, Set
 from datetime import datetime
 
 class ValidationMode(StrEnum):
-    FUZZY = "fuzzy"
-    STRICT = "strict"
+    FUZZY = auto()
+    STRICT = auto()
 
 class ResultStatus(StrEnum):
     """Status of username search results."""

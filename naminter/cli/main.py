@@ -52,11 +52,12 @@ class NaminterCLI:
             return None
         
         try:
-            response_dir = self.config.response_dir
-            if response_dir is None:
+            response_path = self.config.response_path
+            if response_path is None:
                 return None
-            response_dir.mkdir(parents=True, exist_ok=True)
-            return response_dir
+                
+            response_path.mkdir(parents=True, exist_ok=True)
+            return response_path
         except PermissionError as e:
             display_error(f"Permission denied creating/accessing response directory: {e}")
             return None

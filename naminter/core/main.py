@@ -38,7 +38,7 @@ class Naminter:
         proxy: Optional[Union[str, Dict[str, str]]] = None,
         verify_ssl: bool = HTTP_SSL_VERIFY,
         allow_redirects: bool = HTTP_ALLOW_REDIRECTS,
-        impersonate: Optional[BrowserTypeLiteral] = BROWSER_IMPERSONATE_AGENT,
+        impersonate: BrowserTypeLiteral = BROWSER_IMPERSONATE_AGENT,
         ja3: Optional[str] = None,
         akamai: Optional[str] = None,
         extra_fp: Optional[Union[ExtraFingerprints, Dict[str, Any]]] = None,
@@ -90,13 +90,13 @@ class Naminter:
             extra_fp=self.extra_fp,
         )
 
-    def open_session(self) -> None:
+    async def _open_session(self) -> None:
         """Open the HTTP session for manual (non-context) usage."""
         if self._session is None:
             self._session = self._create_async_session()
             self._logger.info("HTTP session opened successfully.")
 
-    async def ensure_session(self) -> None:
+    async def _ensure_session(self) -> None:
         """Ensure the HTTP session is initialized (safe for concurrent calls)."""
         if self._session is not None:
             return
@@ -106,7 +106,7 @@ class Naminter:
                 self._session = self._create_async_session()
                 self._logger.info("HTTP session opened successfully.")
 
-    async def close_session(self) -> None:
+    async def _close_session(self) -> None:
         """Close the HTTP session if it is open."""
         if self._session:
             try:
@@ -118,12 +118,12 @@ class Naminter:
                 self._session = None
 
     async def __aenter__(self) -> "Naminter":
-        await self.ensure_session()
+        await self._ensure_session()
         return self
     
     async def __aexit__(self, exc_type: Optional[type], exc_val: Optional[BaseException], exc_tb: Optional[Any]) -> None:
         """Async context manager exit."""
-        await self.close_session()
+        await self._close_session()
 
     async def get_wmn_summary(
         self,
@@ -230,7 +230,7 @@ class Naminter:
         fuzzy_mode: bool = False,
     ) -> SiteResult:
         """Check a single site for the given username."""
-        await self.ensure_session()
+        await self._ensure_session()
 
         site_name = site.get("name")
         category = site.get("cat")
@@ -403,7 +403,7 @@ class Naminter:
         as_generator: bool = False,
     ) -> Union[List[SiteResult], AsyncGenerator[SiteResult, None]]:
         """Check one or multiple usernames across all loaded sites."""
-        await self.ensure_session()
+        await self._ensure_session()
 
         usernames = validate_usernames(usernames)
         self._logger.info("Starting username enumeration for %d username(s): %s", len(usernames), usernames)
@@ -439,7 +439,7 @@ class Naminter:
         as_generator: bool = False
     ) -> Union[List[SelfCheckResult], AsyncGenerator[SelfCheckResult, None]]:
         """Run self-checks using known accounts for each site."""
-        await self.ensure_session()
+        await self._ensure_session()
 
         sites = self._filter_sites(
             site_names,
