@@ -37,7 +37,7 @@ Naminter is an asynchronous OSINT username enumeration tool and Python package. 
 - **Category Filters:** Include or exclude sites by category
 - **Custom Site Lists:** Use your own or remote WhatsMyName-format lists and schemas
 - **Proxy & Network Options:** Full proxy support, SSL verification, and redirect control
-- **Self-Enum Mode:** Validate detection methods for reliability
+- **Self-Enumeration Mode:** Validate detection methods for reliability
 - **Export Results:** Output to CSV, JSON, HTML, and PDF
 - **Response Handling:** Save/open HTTP responses for analysis
 - **Flexible Filtering:** Filter results by found, not found, errors, or unknown
@@ -127,8 +127,8 @@ naminter --username alice_bob \
     --html \
     --filter-all
 
-# Self-enum with detailed output
-naminter --self-enum \
+# Self-enumeration with detailed output
+naminter --self-enumeration \
     --show-details \
     --log-level DEBUG \
     --log-file debug.log
@@ -187,12 +187,12 @@ async def main():
     async with Naminter(wmn_data, wmn_schema) as naminter:
         results = await naminter.enumerate_usernames(["example_username"])
         for result in results:
-            if result.result_status.value == "found":
-                print(f"✅ {result.username} found on {result.site_name}: {result.result_url}")
-            elif result.result_status.value == "not_found":
-                print(f"❌ {result.username} not found on {result.site_name}")
-            elif result.result_status.value == "error":
-                print(f"⚠️ Error enumerating {result.username} on {result.site_name}: {result.error}")
+            if result.status.value == "found":
+                print(f"✅ {result.username} found on {result.name}: {result.result_url}")
+            elif result.status.value == "not_found":
+                print(f"❌ {result.username} not found on {result.name}")
+            elif result.status.value == "error":
+                print(f"⚠️ Error enumerating {result.username} on {result.name}: {result.error}")
 
 asyncio.run(main())
 ```
@@ -212,10 +212,10 @@ async def main():
         # Use as_generator=True for streaming results
         results = await naminter.enumerate_usernames(["example_username"], as_generator=True)
         async for result in results:
-            if result.result_status.value == "found":
-                print(f"✅ {result.username} found on {result.site_name}: {result.result_url}")
-            elif result.result_status.value == "not_found":
-                print(f"❌ {result.username} not found on {result.site_name}")
+            if result.status.value == "found":
+                print(f"✅ {result.username} found on {result.name}: {result.result_url}")
+            elif result.status.value == "not_found":
+                print(f"❌ {result.username} not found on {result.name}")
 
 asyncio.run(main())
 ```
@@ -243,17 +243,17 @@ async def main():
         results = await naminter.enumerate_usernames(usernames, fuzzy_mode=True)
         
         for result in results:
-            if result.result_status.value == "found":
-                print(f"✅ Found: {result.username} on {result.site_name}")
+            if result.status.value == "found":
+                print(f"✅ Found: {result.username} on {result.name}")
                 print(f"   URL: {result.result_url}")
                 print(f"   Response time: {result.elapsed:.2f}s")
             else:
-                print(f"❌ Not found: {result.username} on {result.site_name}")
+                print(f"❌ Not found: {result.username} on {result.name}")
 
 asyncio.run(main())
 ```
 
-#### Self-Enum and Validation
+#### Self-Enumeration and Validation
 
 ```python
 import asyncio
@@ -263,16 +263,16 @@ async def main():
     wmn_data, wmn_schema = await load_wmn_data()
     
     async with Naminter(wmn_data, wmn_schema) as naminter:
-        # Perform self-enum to validate site configurations
-        self_enum_results = await naminter.self_enum()
+        # Perform self-enumeration to validate site configurations
+        self_enumeration_results = await naminter.self_enumeration()
         
-        for site_result in self_enum_results:
+        for site_result in self_enumeration_results:
             if site_result.error:
-                print(f"❌ {site_result.site_name}: {site_result.error}")
+                print(f"❌ {site_result.name}: {site_result.error}")
             else:
-                found_count = sum(1 for r in site_result.results if r.result_status.value == "found")
+                found_count = sum(1 for r in site_result.results if r.status.value == "found")
                 total_count = len(site_result.results)
-                print(f"✅ {site_result.site_name}: {found_count}/{total_count} known accounts found")
+                print(f"✅ {site_result.name}: {found_count}/{total_count} known accounts found")
 
 asyncio.run(main())
 ```
@@ -318,10 +318,10 @@ asyncio.run(main())
 | `--local-schema`            | Path to local WhatsMyName schema file                      |
 | `--remote-schema`           | URL to fetch custom WhatsMyName schema                     |
 
-### Self-Enum
+### Self-Enumeration
 | Option                      | Description                                                |
 |-----------------------------|------------------------------------------------------------|
-| `--self-enum`              | Perform self-enum of the application                      |
+| `--self-enumeration`              | Perform self-enumeration of the application                      |
 
 ### Category Filters
 | Option                      | Description                                                |

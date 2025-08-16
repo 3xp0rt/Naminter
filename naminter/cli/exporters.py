@@ -60,7 +60,9 @@ class Exporter:
     def _export_csv(self, results: List[ResultDict], output_path: Path) -> None:
         if not results:
             return
+
         fieldnames = list(results[0].keys())
+
         try:
             with output_path.open('w', newline='', encoding='utf-8') as f:
                 writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -81,7 +83,7 @@ class Exporter:
             cat = item.get('category', 'uncategorized')
             grouped.setdefault(cat, []).append(item)
 
-        default_fields = ['site_name', 'result_url', 'elapsed']
+        default_fields = ['name', 'result_url', 'elapsed']
         display_fields = [f for f in default_fields if any(f in r for r in results)]
 
         try:
@@ -112,6 +114,7 @@ class Exporter:
     def _export_pdf(self, results: List[ResultDict], output_path: Path) -> None:
         if not results:
             raise ValueError('No results to export to PDF')
+
         try:
             html = self._generate_html(results)
             HTML(string=html).write_pdf(str(output_path))
@@ -121,6 +124,7 @@ class Exporter:
     def _resolve_path(self, fmt: FormatName, custom: Optional[str | Path]) -> Path:
         if custom:
             return Path(custom)
+            
         timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         filename = f"results_{timestamp}.{fmt}"
         return Path.cwd() / filename

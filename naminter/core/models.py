@@ -19,24 +19,16 @@ class ResultStatus(StrEnum):
 @dataclass(slots=True, frozen=True)
 class SiteResult:
     """Result of testing a username on a site."""
-    site_name: str
+    name: str
     category: str
     username: str
-    result_status: ResultStatus
+    status: ResultStatus
     result_url: Optional[str] = None
     response_code: Optional[int] = None
     response_text: Optional[str] = None
     elapsed: Optional[float] = None
     error: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.now)
-
-    def __post_init__(self) -> None:
-        """Validate numeric fields after initialization."""
-        if self.response_code is not None and self.response_code < 0:
-            raise ValueError("response_code must be non-negative")
-        
-        if self.elapsed is not None and self.elapsed < 0:
-            raise ValueError("elapsed must be non-negative")
 
     @classmethod
     def get_result_status(
@@ -80,25 +72,25 @@ class SiteResult:
     def to_dict(self, exclude_response_text: bool = False) -> Dict[str, Any]:
         """Convert SiteResult to dict."""
         result = asdict(self)
-        result['result_status'] = self.result_status.value
+        result['status'] = self.status.value
         result['created_at'] = self.created_at.isoformat()
         if exclude_response_text:
             result.pop('response_text', None)
         return result
 
 @dataclass(slots=True, frozen=True)
-class SelfEnumResult:
-    """Result of a self-enum for a username."""
-    site_name: str
+class SelfEnumerationResult:
+    """Result of a self-enumeration for a username."""
+    name: str
     category: str
     results: List[SiteResult]
-    result_status: ResultStatus = field(init=False)
+    status: ResultStatus = field(init=False)
     error: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.now)
 
     def __post_init__(self) -> None:
         """Calculate result status from results."""
-        object.__setattr__(self, 'result_status', self._get_result_status())
+        object.__setattr__(self, 'status', self._get_result_status())
 
     def _get_result_status(self) -> ResultStatus:
         """Determine result status from results."""
@@ -108,7 +100,7 @@ class SelfEnumResult:
         if not self.results:
             return ResultStatus.UNKNOWN
             
-        statuses: Set[ResultStatus] = {result.result_status for result in self.results if result}
+        statuses: Set[ResultStatus] = {result.status for result in self.results if result}
         
         if not statuses:
             return ResultStatus.UNKNOWN
@@ -122,12 +114,12 @@ class SelfEnumResult:
         return next(iter(statuses))
         
     def to_dict(self, exclude_response_text: bool = False) -> Dict[str, Any]:
-        """Convert SelfEnumResult to dict."""
+        """Convert SelfEnumerationResult to dict."""
         return {
-            'site_name': self.site_name,
+            'name': self.name,
             'category': self.category,
-            'result_status': self.result_status.value,
             'results': [result.to_dict(exclude_response_text=exclude_response_text) for result in self.results],
+            'status': self.status.value,
             'created_at': self.created_at.isoformat(),
             'error': self.error,
         }

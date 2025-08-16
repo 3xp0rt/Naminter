@@ -21,9 +21,6 @@ class ResultsTracker:
     
     def __init__(self, total_sites: int) -> None:
         """Initialize the results tracker."""
-        if total_sites < 0:
-            raise ValueError("total_sites must be non-negative")
-            
         self.total_sites = total_sites
         self.results_count = 0
         self.start_time = time.time()
@@ -31,13 +28,8 @@ class ResultsTracker:
 
     def add_result(self, result: SiteResult) -> None:
         """Update counters with a new result."""
-        if result is None:
-            raise ValueError("Result cannot be None")
-        if not hasattr(result, 'result_status'):
-            raise ValueError("Result must have a result_status attribute")
-
         self.results_count += 1
-        self.status_counts[result.result_status] += 1
+        self.status_counts[result.status] += 1
 
     def get_progress_text(self) -> str:
         """Get formatted progress text with request speed and statistics."""
@@ -103,11 +95,6 @@ class ProgressManager:
         
     def start(self, total: int, description: str) -> None:
         """Start the progress bar."""
-        if total < 0:
-            raise ValueError("Total must be non-negative")
-        if not description or not description.strip():
-            raise ValueError("Description cannot be empty")
-            
         if not self.disabled:
             self.progress = self.create_progress_bar()
             self.progress.start()
@@ -115,9 +102,6 @@ class ProgressManager:
         
     def update(self, advance: int = 1, description: Optional[str] = None) -> None:
         """Update the progress bar."""
-        if advance < 0:
-            raise ValueError("Advance must be non-negative")
-            
         if self.progress and self.task_id is not None:
             update_kwargs: Dict[str, Any] = {"advance": advance}
             if description is not None:

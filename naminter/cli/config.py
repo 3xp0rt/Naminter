@@ -22,7 +22,7 @@ class NaminterConfig:
     """
     # Required parameters
     usernames: List[str]
-    site_names: Optional[List[str]] = None
+    sites: Optional[List[str]] = None
     logger: Optional[object] = None
 
     # List and schema sources
@@ -55,7 +55,7 @@ class NaminterConfig:
     extra_fp: Optional[Union[ExtraFingerprints, Dict[str, Any], str]] = None
     browse: bool = False
     fuzzy_mode: bool = False
-    self_enum: bool = False
+    self_enumeration: bool = False
     no_progressbar: bool = False
 
     # Logging
@@ -80,14 +80,11 @@ class NaminterConfig:
 
     def __post_init__(self) -> None:
         """Validate and normalize configuration after initialization."""
-        if self.self_enum and self.usernames:
+        if self.self_enumeration and self.usernames:
             display_warning(
-                "Self-enum mode enabled: provided usernames will be ignored, "
+                "Self-enumeration mode enabled: provided usernames will be ignored, "
                 "using known usernames from site configurations instead."
             )
-
-        if not self.self_enum and not self.usernames:
-            raise ValueError("At least one username is required")
 
         try:
             if self.local_list_paths:
@@ -153,7 +150,7 @@ class NaminterConfig:
         """Convert configuration to a dictionary."""
         return {
             "usernames": self.usernames,
-            "site_names": self.site_names,
+            "sites": self.sites,
             "local_list_paths": self.local_list_paths,
             "remote_list_urls": self.remote_list_urls,
             "local_schema_path": self.local_schema_path,
@@ -172,7 +169,7 @@ class NaminterConfig:
             "extra_fp": self.extra_fp.to_dict() if isinstance(self.extra_fp, ExtraFingerprints) else self.extra_fp,
             "browse": self.browse,
             "fuzzy_mode": self.fuzzy_mode,
-            "self_enum": self.self_enum,
+            "self_enumeration": self.self_enumeration,
             "log_level": self.log_level,
             "log_file": self.log_file,
             "show_details": self.show_details,

@@ -6,7 +6,7 @@ from typing import Any, AsyncGenerator, Dict, List, Optional, Union, Set
 from curl_cffi.requests import AsyncSession, RequestsError
 
 from curl_cffi import BrowserTypeLiteral, ExtraFingerprints
-from ..core.models import ResultStatus, SiteResult, SelfEnumResult, ValidationMode
+from ..core.models import ResultStatus, SiteResult, SelfEnumerationResult, ValidationMode
 from ..core.exceptions import (
     DataError,
     ValidationError,
@@ -232,46 +232,46 @@ class Naminter:
         """Enumerate a single site for the given username."""
         await self._ensure_session()
 
-        site_name = site.get("name")
+        name = site.get("name")
         category = site.get("cat")
         uri_check_template = site.get("uri_check")
         post_body_template = site.get("post_body")
         e_code, e_string = site.get("e_code"), site.get("e_string")
         m_code, m_string = site.get("m_code"), site.get("m_string")
         
-        if not site_name:
+        if not name:
             self._logger.error("Site configuration missing required 'name' field: %r", site)
             return SiteResult(
-                site_name="",
+                name="",
                 category=category,
                 username=username,
-                result_status=ResultStatus.ERROR,
+                status=ResultStatus.ERROR,
                 error="Site missing required field: name",
             )
         
         if not category:
-            self._logger.error("Site '%s' missing required 'cat' field", site_name)
+            self._logger.error("Site '%s' missing required 'cat' field", name)
             return SiteResult(
-                site_name=site_name,
-                category=category,
+                name=name,
+                category="",
                 username=username,
-                result_status=ResultStatus.ERROR,
+                status=ResultStatus.ERROR,
                 error="Site missing required field: cat",
             )
     
         if not uri_check_template:
-            self._logger.error("Site '%s' missing required 'uri_check' field", site_name)
+            self._logger.error("Site '%s' missing required 'uri_check' field", name)
             return SiteResult(
-                site_name=site_name,
+                name=name,
                 category=category,
                 username=username,
-                result_status=ResultStatus.ERROR,
+                status=ResultStatus.ERROR,
                 error="Site missing required field: uri_check",
             )
             
         has_placeholder = ACCOUNT_PLACEHOLDER in uri_check_template or (post_body_template and ACCOUNT_PLACEHOLDER in post_body_template)
         if not has_placeholder:
-            return SiteResult(site_name, category, username, ResultStatus.ERROR, error=f"Site '{site_name}' missing {ACCOUNT_PLACEHOLDER} placeholder")
+            return SiteResult(name, category, username, ResultStatus.ERROR, error=f"Site '{name}' missing {ACCOUNT_PLACEHOLDER} placeholder")
 
         matchers = {
             'e_code':  e_code,
@@ -284,14 +284,14 @@ class Naminter:
             if all(val is None for val in matchers.values()):
                 self._logger.error(
                     "Site '%s' must define at least one matcher (e_code, e_string, m_code, or m_string) for %s mode",
-                    site_name,
+                    name,
                     ValidationMode.FUZZY,
                 )
                 return SiteResult(
-                    site_name=site_name,
+                    name=name,
                     category=category,
                     username=username,
-                    result_status=ResultStatus.ERROR,
+                    status=ResultStatus.ERROR,
                     error=f"Site must define at least one matcher for {ValidationMode.FUZZY} mode",
                 )
         else:
@@ -299,26 +299,26 @@ class Naminter:
             if missing:
                 self._logger.error(
                     "Site '%s' missing required matchers for %s mode: %s",
-                    site_name, ValidationMode.STRICT, missing
+                    name, ValidationMode.STRICT, missing
                 )
                 return SiteResult(
-                    site_name=site_name,
+                    name=name,
                     category=category,
                     username=username,
-                    result_status=ResultStatus.ERROR,
+                    status=ResultStatus.ERROR,
                     error=f"Site missing required matchers for {ValidationMode.STRICT} mode: {missing}",
                 )
 
         strip_bad_char = site.get("strip_bad_char", "")
         clean_username = username.translate(str.maketrans("", "", strip_bad_char))
         if not clean_username:
-            return SiteResult(site_name, category, username, ResultStatus.ERROR, error=f"Username '{username}' became empty after character stripping")
+            return SiteResult(name, category, username, ResultStatus.ERROR, error=f"Username '{username}' became empty after character stripping")
 
         uri_check = uri_check_template.replace(ACCOUNT_PLACEHOLDER, clean_username)
         uri_pretty = site.get("uri_pretty", uri_check_template).replace(ACCOUNT_PLACEHOLDER, clean_username)
 
         self._logger.info("Enumerating site '%s' (category: %s) for username '%s' in %s mode", 
-                         site_name, category, username, ValidationMode.FUZZY if fuzzy_mode else ValidationMode.STRICT)
+                         name, category, username, ValidationMode.FUZZY if fuzzy_mode else ValidationMode.STRICT)
 
         try:
             async with self._semaphore:
@@ -335,28 +335,28 @@ class Naminter:
                     response = await self._session.get(uri_check, headers=headers)
 
                 elapsed = time.monotonic() - start_time
-                self._logger.info("Request to '%s' completed in %.2fs with status %d", site_name, elapsed, response.status_code)
+                self._logger.info("Request to '%s' completed in %.2fs with status %d", name, elapsed, response.status_code)
         except asyncio.CancelledError:
-            self._logger.warning("Request to '%s' was cancelled", site_name)
+            self._logger.warning("Request to '%s' was cancelled", name)
             raise
         except RequestsError as e:
-            self._logger.warning("Network error while enumerating '%s': %s", site_name, e, exc_info=True)
+            self._logger.warning("Network error while enumerating '%s': %s", name, e, exc_info=True)
             return SiteResult(
-                site_name=site_name,
+                name=name,
                 category=category,
                 username=username,
                 result_url=uri_pretty,
-                result_status=ResultStatus.ERROR,
+                status=ResultStatus.ERROR,
                 error=f"Network error: {e}",
             )
         except Exception as e:
-            self._logger.error("Unexpected error while enumerating '%s': %s", site_name, e, exc_info=True)
+            self._logger.error("Unexpected error while enumerating '%s': %s", name, e, exc_info=True)
             return SiteResult(
-                site_name=site_name,
+                name=name,
                 category=category,
                 username=username,
                 result_url=uri_pretty,
-                result_status=ResultStatus.ERROR,
+                status=ResultStatus.ERROR,
                 error=f"Unexpected error: {e}",
             )
 
@@ -375,7 +375,7 @@ class Naminter:
 
         self._logger.debug(
             "Site '%s' result: %s (HTTP %d) in %.2fs (%s mode)",
-            site_name,
+            name,
             result_status.name,
             response_code,
             elapsed,
@@ -383,11 +383,11 @@ class Naminter:
         )
 
         return SiteResult(
-            site_name=site_name,
+            name=name,
             category=category,
             username=username,
             result_url=uri_pretty,
-            result_status=result_status,
+            status=result_status,
             response_code=response_code,
             elapsed=elapsed,
             response_text=response_text,
@@ -430,15 +430,15 @@ class Naminter:
         results = await asyncio.gather(*coroutines)
         return results
 
-    async def self_enum(
+    async def self_enumeration(
         self,
         site_names: Optional[List[str]] = None,
         include_categories: Optional[List[str]] = None,
         exclude_categories: Optional[List[str]] = None,
         fuzzy_mode: bool = False,
         as_generator: bool = False
-    ) -> Union[List[SelfEnumResult], AsyncGenerator[SelfEnumResult, None]]:
-        """Run self-enum using known accounts for each site."""
+    ) -> Union[List[SelfEnumerationResult], AsyncGenerator[SelfEnumerationResult, None]]:
+        """Run self-enumeration using known accounts for each site."""
         await self._ensure_session()
 
         sites = self._filter_sites(
@@ -447,66 +447,66 @@ class Naminter:
             exclude_categories=exclude_categories,
         )
 
-        self._logger.info("Starting self-enum validation for %d sites in %s mode", len(sites), ValidationMode.FUZZY if fuzzy_mode else ValidationMode.STRICT)
+        self._logger.info("Starting self-enumeration validation for %d sites in %s mode", len(sites), ValidationMode.FUZZY if fuzzy_mode else ValidationMode.STRICT)
 
-        async def _enumerate_known(site: Dict[str, Any]) -> SelfEnumResult:
+        async def _enumerate_known(site: Dict[str, Any]) -> SelfEnumerationResult:
             """Helper function to enumerate a site with all its known users."""
-            site_name = site.get("name")
+            name = site.get("name")
             category = site.get("cat")
             known = site.get("known")
 
-            if not site_name:
-                self._logger.error("Site configuration missing required 'name' field for self-enum: %r", site)
-                return SelfEnumResult(
-                    site_name=site_name,
-                    category=category,
+            if not name:
+                self._logger.error("Site configuration missing required 'name' field for self-enumeration: %r", site)
+                return SelfEnumerationResult(
+                    name="",
+                    category=category or "",
                     results=[],
                     error=f"Site missing required field: name"
                 )
 
             if not category:
-                self._logger.error("Site '%s' missing required 'cat' field for self-enum", site_name)
-                return SelfEnumResult(
-                    site_name=site_name,
-                    category=category,
+                self._logger.error("Site '%s' missing required 'cat' field for self-enumeration", name)
+                return SelfEnumerationResult(
+                    name=name,
+                    category="",
                     results=[],
-                    error=f"Site '{site_name}' missing required field: cat"
+                    error=f"Site missing required field: cat"
                 )
             
             if known is None:
-                self._logger.error("Site '%s' missing required 'known' field for self-enum", site_name)
-                return SelfEnumResult(
-                    site_name=site_name,
+                self._logger.error("Site '%s' missing required 'known' field for self-enumeration", name)
+                return SelfEnumerationResult(
+                    name=name,
                     category=category,
                     results=[],
-                    error=f"Site '{site_name}' missing required field: known"
+                    error=f"Site '{name}' missing required field: known"
                 )
             
-            self._logger.info("Self-enuming site '%s' (category: %s) with %d known accounts", site_name, category, len(known))
+            self._logger.info("Self-enumerating site '%s' (category: %s) with %d known accounts", name, category, len(known))
 
             try:
                 coroutines = [self.enumerate_site(site, username, fuzzy_mode) for username in known]
                 results = await asyncio.gather(*coroutines)
 
-                return SelfEnumResult(
-                    site_name=site_name,
+                return SelfEnumerationResult(
+                    name=name,
                     category=category,
                     results=results
                 )
             except Exception as e:
-                self._logger.error("Unexpected error during self-enum for site '%s': %s", site_name, e, exc_info=True)
-                return SelfEnumResult(
-                    site_name=site_name,
+                self._logger.error("Unexpected error during self-enumeration for site '%s': %s", name, e, exc_info=True)
+                return SelfEnumerationResult(
+                    name=name,
                     category=category,
                     results=[],
-                    error=f"Unexpected error during self-enum: {e}"
+                    error=f"Unexpected error during self-enumeration: {e}"
                 )
         
         coroutines = [
             _enumerate_known(site) for site in sites if isinstance(site, dict)
         ]
 
-        async def iterate_results() -> AsyncGenerator[SelfEnumResult, None]:
+        async def iterate_results() -> AsyncGenerator[SelfEnumerationResult, None]:
             for completed_task in asyncio.as_completed(coroutines):
                 yield await completed_task
 
