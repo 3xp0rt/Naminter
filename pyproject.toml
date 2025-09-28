@@ -1,12 +1,11 @@
-[build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
-
-[project]
+[tool.poetry]
 name = "naminter"
-dynamic = ["version", "description", "authors", "license"]
+version = "1.0.7"
+description = "Asynchronous OSINT username enumeration tool that searches hundreds of websites using the WhatsMyName dataset"
+authors = ["3xp0rt <contact@3xp0rt.com>"]
 readme = "README.md"
-requires-python = ">=3.11"
+packages = [{include = "naminter"}]
+include = ["naminter/cli/templates/*.html"]
 
 classifiers = [
     "Development Status :: 5 - Production/Stable",
@@ -22,19 +21,6 @@ classifiers = [
     "Topic :: Utilities"
 ]
 
-dependencies = [
-    "click>=8.2.1",
-    "curl-cffi>=0.13.0",
-    "aiofiles>=24.1.0",
-    "jinja2>=3.1.6",
-    "jsonschema>=4.25.0",
-    "rich>=14.1.0",
-    "rich-click>=1.8.9",
-    "weasyprint>=66.0"
-]
-
-maintainers = [{ name = "3xp0rt" }]
-
 keywords = [
     "osint",
     "username",
@@ -47,32 +33,120 @@ keywords = [
     "naminter"
 ]
 
-[project.urls]
-Homepage     = "https://github.com/3xp0rt/naminter"
-Repository   = "https://github.com/3xp0rt/naminter"
-BugTracker   = "https://github.com/3xp0rt/naminter/issues"
-Documentation= "https://github.com/3xp0rt/naminter#readme"
-Source       = "https://github.com/3xp0rt/naminter"
+[tool.poetry.urls]
+Homepage = "https://github.com/3xp0rt/naminter"
+Repository = "https://github.com/3xp0rt/naminter"
+BugTracker = "https://github.com/3xp0rt/naminter/issues"
+Documentation = "https://github.com/3xp0rt/naminter#readme"
+Source = "https://github.com/3xp0rt/naminter"
 
-[project.scripts]
+[tool.poetry.dependencies]
+python = "^3.11"
+click = "^8.3.0"
+curl-cffi = "^0.13.0"
+aiofiles = "^24.1.0"
+jinja2 = "^3.1.6"
+jsonschema = "^4.25.1"
+rich = "^14.1.0"
+rich-click = "^1.9.1"
+weasyprint = "^66.0"
+
+[tool.poetry.group.dev.dependencies]
+ruff = "^0.13.2"
+pytest = "^8.4.2"
+pytest-cov = "^7.0.0"
+coverage = "^7.10.7"
+taskipy = "^1.14.1"
+
+[tool.poetry.scripts]
 naminter = "naminter.cli.main:entry_point"
 
-[tool.setuptools.dynamic]
-version = {attr = "naminter.__version__"}
-description = {attr = "naminter.__description__"}
-authors = [
-    {name = "naminter.__author__", email = "naminter.__author_email__"}
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+# Pytest configuration
+[tool.pytest.ini_options]
+pythonpath = "."
+addopts = "-p no:warnings"
+
+# Taskipy tasks
+[tool.taskipy.tasks]
+lint = "ruff check .; ruff check . --diff"
+format = "ruff check . --fix; ruff format ."
+test = "pytest -s -x --cov=naminter -vv"
+post_test = "coverage html"
+
+# Ruff configuration
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+
+[tool.ruff.lint]
+preview = true
+select = [
+    'I',      # isort
+    'F',      # pyflakes
+    'E',      # pycodestyle errors
+    'W',      # pycodestyle warnings
+    'PL',     # pylint
+    'PT',     # flake8-pytest-style
+    'B',      # flake8-bugbear
+    'C4',     # flake8-comprehensions
+    'UP',     # pyupgrade
+    'ARG001', # unused-function-args
+    'SIM',    # flake8-simplify
+    'TCH',    # flake8-type-checking
+    'TID',    # flake8-tidy-imports
+    'Q',      # flake8-quotes
+    'RUF',    # ruff-specific rules
+    'A',      # flake8-builtins
+    'COM',    # flake8-commas
+    'DTZ',    # flake8-datetimez
+    'EM',     # flake8-errmsg
+    'G',      # flake8-logging-format
+    'ICN',    # flake8-import-conventions
+    'N',      # pep8-naming
+    'PIE',    # flake8-pie
+    'T20',    # flake8-print
+    'YTT',    # flake8-2020
 ]
-license = {text = "naminter.__license__"}
+ignore = [
+    'PLR0913',  # too-many-arguments
+    'PLR0917',  # too-many-locals
+    'PLR0904',  # too-many-branches
+    'E701',     # multiple-statements-on-one-line
+    'B008',     # do-not-perform-function-calls-in-argument-defaults
+    'C901',     # too-complex
+    'PLR2004',  # magic-value-comparison
+    'PLR0912',  # too-many-branches
+    'PLR0915',  # too-many-statements
+    'PLR0916',  # too-many-boolean-expressions
+    'COM812',   # missing-trailing-comma (conflicts with formatter)
+]
+exclude = ['tests', 'tests/*']
 
-[tool.setuptools]
-package-dir = {"" = "."}
-include-package-data = true
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # unused imports
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["naminter*"]
+[tool.ruff.lint.isort]
+known-first-party = ["naminter"]
 
-[tool.setuptools.package-data]
-"naminter.cli.templates" = ["*.html"]
-"naminter" = ["cli/templates/*.html"]
+[tool.ruff.lint.flake8-quotes]
+docstring-quotes = "double"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-args = 8
+max-branches = 12
+max-returns = 6
+max-statements = 50
+
+[tool.ruff.format]
+preview = true
+quote-style = "double"
+docstring-code-format = true
+docstring-code-line-length = 79
+exclude = ['tests', 'tests/*']
