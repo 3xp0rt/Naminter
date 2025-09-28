@@ -2,6 +2,7 @@ from dataclasses import dataclass, asdict, field
 from enum import StrEnum, auto
 from typing import Optional, Dict, Any, List, Set
 from datetime import datetime
+import json
 
 class ValidationMode(StrEnum):
     FUZZY = auto()
@@ -83,7 +84,7 @@ class SelfEnumerationResult:
     """Result of a self-enumeration for a username."""
     name: str
     category: str
-    results: List[SiteResult]
+    results: Optional[List[SiteResult]] = None
     status: ResultStatus = field(init=False)
     error: Optional[str] = None
     created_at: datetime = field(default_factory=datetime.now)
@@ -118,9 +119,46 @@ class SelfEnumerationResult:
         return {
             'name': self.name,
             'category': self.category,
-            'results': [result.to_dict(exclude_response_text=exclude_response_text) for result in self.results],
+            'results': [result.to_dict(exclude_response_text=exclude_response_text) for result in self.results] if self.results else [],
             'status': self.status.value,
             'created_at': self.created_at.isoformat(),
             'error': self.error,
         }
 
+@dataclass(slots=True, frozen=True)
+class Summary:
+    """Summary of the loaded WhatsMyName dataset and filters applied."""
+    license: List[str]
+    authors: List[str]
+    site_names: List[str]
+    sites_count: int
+    categories: List[str]
+    categories_count: int
+    known_accounts_total: int
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert Summary to a plain dictionary for serialization/legacy callers."""
+        return {
+            'license': list(self.license),
+            'authors': list(self.authors),
+            'site_names': list(self.site_names),
+            'sites_count': int(self.sites_count),
+            'categories': list(self.categories),
+            'categories_count': int(self.categories_count),
+            'known_accounts_total': int(self.known_accounts_total),
+        }
+
+@dataclass(slots=True, frozen=True)
+class Response:
+    """HTTP response abstraction used by session adapters."""
+    status_code: int
+    text: str
+    elapsed: float
+
+    def json(self) -> Any:
+        """Parse the response body as JSON and return the resulting object.
+
+        Raises:
+            ValueError: If the response text is not valid JSON.
+        """
+        return json.loads(self.text)

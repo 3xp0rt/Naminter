@@ -21,12 +21,14 @@ from ..cli.console import (
 from ..cli.exporters import Exporter
 from ..cli.progress import ProgressManager, ResultsTracker
 from ..cli.constants import RESPONSE_FILE_DATE_FORMAT, RESPONSE_FILE_EXTENSION
-from ..cli.utils import load_wmn_lists, sanitize_filename
+from ..cli.utils import sanitize_filename
 from ..core.models import ResultStatus, SiteResult, SelfEnumerationResult
 from ..core.main import Naminter
+from ..core.network import CurlCFFISession
 from ..core.constants import MAX_CONCURRENT_TASKS, HTTP_REQUEST_TIMEOUT_SECONDS, HTTP_ALLOW_REDIRECTS, HTTP_SSL_VERIFY, WMN_SCHEMA_URL, LOGGING_FORMAT
+from ..core.utils import validate_numeric_values
 
-from ..core.exceptions import DataError, ConfigurationError
+from ..core.exceptions import DataError, ConfigurationError, ExportError
 from .. import __description__, __version__
 
 
@@ -52,12 +54,12 @@ class NaminterCLI:
             return None
         
         try:
-            response_path = self.config.response_path
-            if response_path is None:
+            dir_path = self.config.response_dir
+            if dir_path is None:
                 return None
-                
-            response_path.mkdir(parents=True, exist_ok=True)
-            return response_path
+
+            dir_path.mkdir(parents=True, exist_ok=True)
+            return dir_path
         except PermissionError as e:
             display_error(f"Permission denied creating/accessing response directory: {e}")
             return None
@@ -70,40 +72,56 @@ class NaminterCLI:
 
     @staticmethod
     def _setup_logging(config: NaminterConfig) -> None:
-        """Setup logging configuration if log level and file are specified."""
-        if config.log_level and config.log_file:
-            log_path = Path(config.log_file)
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            level_value = getattr(logging, str(config.log_level).upper(), logging.INFO)
-            logging.basicConfig(
-                level=level_value,
-                format=LOGGING_FORMAT,
-                filename=str(log_path),
-                filemode="a",
-            )
+        """Configure project logging."""
+        if not config.log_file:
+            return
+
+        log_path = Path(config.log_file)
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+
+        level_value = getattr(logging, str(config.log_level or "INFO").upper(), logging.INFO)
+
+        logger = logging.getLogger("naminter")
+        logger.setLevel(level_value)
+        logger.propagate = False
+        
+        has_file_handler = any(isinstance(handler, logging.FileHandler) for handler in logger.handlers)
+        if not has_file_handler:
+            file_handler = logging.FileHandler(str(log_path), mode="a", encoding="utf-8")
+            formatter = logging.Formatter(LOGGING_FORMAT)
+            file_handler.setFormatter(formatter)
+            file_handler.setLevel(level_value)
+            logger.addHandler(file_handler)
     
     async def run(self) -> None:
         """Main execution method with progress tracking."""
-        wmn_data, wmn_schema = load_wmn_lists(
-            local_list_paths=self.config.local_list_paths,
-            remote_list_urls=self.config.remote_list_urls,
-            skip_validation=self.config.skip_validation,
-            local_schema_path=self.config.local_schema_path,
-            remote_schema_url=self.config.remote_schema_url
-        )
-        
-        async with Naminter(
-            wmn_data=wmn_data,
-            wmn_schema=wmn_schema,
-            max_tasks=self.config.max_tasks,
+        try:
+            warnings = validate_numeric_values(self.config.max_tasks, self.config.timeout)
+            for message in warnings:
+                display_warning(message)
+        except ConfigurationError as e:
+            display_error(f"Configuration error: {e}")
+            return
+            
+        http_client = CurlCFFISession(
+            proxies=self.config.proxy,
+            verify=self.config.verify_ssl,
             timeout=self.config.timeout,
-            proxy=self.config.proxy,
-            verify_ssl=self.config.verify_ssl,
             allow_redirects=self.config.allow_redirects,
             impersonate=self.config.impersonate,
             ja3=self.config.ja3,
             akamai=self.config.akamai,
             extra_fp=self.config.extra_fp,
+        )
+
+        async with Naminter(
+            http_client=http_client,
+            max_tasks=self.config.max_tasks,
+            local_list_paths=self.config.local_list_paths,
+            remote_list_urls=self.config.remote_list_urls,
+            skip_validation=self.config.skip_validation,
+            local_schema_path=self.config.local_schema_path,
+            remote_schema_url=self.config.remote_schema_url,
         ) as naminter:
             if self.config.self_enumeration:
                 results = await self._run_self_enumeration(naminter)
@@ -111,8 +129,12 @@ class NaminterCLI:
                 results = await self._run_check(naminter)
 
             if self.config.export_formats and results:
-                export_manager = Exporter(self.config.usernames or [], __version__)
-                export_manager.export(results, self.config.export_formats)
+                try:
+                    export_manager = Exporter(self.config.usernames or [], __version__)
+                    export_manager.export(results, self.config.export_formats)
+                except ExportError as e:
+                    display_error(f"Export error: {e}")
+                    return
 
     async def _run_check(self, naminter: Naminter) -> List[SiteResult]:
         """Run the username enumeration functionality."""
@@ -121,7 +143,7 @@ class NaminterCLI:
             include_categories=self.config.include_categories,
             exclude_categories=self.config.exclude_categories,
         )
-        actual_site_count = int(summary.get("sites_count", 0))
+        actual_site_count = int(summary.sites_count)
         total_sites = actual_site_count * len(self.config.usernames)
         
         tracker = ResultsTracker(total_sites)
@@ -159,7 +181,7 @@ class NaminterCLI:
             include_categories=self.config.include_categories,
             exclude_categories=self.config.exclude_categories,
         )
-        total_tests = int(summary.get("known_accounts_total", 0))
+        total_tests = int(summary.known_accounts_total)
 
         tracker = ResultsTracker(total_tests)
         results: List[SelfEnumerationResult] = []
@@ -384,6 +406,9 @@ def main(ctx: click.Context, **kwargs: Any) -> None:
         ctx.exit(1)
     except DataError as e:
         display_error(f"Data error: {e}")
+        ctx.exit(1)
+    except ExportError as e:
+        display_error(f"Export error: {e}")
         ctx.exit(1)
     except Exception as e:
         display_error(f"Fatal error: {e}")

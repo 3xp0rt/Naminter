@@ -94,7 +94,7 @@ class NaminterConfig:
             if not self.local_list_paths and not self.remote_list_urls:
                 self.remote_list_urls = [WMN_REMOTE_URL]
         except Exception as e:
-            raise ValueError(f"Configuration validation failed: {e}") from e
+            raise ConfigurationError(f"Configuration validation failed: {e}") from e
 
         filter_fields = [
             self.filter_all,

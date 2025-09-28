@@ -34,7 +34,6 @@ class ResultsTracker:
     def get_progress_text(self) -> str:
         """Get formatted progress text with request speed and statistics."""
         elapsed = time.time() - self.start_time
-        rate = self.results_count / elapsed if elapsed > 0 else 0.0
         
         found = self.status_counts[ResultStatus.FOUND]
         ambiguous = self.status_counts[ResultStatus.AMBIGUOUS]
@@ -42,6 +41,11 @@ class ResultsTracker:
         not_found = self.status_counts[ResultStatus.NOT_FOUND]
         not_valid = self.status_counts[ResultStatus.NOT_VALID]
         errors = self.status_counts[ResultStatus.ERROR]
+
+        valid_count = self.results_count - errors - not_valid
+        if valid_count < 0:
+            valid_count = 0
+        rate = valid_count / elapsed if elapsed > 0 else 0.0
 
         sections = [
             f"[{THEME['primary']}]{rate:.1f} req/s[/]",
@@ -60,11 +64,6 @@ class ResultsTracker:
             
         sections.append(f"[{THEME['primary']}]{self.results_count}/{self.total_sites}[/]")
         return " │ ".join(sections)
-    
-    @property
-    def completion_percentage(self) -> float:
-        """Get the completion percentage as a float between 0 and 100."""
-        return (self.results_count / self.total_sites) * 100 if self.total_sites > 0 else 0.0
 
 
 class ProgressManager:

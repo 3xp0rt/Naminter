@@ -34,3 +34,36 @@ LOGGING_FORMAT: Final[str] = "%(asctime)s - %(name)s - %(levelname)s - %(message
 
 # Placeholder for account name substitution in uri_check or post_body
 ACCOUNT_PLACEHOLDER: Final[str] = "{account}"
+
+# Required key sets for validations
+REQUIRED_KEYS_ENUMERATE: Final[tuple[str, ...]] = (
+    "name",
+    "uri_check",
+    "e_code",
+    "e_string",
+    "m_string",
+    "m_code",
+    "cat",
+)
+
+REQUIRED_KEYS_SELF_ENUM: Final[tuple[str, ...]] = (
+    "name",
+    "cat",
+    "known",
+)
+
+# WMN dataset keys
+WMN_KEY_SITES: Final[str] = "sites"
+WMN_KEY_CATEGORIES: Final[str] = "categories"
+WMN_KEY_AUTHORS: Final[str] = "authors"
+WMN_KEY_LICENSE: Final[str] = "license"
+WMN_KEY_NAME: Final[str] = "name"
+
+# Collection of list fields present in WMN payloads
+WMN_LIST_FIELDS: Final[tuple[str, ...]] = (
+    WMN_KEY_SITES,
+    WMN_KEY_CATEGORIES,
+    WMN_KEY_AUTHORS,
+    WMN_KEY_LICENSE,
+)
+

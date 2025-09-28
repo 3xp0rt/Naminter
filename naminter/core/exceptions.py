@@ -50,11 +50,11 @@ class SessionError(NetworkError):
     pass
 
 
-class SchemaValidationError(DataError):
+class SchemaError(DataError):
     """Raised when WMN schema validation fails.
     
     This occurs when the WhatsMyName list format doesn't match
-    the expected schema structure.
+    the expected schema structure, or when the schema itself is invalid.
     """
     pass
 
@@ -77,15 +77,6 @@ class FileAccessError(DataError):
     pass
 
 
-class LoggingError(ConfigurationError):
-    """Raised when logging configuration fails.
-    
-    This includes logger setup errors, handler configuration issues,
-    and log file access problems.
-    """
-    pass
-
-
 class ValidationError(DataError):
     """Raised when input validation fails.
     
@@ -95,20 +86,11 @@ class ValidationError(DataError):
     pass
 
 
-class WMNListError(DataError):
-    """Raised when WhatsMyName list loading or processing fails.
+class ExportError(NaminterError):
+    """Raised when export operations fail.
     
-    This includes download errors, parsing failures,
-    and list update issues.
-    """
-    pass
-
-
-class ConcurrencyError(NaminterError):
-    """Raised when concurrency-related errors occur.
-    
-    This includes semaphore acquisition failures, task management errors,
-    and thread/async coordination issues.
+    This includes file writing errors, format conversion errors,
+    and other export-related issues.
     """
     pass
 
@@ -119,11 +101,9 @@ __all__ = [
     "NetworkError",
     "DataError",
     "SessionError",
-    "SchemaValidationError",
+    "SchemaError",
     "TimeoutError",
     "FileAccessError",
-    "LoggingError",
     "ValidationError",
-    "WMNListError",
-    "ConcurrencyError",
+    "ExportError",
 ]
