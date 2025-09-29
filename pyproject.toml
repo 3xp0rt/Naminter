@@ -3,6 +3,7 @@ name = "naminter"
 version = "1.0.7"
 description = "Asynchronous OSINT username enumeration tool that searches hundreds of websites using the WhatsMyName dataset"
 authors = ["3xp0rt <contact@3xp0rt.com>"]
+license = "MIT"
 readme = "README.md"
 packages = [{include = "naminter"}]
 include = ["naminter/cli/templates/*.html"]
@@ -53,9 +54,6 @@ weasyprint = "^66.0"
 
 [tool.poetry.group.dev.dependencies]
 ruff = "^0.13.2"
-pytest = "^8.4.2"
-pytest-cov = "^7.0.0"
-coverage = "^7.10.7"
 taskipy = "^1.14.1"
 
 [tool.poetry.scripts]
@@ -65,22 +63,16 @@ naminter = "naminter.cli.main:entry_point"
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
-# Pytest configuration
-[tool.pytest.ini_options]
-pythonpath = "."
-addopts = "-p no:warnings"
-
 # Taskipy tasks
 [tool.taskipy.tasks]
 lint = "ruff check .; ruff check . --diff"
 format = "ruff check . --fix; ruff format ."
-test = "pytest -s -x --cov=naminter -vv"
-post_test = "coverage html"
 
 # Ruff configuration
 [tool.ruff]
 line-length = 88
 target-version = "py311"
+exclude = []
 
 [tool.ruff.lint]
 preview = true
@@ -90,7 +82,6 @@ select = [
     'E',      # pycodestyle errors
     'W',      # pycodestyle warnings
     'PL',     # pylint
-    'PT',     # flake8-pytest-style
     'B',      # flake8-bugbear
     'C4',     # flake8-comprehensions
     'UP',     # pyupgrade
@@ -124,7 +115,6 @@ ignore = [
     'PLR0916',  # too-many-boolean-expressions
     'COM812',   # missing-trailing-comma (conflicts with formatter)
 ]
-exclude = ['tests', 'tests/*']
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]  # unused imports
@@ -149,4 +139,3 @@ preview = true
 quote-style = "double"
 docstring-code-format = true
 docstring-code-line-length = 79
-exclude = ['tests', 'tests/*']
