@@ -3,14 +3,12 @@ import json
 import logging
 from collections.abc import AsyncGenerator, Sequence
 from pathlib import Path
-from typing import (
-    Any,
-)
+from typing import Any
 
 import aiofiles
 import jsonschema
 
-from ..core.constants import (
+from naminter.core.constants import (
     ACCOUNT_PLACEHOLDER,
     MAX_CONCURRENT_TASKS,
     REQUIRED_KEYS_ENUMERATE,
@@ -22,28 +20,24 @@ from ..core.constants import (
     WMN_KEY_SITES,
     WMN_REMOTE_URL,
 )
-from ..core.exceptions import (
+from naminter.core.exceptions import (
     DataError,
     FileAccessError,
-    NetworkError,
+    HttpError,
+    HttpSessionError,
+    HttpTimeoutError,
     SchemaError,
-    SessionError,
-    TimeoutError,
     ValidationError,
 )
-from ..core.models import (
+from naminter.core.models import (
     ResultStatus,
     SelfEnumerationResult,
     SiteResult,
     Summary,
     ValidationMode,
 )
-from ..core.network import BaseSession
-from ..core.utils import (
-    deduplicate_strings,
-    merge_lists,
-    validate_usernames,
-)
+from naminter.core.network import BaseSession
+from naminter.core.utils import deduplicate_strings, merge_lists, validate_usernames
 
 
 class Naminter:
@@ -87,48 +81,60 @@ class Naminter:
             try:
                 await self._http.open()
                 self._logger.info("HTTP client opened")
-            except SessionError as e:
+            except HttpSessionError as e:
                 self._logger.error("Failed to open HTTP session: %s", e)
-                raise DataError(f"HTTP session initialization failed: {e}") from e
+                msg = f"HTTP session initialization failed: {e}"
+                raise DataError(msg) from e
 
     async def _fetch_json(self, url: str) -> dict[str, Any]:
         """Fetch and parse JSON from a URL."""
         if not url.strip():
-            raise ValidationError(f"Invalid URL: {url}")
+            msg = f"Invalid URL: {url}"
+            raise ValidationError(msg)
 
         try:
             response = await self._http.get(url)
-        except TimeoutError as e:
-            raise DataError(f"Timeout while fetching from {url}: {e}") from e
-        except SessionError as e:
-            raise DataError(f"Session error while fetching from {url}: {e}") from e
-        except NetworkError as e:
-            raise DataError(f"Network error while fetching from {url}: {e}") from e
+        except HttpTimeoutError as e:
+            msg = f"Timeout while fetching from {url}: {e}"
+            raise DataError(msg) from e
+        except HttpSessionError as e:
+            msg = f"Session error while fetching from {url}: {e}"
+            raise DataError(msg) from e
+        except HttpError as e:
+            msg = f"Network error while fetching from {url}: {e}"
+            raise DataError(msg) from e
 
         if response.status_code < 200 or response.status_code >= 300:
-            raise DataError(f"Failed to fetch from {url}: HTTP {response.status_code}")
+            msg = f"Failed to fetch from {url}: HTTP {response.status_code}"
+            raise DataError(msg)
 
         try:
             return response.json()
         except (ValueError, json.JSONDecodeError) as e:
-            raise DataError(f"Failed to parse JSON from {url}: {e}") from e
+            msg = f"Failed to parse JSON from {url}: {e}"
+            raise DataError(msg) from e
 
-    async def _read_json_file(self, path: str | Path) -> dict[str, Any]:
+    @staticmethod
+    async def _read_json_file(path: str | Path) -> dict[str, Any]:
         """Read JSON from a local file without blocking the event loop."""
         try:
             async with aiofiles.open(path, encoding="utf-8") as file:
                 content = await file.read()
         except FileNotFoundError as e:
-            raise FileAccessError(f"File not found: {path}") from e
+            msg = f"File not found: {path}"
+            raise FileAccessError(msg) from e
         except PermissionError as e:
-            raise FileAccessError(f"Permission denied accessing file: {path}") from e
+            msg = f"Permission denied accessing file: {path}"
+            raise FileAccessError(msg) from e
         except OSError as e:
-            raise FileAccessError(f"Error reading file {path}: {e}") from e
+            msg = f"Error reading file {path}: {e}"
+            raise FileAccessError(msg) from e
 
         try:
             return json.loads(content)
         except json.JSONDecodeError as e:
-            raise DataError(f"Invalid JSON in file {path}: {e}") from e
+            msg = f"Invalid JSON in file {path}: {e}"
+            raise DataError(msg) from e
 
     async def _load_schema(self) -> dict[str, Any]:
         """Load WMN schema from local or remote source."""
@@ -141,17 +147,22 @@ class Naminter:
             elif self._remote_schema_url:
                 return await self._fetch_json(self._remote_schema_url)
             else:
-                raise DataError(
-                    "No schema source provided - either local_schema_path or remote_schema_url is required"
+                msg = (
+                    "No schema source provided - either local_schema_path or "
+                    "remote_schema_url is required"
                 )
+                raise DataError(msg)
         except (OSError, json.JSONDecodeError) as e:
+            msg = f"Failed to load required WMN schema from local file: {e}"
             raise DataError(
-                f"Failed to load required WMN schema from local file: {e}"
+                msg
             ) from e
-        except NetworkError as e:
-            raise DataError(
-                f"Failed to load required WMN schema from {self._remote_schema_url}: {e}"
-            ) from e
+        except HttpError as e:
+            msg = (
+                f"Failed to load required WMN schema from {self._remote_schema_url}: "
+                f"{e}"
+            )
+            raise DataError(msg) from e
 
     async def _load_dataset(self) -> dict[str, Any]:
         """Load WMN data from configured sources."""
@@ -194,11 +205,13 @@ class Naminter:
             detail = (
                 "; ".join(failures) if failures else "no sources produced any sites"
             )
-            raise DataError(f"No sites loaded from any source; details: {detail}")
+            msg = f"No sites loaded from any source; details: {detail}"
+            raise DataError(msg)
 
         return dataset
 
-    def _deduplicate_data(self, data: dict[str, Any]) -> None:
+    @staticmethod
+    def _deduplicate_data(data: dict[str, Any]) -> None:
         """Deduplicate and clean the WMN data in place."""
         unique_sites = {
             site[WMN_KEY_NAME]: site
@@ -235,9 +248,11 @@ class Naminter:
             jsonschema.Draft7Validator.check_schema(schema)
             jsonschema.Draft7Validator(schema).validate(data)
         except jsonschema.ValidationError as e:
-            raise SchemaError(f"WMN data does not match schema: {e.message}") from e
+            msg = f"WMN data does not match schema: {e.message}"
+            raise SchemaError(msg) from e
         except jsonschema.SchemaError as e:
-            raise SchemaError(f"Invalid WMN schema: {e.message}") from e
+            msg = f"Invalid WMN schema: {e.message}"
+            raise SchemaError(msg) from e
 
     async def _ensure_dataset(self) -> None:
         """Load and validate the WMN dataset and schema if not already loaded."""
@@ -255,9 +270,11 @@ class Naminter:
                 len(self._wmn_data.get(WMN_KEY_SITES, [])),
             )
         except SchemaError as e:
-            raise DataError(f"WMN validation failed: {e}") from e
+            msg = f"WMN validation failed: {e}"
+            raise DataError(msg) from e
         except Exception as e:
-            raise DataError(f"WMN load failed: {e}") from e
+            msg = f"WMN load failed: {e}"
+            raise DataError(msg) from e
 
     async def _close_session(self) -> None:
         """Close the HTTP session if open."""
@@ -345,7 +362,8 @@ class Naminter:
             raise
         except Exception as e:
             self._logger.exception("Failed to compute WMN summary")
-            raise DataError(f"Failed to retrieve metadata: {e}") from e
+            msg = f"Failed to retrieve metadata: {e}"
+            raise DataError(msg) from e
 
     def _filter_sites(
         self,
@@ -360,7 +378,8 @@ class Naminter:
             available_names: set[str] = {site.get("name") for site in sites}
             missing_names = filtered_site_names - available_names
             if missing_names:
-                raise DataError(f"Unknown site names: {sorted(missing_names)}")
+                msg = f"Unknown site names: {sorted(missing_names)}"
+                raise DataError(msg)
         else:
             filtered_site_names = set()
 
@@ -395,8 +414,9 @@ class Naminter:
         )
         return filtered_sites
 
+    @staticmethod
     def _get_missing_keys(
-        self, site: dict[str, Any], required_keys: Sequence[str]
+        site: dict[str, Any], required_keys: Sequence[str]
     ) -> list[str]:
         """Return a list of required keys missing from a site mapping."""
         return [key for key in required_keys if key not in site]
@@ -417,13 +437,14 @@ class Naminter:
 
         missing_keys = self._get_missing_keys(site, REQUIRED_KEYS_ENUMERATE)
         if missing_keys:
-            return SiteResult(
+            error_result = SiteResult(
                 name=site.get("name", "unknown"),
                 category=site.get("cat", "unknown"),
                 username=username,
                 status=ResultStatus.ERROR,
                 error=f"Site entry missing required keys: {missing_keys}",
             )
+            return error_result
 
         name = site["name"]
         category = site["cat"]
@@ -432,13 +453,14 @@ class Naminter:
         strip_bad_char = site.get("strip_bad_char", "")
         clean_username = username.translate(str.maketrans("", "", strip_bad_char))
         if not clean_username:
-            return SiteResult(
+            error_result = SiteResult(
                 name,
                 category,
                 username,
                 ResultStatus.ERROR,
                 error="Username became empty after stripping",
             )
+            return error_result
 
         uri_check = uri_check_template.replace(ACCOUNT_PLACEHOLDER, clean_username)
         uri_pretty = site.get("uri_pretty", uri_check_template).replace(
@@ -460,6 +482,7 @@ class Naminter:
         else:
             self._logger.debug("GET %s", uri_check)
 
+        error_result: SiteResult | None = None
         try:
             async with self._semaphore:
                 if post_body:
@@ -477,9 +500,9 @@ class Naminter:
         except asyncio.CancelledError:
             self._logger.warning("Request cancelled")
             raise
-        except TimeoutError as e:
+        except HttpTimeoutError as e:
             self._logger.warning("Request timeout for %s: %s", name, e)
-            return SiteResult(
+            error_result = SiteResult(
                 name=name,
                 category=category,
                 username=username,
@@ -487,9 +510,9 @@ class Naminter:
                 status=ResultStatus.ERROR,
                 error=f"Request timeout: {e}",
             )
-        except SessionError as e:
+        except HttpSessionError as e:
             self._logger.warning("Session error for %s: %s", name, e)
-            return SiteResult(
+            error_result = SiteResult(
                 name=name,
                 category=category,
                 username=username,
@@ -497,9 +520,9 @@ class Naminter:
                 status=ResultStatus.ERROR,
                 error=f"Session error: {e}",
             )
-        except NetworkError as e:
+        except HttpError as e:
             self._logger.warning("Network error for %s: %s", name, e)
-            return SiteResult(
+            error_result = SiteResult(
                 name=name,
                 category=category,
                 username=username,
@@ -509,7 +532,7 @@ class Naminter:
             )
         except Exception as e:
             self._logger.exception("Unexpected error during request for %s", name)
-            return SiteResult(
+            error_result = SiteResult(
                 name=name,
                 category=category,
                 username=username,
@@ -517,6 +540,9 @@ class Naminter:
                 status=ResultStatus.ERROR,
                 error=f"Unexpected error: {e}",
             )
+
+        if error_result is not None:
+            return error_result
 
         result_status = SiteResult.get_result_status(
             response_code=response.status_code,
@@ -564,7 +590,8 @@ class Naminter:
             usernames = validate_usernames(usernames)
         except ValidationError as e:
             self._logger.error("Invalid usernames: %s", e)
-            raise DataError("Invalid usernames") from e
+            msg = "Invalid usernames"
+            raise DataError(msg) from e
         else:
             self._logger.info("Usernames validated (count=%d)", len(usernames))
 

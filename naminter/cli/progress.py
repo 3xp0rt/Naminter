@@ -13,8 +13,8 @@ from rich.progress import (
     TimeRemainingColumn,
 )
 
-from ..cli.console import THEME
-from ..core.models import ResultStatus, SiteResult
+from naminter.cli.console import THEME
+from naminter.core.models import ResultStatus, SiteResult
 
 
 class ResultsTracker:
@@ -60,7 +60,7 @@ class ResultsTracker:
         if errors > 0:
             sections.append(f"[{THEME['error']}]! {errors}[/]")
         if not_valid > 0:
-            sections.append(f"[{THEME['warning']}]× {not_valid}[/]")
+            sections.append(f"[{THEME['warning']}]x {not_valid}[/]")
 
         sections.append(
             f"[{THEME['primary']}]{self.results_count}/{self.total_sites}[/]"

@@ -1,7 +1,7 @@
 [tool.poetry]
 name = "naminter"
 version = "1.0.7"
-description = "Asynchronous OSINT username enumeration tool that searches hundreds of websites using the WhatsMyName dataset"
+description = "A Python package and command-line interface (CLI) tool for asynchronous OSINT username enumeration using the WhatsMyName dataset"
 authors = ["3xp0rt <contact@3xp0rt.com>"]
 license = "MIT"
 readme = "README.md"

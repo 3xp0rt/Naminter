@@ -9,20 +9,20 @@ import aiofiles
 import rich_click as click
 from curl_cffi import BrowserTypeLiteral
 
-from .. import __version__
-from ..cli.config import NaminterConfig
-from ..cli.console import (
+from naminter import __version__
+from naminter.cli.config import NaminterConfig
+from naminter.cli.console import (
     ResultFormatter,
     console,
     display_error,
     display_version,
     display_warning,
 )
-from ..cli.constants import RESPONSE_FILE_DATE_FORMAT, RESPONSE_FILE_EXTENSION
-from ..cli.exporters import Exporter
-from ..cli.progress import ProgressManager, ResultsTracker
-from ..cli.utils import sanitize_filename
-from ..core.constants import (
+from naminter.cli.constants import RESPONSE_FILE_DATE_FORMAT, RESPONSE_FILE_EXTENSION
+from naminter.cli.exporters import Exporter
+from naminter.cli.progress import ProgressManager, ResultsTracker
+from naminter.cli.utils import sanitize_filename
+from naminter.core.constants import (
     HTTP_ALLOW_REDIRECTS,
     HTTP_REQUEST_TIMEOUT_SECONDS,
     HTTP_SSL_VERIFY,
@@ -30,14 +30,14 @@ from ..core.constants import (
     MAX_CONCURRENT_TASKS,
     WMN_SCHEMA_URL,
 )
-from ..core.exceptions import ConfigurationError, DataError, ExportError
-from ..core.main import Naminter
-from ..core.models import ResultStatus, SelfEnumerationResult, SiteResult
-from ..core.network import CurlCFFISession
-from ..core.utils import validate_numeric_values
+from naminter.core.exceptions import ConfigurationError, DataError, ExportError
+from naminter.core.main import Naminter
+from naminter.core.models import ResultStatus, SelfEnumerationResult, SiteResult
+from naminter.core.network import CurlCFFISession
+from naminter.core.utils import validate_numeric_values
 
 
-def _version_callback(ctx: click.Context, param: click.Option, value: bool) -> None:
+def _version_callback(ctx: click.Context, _param: click.Option, value: bool) -> None:
     """Eager callback to display version and exit."""
     if not value or ctx.resilient_parsing:
         return
@@ -250,7 +250,7 @@ class NaminterCLI:
         return results
 
     def _filter_result(self, result: SiteResult | SelfEnumerationResult) -> bool:
-        """Determine if a result should be included in output based on filter settings."""
+        """Determine if a result should be included based on filter settings."""
         status = result.status
 
         if self.config.filter_all:
@@ -271,7 +271,7 @@ class NaminterCLI:
         ) or not any(filter_map.keys())
 
     async def _process_result(self, result: SiteResult) -> Path | None:
-        """Process a single result: handle browser opening, response saving, and console output."""
+        """Handle browser opening, response saving, and console output for a result."""
         response_file = None
 
         if result.result_url and self.config.browse:
@@ -284,7 +284,11 @@ class NaminterCLI:
                 status_str = result.status.value
                 created_at_str = result.created_at.strftime(RESPONSE_FILE_DATE_FORMAT)
 
-                base_filename = f"{status_str}_{result.response_code}_{safe_site_name}_{safe_username}_{created_at_str}{RESPONSE_FILE_EXTENSION}"
+                base_filename = (
+                    f"{status_str}_{result.response_code}_"
+                    f"{safe_site_name}_{safe_username}_{created_at_str}"
+                    f"{RESPONSE_FILE_EXTENSION}"
+                )
                 response_file = self._response_dir / base_filename
 
                 await self._write_file(response_file, result.response_text)
@@ -301,14 +305,16 @@ class NaminterCLI:
 
         return response_file
 
-    async def _open_browser(self, url: str) -> None:
+    @staticmethod
+    async def _open_browser(url: str) -> None:
         """Open a URL in the browser with error handling."""
         try:
             await asyncio.to_thread(webbrowser.open, url)
         except Exception as e:
             display_error(f"Error opening browser for {url}: {e}")
 
-    async def _write_file(self, file_path: Path, content: str) -> None:
+    @staticmethod
+    async def _write_file(file_path: Path, content: str) -> None:
         """Write content to a file with error handling."""
         try:
             async with aiofiles.open(file_path, "w", encoding="utf-8") as file:
@@ -324,7 +330,7 @@ class NaminterCLI:
 @click.group(
     invoke_without_command=True,
     no_args_is_help=True,
-    context_settings=dict(help_option_names=["-h", "--help"]),
+    context_settings={"help_option_names": ["-h", "--help"]},
 )
 @click.option(
     "--version",
@@ -423,7 +429,11 @@ class NaminterCLI:
 )
 @click.option(
     "--extra-fp",
-    help='Extra fingerprinting options as JSON string (e.g., \'{"tls_grease": true, "tls_cert_compression": "brotli"}\')',
+    help=(
+        "Extra fingerprinting options as JSON string (e.g., '"
+        '{"tls_grease": true, "tls_cert_compression": "brotli"}'
+        ")"
+    ),
 )
 @click.option(
     "--max-tasks",
@@ -498,7 +508,7 @@ class NaminterCLI:
 )
 @click.pass_context
 def main(ctx: click.Context, **kwargs: Any) -> None:
-    """Asynchronous OSINT username enumeration tool that searches hundreds of websites using the WhatsMyName dataset."""
+    """A Python package and command-line interface (CLI) tool for asynchronous OSINT username enumeration using the WhatsMyName dataset."""
 
     if ctx.invoked_subcommand is not None:
         return

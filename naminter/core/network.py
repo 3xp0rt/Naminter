@@ -8,7 +8,7 @@ from curl_cffi.requests import AsyncSession
 from curl_cffi.requests.exceptions import RequestException as CurlRequestException
 from curl_cffi.requests.exceptions import Timeout as CurlTimeout
 
-from .exceptions import NetworkError, SessionError, TimeoutError
+from .exceptions import HttpError, HttpSessionError, HttpTimeoutError
 from .models import Response
 
 
@@ -95,8 +95,9 @@ class CurlCFFISession:
                         extra_fp=self._extra_fp,
                     )
                 except Exception as e:
-                    raise SessionError(
-                        "Failed to open curl-cffi session", cause=e
+                    msg = "Failed to open curl-cffi session"
+                    raise HttpSessionError(
+                        msg, cause=e
                     ) from e
 
     async def close(self) -> None:
@@ -112,7 +113,8 @@ class CurlCFFISession:
     async def get(self, url: str, headers: Mapping[str, str] | None = None) -> Response:
         await self.open()
         if self._session is None:
-            raise SessionError("Session not initialized")
+            msg = "Session not initialized"
+            raise HttpSessionError(msg)
 
         try:
             response = await self._session.get(
@@ -123,11 +125,14 @@ class CurlCFFISession:
                 status_code=response.status_code, text=response.text, elapsed=elapsed
             )
         except CurlTimeout as e:
-            raise TimeoutError(f"GET timeout for {url}", cause=e) from e
+            msg = f"GET timeout for {url}"
+            raise HttpTimeoutError(msg, cause=e) from e
         except CurlRequestException as e:
-            raise NetworkError(f"GET failed for {url}: {e}", cause=e) from e
+            msg = f"GET failed for {url}: {e}"
+            raise HttpError(msg, cause=e) from e
         except Exception as e:
-            raise NetworkError(f"GET failed for {url}: {e}", cause=e) from e
+            msg = f"GET failed for {url}: {e}"
+            raise HttpError(msg, cause=e) from e
 
     async def post(
         self,
@@ -137,7 +142,8 @@ class CurlCFFISession:
     ) -> Response:
         await self.open()
         if self._session is None:
-            raise SessionError("Session not initialized")
+            msg = "Session not initialized"
+            raise HttpSessionError(msg)
 
         try:
             response = await self._session.post(
@@ -148,11 +154,14 @@ class CurlCFFISession:
                 status_code=response.status_code, text=response.text, elapsed=elapsed
             )
         except CurlTimeout as e:
-            raise TimeoutError(f"POST timeout for {url}", cause=e) from e
+            msg = f"POST timeout for {url}"
+            raise HttpTimeoutError(msg, cause=e) from e
         except CurlRequestException as e:
-            raise NetworkError(f"POST failed for {url}: {e}", cause=e) from e
+            msg = f"POST failed for {url}: {e}"
+            raise HttpError(msg, cause=e) from e
         except Exception as e:
-            raise NetworkError(f"POST failed for {url}: {e}", cause=e) from e
+            msg = f"POST failed for {url}: {e}"
+            raise HttpError(msg, cause=e) from e
 
     async def request(
         self,
@@ -163,7 +172,8 @@ class CurlCFFISession:
     ) -> Response:
         await self.open()
         if self._session is None:
-            raise SessionError("Session not initialized")
+            msg = "Session not initialized"
+            raise HttpSessionError(msg)
 
         try:
             response = await self._session.request(
@@ -178,11 +188,14 @@ class CurlCFFISession:
                 status_code=response.status_code, text=response.text, elapsed=elapsed
             )
         except CurlTimeout as e:
-            raise TimeoutError(f"{method} timeout for {url}", cause=e) from e
+            msg = f"{method} timeout for {url}"
+            raise HttpTimeoutError(msg, cause=e) from e
         except CurlRequestException as e:
-            raise NetworkError(f"{method} failed for {url}: {e}", cause=e) from e
+            msg = f"{method} failed for {url}: {e}"
+            raise HttpError(msg, cause=e) from e
         except Exception as e:
-            raise NetworkError(f"{method} failed for {url}: {e}", cause=e) from e
+            msg = f"{method} failed for {url}: {e}"
+            raise HttpError(msg, cause=e) from e
 
 
 __all__ = [

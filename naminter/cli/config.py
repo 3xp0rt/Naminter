@@ -5,21 +5,23 @@ from typing import Any
 
 from curl_cffi import BrowserTypeLiteral, ExtraFingerprints
 
-from ..cli.console import display_warning
-from ..core.constants import (
+from naminter.cli.console import display_warning
+from naminter.core.constants import (
     HTTP_REQUEST_TIMEOUT_SECONDS,
     MAX_CONCURRENT_TASKS,
     WMN_REMOTE_URL,
     WMN_SCHEMA_URL,
 )
-from ..core.exceptions import ConfigurationError
+from naminter.core.exceptions import ConfigurationError
 
 
 @dataclass
 class NaminterConfig:
     """Configuration for Naminter CLI tool.
 
-    Holds all configuration parameters for username enumeration operations, including network settings, export options, filtering, and validation parameters.
+    Holds all configuration parameters for username enumeration operations,
+    including network settings, export options, filtering, and validation
+    parameters.
     """
 
     # Required parameters
@@ -96,7 +98,8 @@ class NaminterConfig:
             if not self.local_list_paths and not self.remote_list_urls:
                 self.remote_list_urls = [WMN_REMOTE_URL]
         except Exception as e:
-            raise ConfigurationError(f"Configuration validation failed: {e}") from e
+            msg = f"Configuration validation failed: {e}"
+            raise ConfigurationError(msg) from e
 
         filter_fields = [
             self.filter_all,
@@ -116,9 +119,11 @@ class NaminterConfig:
             try:
                 self.extra_fp = json.loads(self.extra_fp)
             except json.JSONDecodeError as e:
-                raise ConfigurationError(f"Invalid JSON in extra_fp: {e}") from e
+                msg = f"Invalid JSON in extra_fp: {e}"
+                raise ConfigurationError(msg) from e
             except TypeError as e:
-                raise ConfigurationError(f"Invalid data type in extra_fp: {e}") from e
+                msg = f"Invalid data type in extra_fp: {e}"
+                raise ConfigurationError(msg) from e
 
     @property
     def response_dir(self) -> Path | None:

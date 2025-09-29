@@ -20,7 +20,7 @@ class ConfigurationError(NaminterError):
     """
 
 
-class NetworkError(NaminterError):
+class HttpError(NaminterError):
     """Raised when network-related errors occur.
 
     This includes connection failures, DNS resolution errors,
@@ -28,18 +28,26 @@ class NetworkError(NaminterError):
     """
 
 
-class DataError(NaminterError):
-    """Raised when there are issues with data processing or validation.
-
-    This includes malformed data, parsing errors, and data integrity issues.
-    """
-
-
-class SessionError(NetworkError):
+class HttpSessionError(HttpError):
     """Raised when HTTP session creation or management fails.
 
     This includes session initialization errors, authentication failures,
     and session state management issues.
+    """
+
+
+class HttpTimeoutError(HttpError):
+    """Raised when network requests timeout.
+
+    This includes both connection timeouts and read timeouts
+    during HTTP requests.
+    """
+
+
+class DataError(NaminterError):
+    """Raised when there are issues with data processing or validation.
+
+    This includes malformed data, parsing errors, and data integrity issues.
     """
 
 
@@ -51,11 +59,11 @@ class SchemaError(DataError):
     """
 
 
-class TimeoutError(NetworkError):
-    """Raised when network requests timeout.
+class ValidationError(DataError):
+    """Raised when input validation fails.
 
-    This includes both connection timeouts and read timeouts
-    during HTTP requests.
+    This includes invalid usernames, malformed URLs,
+    and other input parameter validation errors.
     """
 
 
@@ -64,14 +72,6 @@ class FileAccessError(DataError):
 
     This includes reading/writing local lists, responses, exports,
     and other file system operations.
-    """
-
-
-class ValidationError(DataError):
-    """Raised when input validation fails.
-
-    This includes invalid usernames, malformed URLs,
-    and other input parameter validation errors.
     """
 
 
@@ -88,10 +88,10 @@ __all__ = [
     "DataError",
     "ExportError",
     "FileAccessError",
+    "HttpError",
+    "HttpSessionError",
+    "HttpTimeoutError",
     "NaminterError",
-    "NetworkError",
     "SchemaError",
-    "SessionError",
-    "TimeoutError",
     "ValidationError",
 ]

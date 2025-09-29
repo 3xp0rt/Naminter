@@ -45,13 +45,21 @@ def validate_numeric_values(max_tasks: int, timeout: int) -> list[str]:
     warnings: list[str] = []
 
     if not (MIN_TASKS <= max_tasks <= MAX_TASKS_LIMIT):
+        msg = (
+            "Invalid max_tasks: "
+            f"{max_tasks} must be between {MIN_TASKS} and {MAX_TASKS_LIMIT}"
+        )
         raise ConfigurationError(
-            f"Invalid max_tasks: {max_tasks} must be between {MIN_TASKS} and {MAX_TASKS_LIMIT}"
+            msg
         )
 
     if not (MIN_TIMEOUT <= timeout <= MAX_TIMEOUT):
+        msg = (
+            "Invalid timeout: "
+            f"{timeout} must be between {MIN_TIMEOUT} and {MAX_TIMEOUT} seconds"
+        )
         raise ConfigurationError(
-            f"Invalid timeout: {timeout} must be between {MIN_TIMEOUT} and {MAX_TIMEOUT} seconds"
+            msg
         )
 
     if (
@@ -59,24 +67,34 @@ def validate_numeric_values(max_tasks: int, timeout: int) -> list[str]:
         and timeout < HIGH_CONCURRENCY_MIN_TIMEOUT
     ):
         warnings.append(
-            f"High concurrency ({max_tasks}) with low timeout ({timeout}s) may cause failures; consider increasing timeout or reducing max_tasks."
+            "High concurrency ("
+            f"{max_tasks}) with low timeout ({timeout}s) may cause failures; "
+            "consider increasing timeout or reducing max_tasks."
         )
     elif (
         max_tasks > VERY_HIGH_CONCURRENCY_THRESHOLD
         and timeout < VERY_HIGH_CONCURRENCY_MIN_TIMEOUT
     ):
         warnings.append(
-            f"Very high concurrency ({max_tasks}) with very low timeout ({timeout}s) may cause connection issues; recommend timeout >= {HIGH_CONCURRENCY_MIN_TIMEOUT}s for max_tasks > {VERY_HIGH_CONCURRENCY_THRESHOLD}."
+            "Very high concurrency ("
+            f"{max_tasks}) with very low timeout ({timeout}s) may cause connection "
+            "issues; recommend timeout >= "
+            f"{HIGH_CONCURRENCY_MIN_TIMEOUT}s for max_tasks > "
+            f"{VERY_HIGH_CONCURRENCY_THRESHOLD}."
         )
 
     if max_tasks > EXTREME_CONCURRENCY_THRESHOLD:
         warnings.append(
-            f"Extremely high concurrency ({max_tasks}) may overwhelm servers or cause rate limiting; lowering value is recommended."
+            "Extremely high concurrency ("
+            f"{max_tasks}) may overwhelm servers or cause rate limiting; "
+            "lowering value is recommended."
         )
 
     if timeout < LOW_TIMEOUT_WARNING_THRESHOLD:
         warnings.append(
-            f"Very low timeout ({timeout}s) may cause legitimate requests to fail; increase timeout for better accuracy."
+            "Very low timeout ("
+            f"{timeout}s) may cause legitimate requests to fail; increase "
+            "timeout for better accuracy."
         )
 
     return warnings
@@ -89,15 +107,15 @@ def configure_proxy(proxy: str | dict[str, str] | None) -> dict[str, str] | None
 
     if isinstance(proxy, str):
         if not proxy.strip():
-            raise ConfigurationError("Invalid proxy: proxy string cannot be empty")
+            msg = "Invalid proxy: proxy string cannot be empty"
+            raise ConfigurationError(msg)
 
         if not (
-            proxy.startswith("http://")
-            or proxy.startswith("https://")
-            or proxy.startswith("socks5://")
+            proxy.startswith(("http://", "https://", "socks5://"))
         ):
+            msg = "Invalid proxy: must be http://, https://, or socks5:// URL"
             raise ConfigurationError(
-                "Invalid proxy: must be http://, https://, or socks5:// URL"
+                msg
             )
 
         logger.debug("Proxy configuration validated")
@@ -105,12 +123,14 @@ def configure_proxy(proxy: str | dict[str, str] | None) -> dict[str, str] | None
 
     elif isinstance(proxy, dict):
         for protocol, proxy_url in proxy.items():
-            if protocol not in ["http", "https"]:
-                raise ConfigurationError(f"Invalid proxy protocol: {protocol}")
+            if protocol not in {"http", "https"}:
+                msg = f"Invalid proxy protocol: {protocol}"
+                raise ConfigurationError(msg)
 
             if not isinstance(proxy_url, str) or not proxy_url.strip():
+                msg = f"Invalid proxy URL for {protocol}: must be non-empty string"
                 raise ConfigurationError(
-                    f"Invalid proxy URL for {protocol}: must be non-empty string"
+                    msg
                 )
 
         logger.debug("Proxy dictionary configuration validated")
@@ -123,7 +143,8 @@ def validate_usernames(usernames: list[str]) -> list[str]:
     unique_usernames: list[str] = deduplicate_strings(usernames)
 
     if not unique_usernames:
-        raise ValidationError("No valid usernames provided")
+        msg = "No valid usernames provided"
+        raise ValidationError(msg)
 
     return unique_usernames
 

@@ -1,15 +1,15 @@
 import csv
 import importlib.resources
 import json
-from datetime import datetime
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Any, ClassVar, Literal, Protocol
 
 import jinja2
 from weasyprint import HTML
 
-from ..core.exceptions import ConfigurationError, ExportError, FileAccessError
-from ..core.models import SelfEnumerationResult, SiteResult
+from naminter.core.exceptions import ConfigurationError, ExportError, FileAccessError
+from naminter.core.models import SelfEnumerationResult, SiteResult
 
 FormatName = Literal["csv", "json", "html", "pdf"]
 ResultDict = dict[str, Any]
@@ -24,7 +24,7 @@ class Exporter:
     Unified exporter for CSV, JSON, HTML, and PDF formats.
     """
 
-    SUPPORTED_FORMATS: list[FormatName] = ["csv", "json", "html", "pdf"]
+    SUPPORTED_FORMATS: ClassVar[list[FormatName]] = ["csv", "json", "html", "pdf"]
 
     def __init__(
         self, usernames: list[str] | None = None, version: str | None = None
@@ -55,20 +55,24 @@ class Exporter:
 
         for format_name, path in formats.items():
             if format_name not in self.SUPPORTED_FORMATS:
-                raise ExportError(f"Unsupported export format: {format_name}")
+                msg = f"Unsupported export format: {format_name}"
+                raise ExportError(msg)
 
             try:
                 out_path = self._resolve_path(format_name, path)
                 out_path.parent.mkdir(parents=True, exist_ok=True)
                 self.export_methods[format_name](dict_results, out_path)
             except FileAccessError as e:
+                msg = f"File access error during {format_name} export: {e}"
                 raise ExportError(
-                    f"File access error during {format_name} export: {e}"
+                    msg
                 ) from e
             except Exception as e:
-                raise ExportError(f"Failed to export {format_name}: {e}") from e
+                msg = f"Failed to export {format_name}: {e}"
+                raise ExportError(msg) from e
 
-    def _export_csv(self, results: list[ResultDict], output_path: Path) -> None:
+    @staticmethod
+    def _export_csv(results: list[ResultDict], output_path: Path) -> None:
         if not results:
             return
 
@@ -80,25 +84,33 @@ class Exporter:
                 writer.writeheader()
                 writer.writerows(results)
         except PermissionError as e:
-            raise FileAccessError(f"Permission denied writing CSV file: {e}") from e
+            msg = f"Permission denied writing CSV file: {e}"
+            raise FileAccessError(msg) from e
         except OSError as e:
-            raise FileAccessError(f"OS error writing CSV file: {e}") from e
+            msg = f"OS error writing CSV file: {e}"
+            raise FileAccessError(msg) from e
         except Exception as e:
-            raise ExportError(f"CSV export error: {e}") from e
+            msg = f"CSV export error: {e}"
+            raise ExportError(msg) from e
 
-    def _export_json(self, results: list[ResultDict], output_path: Path) -> None:
+    @staticmethod
+    def _export_json(results: list[ResultDict], output_path: Path) -> None:
         try:
             output_path.write_text(
                 json.dumps(results, ensure_ascii=False, indent=2), encoding="utf-8"
             )
         except PermissionError as e:
-            raise FileAccessError(f"Permission denied writing JSON file: {e}") from e
+            msg = f"Permission denied writing JSON file: {e}"
+            raise FileAccessError(msg) from e
         except OSError as e:
-            raise FileAccessError(f"OS error writing JSON file: {e}") from e
+            msg = f"OS error writing JSON file: {e}"
+            raise FileAccessError(msg) from e
         except (TypeError, ValueError) as e:
-            raise ExportError(f"JSON serialization error: {e}") from e
+            msg = f"JSON serialization error: {e}"
+            raise ExportError(msg) from e
         except Exception as e:
-            raise ExportError(f"JSON export error: {e}") from e
+            msg = f"JSON export error: {e}"
+            raise ExportError(msg) from e
 
     def _generate_html(self, results: list[ResultDict]) -> str:
         grouped: dict[str, list[ResultDict]] = {}
@@ -117,13 +129,16 @@ class Exporter:
             ):
                 template_source = f.read()
         except FileNotFoundError as e:
-            raise ConfigurationError(f"HTML template not found: {e}") from e
+            msg = f"HTML template not found: {e}"
+            raise ConfigurationError(msg) from e
         except PermissionError as e:
+            msg = f"Permission denied reading HTML template: {e}"
             raise FileAccessError(
-                f"Permission denied reading HTML template: {e}"
+                msg
             ) from e
         except Exception as e:
-            raise ConfigurationError(f"Could not load HTML template: {e}") from e
+            msg = f"Could not load HTML template: {e}"
+            raise ConfigurationError(msg) from e
 
         template = jinja2.Template(template_source, autoescape=True)
 
@@ -132,7 +147,7 @@ class Exporter:
             display_fields=display_fields,
             usernames=self.usernames,
             version=self.version,
-            current_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            current_time=datetime.now(UTC).strftime("%Y-%m-%d %H:%M:%S %Z"),
             total_count=len(results),
             category_count=len(grouped),
         )
@@ -142,30 +157,38 @@ class Exporter:
             html = self._generate_html(results)
             output_path.write_text(html, encoding="utf-8")
         except PermissionError as e:
-            raise FileAccessError(f"Permission denied writing HTML file: {e}") from e
+            msg = f"Permission denied writing HTML file: {e}"
+            raise FileAccessError(msg) from e
         except OSError as e:
-            raise FileAccessError(f"OS error writing HTML file: {e}") from e
+            msg = f"OS error writing HTML file: {e}"
+            raise FileAccessError(msg) from e
         except Exception as e:
-            raise ExportError(f"HTML export error: {e}") from e
+            msg = f"HTML export error: {e}"
+            raise ExportError(msg) from e
 
     def _export_pdf(self, results: list[ResultDict], output_path: Path) -> None:
         if not results:
-            raise ExportError("No results to export to PDF")
+            msg = "No results to export to PDF"
+            raise ExportError(msg)
 
         try:
             html = self._generate_html(results)
             HTML(string=html).write_pdf(str(output_path))
         except PermissionError as e:
-            raise FileAccessError(f"Permission denied writing PDF file: {e}") from e
+            msg = f"Permission denied writing PDF file: {e}"
+            raise FileAccessError(msg) from e
         except OSError as e:
-            raise FileAccessError(f"OS error writing PDF file: {e}") from e
+            msg = f"OS error writing PDF file: {e}"
+            raise FileAccessError(msg) from e
         except Exception as e:
-            raise ExportError(f"PDF export error: {e}") from e
+            msg = f"PDF export error: {e}"
+            raise ExportError(msg) from e
 
-    def _resolve_path(self, format_name: FormatName, custom: str | Path | None) -> Path:
+    @staticmethod
+    def _resolve_path(format_name: FormatName, custom: str | Path | None) -> Path:
         if custom:
             return Path(custom)
 
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         filename = f"results_{timestamp}.{format_name}"
         return Path.cwd() / filename

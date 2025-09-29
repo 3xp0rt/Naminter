@@ -8,8 +8,15 @@ from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
 
-from .. import __author__, __description__, __email__, __license__, __url__, __version__
-from ..core.models import ResultStatus, SelfEnumerationResult, SiteResult
+from naminter import (
+    __author__,
+    __description__,
+    __email__,
+    __license__,
+    __url__,
+    __version__,
+)
+from naminter.core.models import ResultStatus, SelfEnumerationResult, SiteResult
 
 console: Console = Console()
 
@@ -125,8 +132,8 @@ class ResultFormatter:
 
         return tree
 
+    @staticmethod
     def _add_debug_info(
-        self,
         node: Tree,
         response_code: int | None = None,
         elapsed: float | None = None,
