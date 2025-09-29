@@ -1,30 +1,31 @@
 import time
-from typing import Any, Dict, Optional, Union
+from typing import Any
 
 from rich.console import Console
 from rich.progress import (
+    BarColumn,
     Progress,
     SpinnerColumn,
-    TextColumn,
-    BarColumn,
+    TaskID,
     TaskProgressColumn,
+    TextColumn,
     TimeElapsedColumn,
     TimeRemainingColumn,
-    TaskID,
 )
 
 from ..cli.console import THEME
 from ..core.models import ResultStatus, SiteResult
 
+
 class ResultsTracker:
     """Tracks results for the username enumeration operations."""
-    
+
     def __init__(self, total_sites: int) -> None:
         """Initialize the results tracker."""
         self.total_sites = total_sites
         self.results_count = 0
         self.start_time = time.time()
-        self.status_counts: Dict[ResultStatus, int] = {status: 0 for status in ResultStatus}
+        self.status_counts: dict[ResultStatus, int] = dict.fromkeys(ResultStatus, 0)
 
     def add_result(self, result: SiteResult) -> None:
         """Update counters with a new result."""
@@ -34,7 +35,7 @@ class ResultsTracker:
     def get_progress_text(self) -> str:
         """Get formatted progress text with request speed and statistics."""
         elapsed = time.time() - self.start_time
-        
+
         found = self.status_counts[ResultStatus.FOUND]
         ambiguous = self.status_counts[ResultStatus.AMBIGUOUS]
         unknown = self.status_counts[ResultStatus.UNKNOWN]
@@ -43,8 +44,7 @@ class ResultsTracker:
         errors = self.status_counts[ResultStatus.ERROR]
 
         valid_count = self.results_count - errors - not_valid
-        if valid_count < 0:
-            valid_count = 0
+        valid_count = max(valid_count, 0)
         rate = valid_count / elapsed if elapsed > 0 else 0.0
 
         sections = [
@@ -52,7 +52,7 @@ class ResultsTracker:
             f"[{THEME['success']}]+ {found}[/]",
             f"[{THEME['error']}]- {not_found}[/]",
         ]
-        
+
         if unknown > 0:
             sections.append(f"[{THEME['warning']}]? {unknown}[/]")
         if ambiguous > 0:
@@ -61,29 +61,31 @@ class ResultsTracker:
             sections.append(f"[{THEME['error']}]! {errors}[/]")
         if not_valid > 0:
             sections.append(f"[{THEME['warning']}]× {not_valid}[/]")
-            
-        sections.append(f"[{THEME['primary']}]{self.results_count}/{self.total_sites}[/]")
+
+        sections.append(
+            f"[{THEME['primary']}]{self.results_count}/{self.total_sites}[/]"
+        )
         return " │ ".join(sections)
 
 
 class ProgressManager:
     """Manages progress bar and tracking for CLI applications."""
-    
+
     def __init__(self, console: Console, disabled: bool = False) -> None:
         """Initialize the progress manager."""
         self.console: Console = console
         self.disabled: bool = disabled
-        self.progress: Optional[Progress] = None
-        self.task_id: Optional[TaskID] = None
-        
+        self.progress: Progress | None = None
+        self.task_id: TaskID | None = None
+
     def create_progress_bar(self) -> Progress:
         """Create a new progress bar."""
         return Progress(
             SpinnerColumn(),
             TextColumn("[progress.description]{task.description}"),
             BarColumn(
-                complete_style=THEME['primary'],
-                finished_style=THEME['success'],
+                complete_style=THEME["primary"],
+                finished_style=THEME["success"],
             ),
             TaskProgressColumn(),
             TimeElapsedColumn(),
@@ -91,33 +93,35 @@ class ProgressManager:
             TimeRemainingColumn(),
             console=self.console,
         )
-        
+
     def start(self, total: int, description: str) -> None:
         """Start the progress bar."""
         if not self.disabled:
             self.progress = self.create_progress_bar()
             self.progress.start()
             self.task_id = self.progress.add_task(description, total=total)
-        
-    def update(self, advance: int = 1, description: Optional[str] = None) -> None:
+
+    def update(self, advance: int = 1, description: str | None = None) -> None:
         """Update the progress bar."""
         if self.progress and self.task_id is not None:
-            update_kwargs: Dict[str, Any] = {"advance": advance}
+            update_kwargs: dict[str, Any] = {"advance": advance}
             if description is not None:
                 update_kwargs["description"] = description
             self.progress.update(self.task_id, **update_kwargs)
-            
+
     def stop(self) -> None:
         """Stop and close the progress bar."""
         if self.progress:
             self.progress.stop()
             self.progress = None
             self.task_id = None
-            
+
     def __enter__(self) -> "ProgressManager":
         """Enter context manager."""
         return self
-        
-    def __exit__(self, exc_type: Optional[type], exc_val: Optional[BaseException], exc_tb: Optional[Any]) -> None:
+
+    def __exit__(
+        self, exc_type: type | None, exc_val: BaseException | None, exc_tb: Any | None
+    ) -> None:
         """Exit context manager and stop progress bar."""
         self.stop()

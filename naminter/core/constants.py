@@ -1,8 +1,12 @@
 from typing import Final
 
 # Remote data source configuration
-WMN_REMOTE_URL: Final[str] = "https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data.json"
-WMN_SCHEMA_URL: Final[str] = "https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data-schema.json"
+WMN_REMOTE_URL: Final[str] = (
+    "https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data.json"
+)
+WMN_SCHEMA_URL: Final[str] = (
+    "https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data-schema.json"
+)
 
 # HTTP request configuration
 HTTP_REQUEST_TIMEOUT_SECONDS: Final[int] = 30
@@ -66,4 +70,3 @@ WMN_LIST_FIELDS: Final[tuple[str, ...]] = (
     WMN_KEY_AUTHORS,
     WMN_KEY_LICENSE,
 )
-

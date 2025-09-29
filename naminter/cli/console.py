@@ -1,5 +1,4 @@
 from pathlib import Path
-from typing import Dict, List, Optional
 
 from rich import box
 from rich.console import Console
@@ -9,21 +8,21 @@ from rich.table import Table
 from rich.text import Text
 from rich.tree import Tree
 
-from ..core.models import ResultStatus, SiteResult, SelfEnumerationResult
-from .. import __description__, __version__, __author__, __license__, __email__, __url__
+from .. import __author__, __description__, __email__, __license__, __url__, __version__
+from ..core.models import ResultStatus, SelfEnumerationResult, SiteResult
 
 console: Console = Console()
 
-THEME: Dict[str, str] = {
-    'primary': 'bright_blue',
-    'success': 'bright_green', 
-    'error': 'bright_red',
-    'warning': 'bright_yellow',
-    'info': 'bright_cyan',
-    'muted': 'bright_black',
+THEME: dict[str, str] = {
+    "primary": "bright_blue",
+    "success": "bright_green",
+    "error": "bright_red",
+    "warning": "bright_yellow",
+    "info": "bright_cyan",
+    "muted": "bright_black",
 }
 
-_STATUS_SYMBOLS: Dict[ResultStatus, str] = {
+_STATUS_SYMBOLS: dict[ResultStatus, str] = {
     ResultStatus.FOUND: "+",
     ResultStatus.AMBIGUOUS: "*",
     ResultStatus.UNKNOWN: "?",
@@ -32,23 +31,26 @@ _STATUS_SYMBOLS: Dict[ResultStatus, str] = {
     ResultStatus.ERROR: "!",
 }
 
-_STATUS_STYLES: Dict[ResultStatus, Style] = {
-    ResultStatus.FOUND: Style(color=THEME['success'], bold=True),
-    ResultStatus.AMBIGUOUS: Style(color=THEME['warning'], bold=True),
-    ResultStatus.UNKNOWN: Style(color=THEME['warning']),
-    ResultStatus.NOT_FOUND: Style(color=THEME['error']),
-    ResultStatus.NOT_VALID: Style(color=THEME['error']),
-    ResultStatus.ERROR: Style(color=THEME['error'], bold=True),
+_STATUS_STYLES: dict[ResultStatus, Style] = {
+    ResultStatus.FOUND: Style(color=THEME["success"], bold=True),
+    ResultStatus.AMBIGUOUS: Style(color=THEME["warning"], bold=True),
+    ResultStatus.UNKNOWN: Style(color=THEME["warning"]),
+    ResultStatus.NOT_FOUND: Style(color=THEME["error"]),
+    ResultStatus.NOT_VALID: Style(color=THEME["error"]),
+    ResultStatus.ERROR: Style(color=THEME["error"], bold=True),
 }
+
 
 class ResultFormatter:
     """Formats test results for console output."""
-    
+
     def __init__(self, show_details: bool = False) -> None:
         """Initialize the result formatter."""
         self.show_details = show_details
 
-    def format_result(self, site_result: SiteResult, response_file_path: Optional[Path] = None) -> Tree:
+    def format_result(
+        self, site_result: SiteResult, response_file_path: Path | None = None
+    ) -> Tree:
         """Format a single result as a tree-style output."""
 
         root_label = Text()
@@ -56,10 +58,10 @@ class ResultFormatter:
         status_style = _STATUS_STYLES.get(site_result.status, Style())
 
         root_label.append(status_symbol, style=status_style)
-        root_label.append(" [", style=THEME['muted'])
-        root_label.append(site_result.name or "Unknown", style=THEME['info'])
-        root_label.append("] ", style=THEME['muted'])
-        root_label.append(site_result.result_url or "No URL", style=THEME['primary'])
+        root_label.append(" [", style=THEME["muted"])
+        root_label.append(site_result.name or "Unknown", style=THEME["info"])
+        root_label.append("] ", style=THEME["muted"])
+        root_label.append(site_result.result_url or "No URL", style=THEME["primary"])
 
         tree = Tree(root_label, guide_style=THEME["muted"])
 
@@ -69,64 +71,85 @@ class ResultFormatter:
                 site_result.response_code,
                 site_result.elapsed,
                 site_result.error,
-                response_file_path
+                response_file_path,
             )
 
         return tree
 
-    def format_self_enumeration(self, self_enumeration_result: SelfEnumerationResult, response_files: Optional[List[Optional[Path]]] = None) -> Tree:
+    def format_self_enumeration(
+        self,
+        self_enumeration_result: SelfEnumerationResult,
+        response_files: list[Path | None] | None = None,
+    ) -> Tree:
         """Format self-enumeration results into a tree structure."""
 
         root_label = Text()
-        root_label.append(_STATUS_SYMBOLS.get(self_enumeration_result.status, "?"), style=_STATUS_STYLES.get(self_enumeration_result.status, Style()))
+        root_label.append(
+            _STATUS_SYMBOLS.get(self_enumeration_result.status, "?"),
+            style=_STATUS_STYLES.get(self_enumeration_result.status, Style()),
+        )
         root_label.append(" [", style=THEME["muted"])
         root_label.append(self_enumeration_result.name, style=THEME["info"])
         root_label.append("]", style=THEME["muted"])
 
         tree = Tree(root_label, guide_style=THEME["muted"], expanded=True)
-        
+
         for i, test in enumerate(self_enumeration_result.results):
             if test is None:
                 continue
 
             url_text = Text()
-            url_text.append(_STATUS_SYMBOLS.get(test.status, "?"), style=_STATUS_STYLES.get(test.status, Style()))
+            url_text.append(
+                _STATUS_SYMBOLS.get(test.status, "?"),
+                style=_STATUS_STYLES.get(test.status, Style()),
+            )
             url_text.append(" ", style=THEME["muted"])
-            url_text.append(f"{test.username}: ", style=THEME["info"])            
+            url_text.append(f"{test.username}: ", style=THEME["info"])
             url_text.append(test.result_url or "No URL", style=THEME["primary"])
 
             test_node = tree.add(url_text)
 
             if self.show_details:
-                response_file = response_files[i] if response_files and i < len(response_files) else None
+                response_file = (
+                    response_files[i]
+                    if response_files and i < len(response_files)
+                    else None
+                )
                 self._add_debug_info(
                     test_node,
                     test.response_code,
                     test.elapsed,
                     test.error,
-                    response_file
+                    response_file,
                 )
 
         return tree
 
-    def _add_debug_info(self, node: Tree, response_code: Optional[int] = None, elapsed: Optional[float] = None, 
-                       error: Optional[str] = None, response_file: Optional[Path] = None) -> None:
+    def _add_debug_info(
+        self,
+        node: Tree,
+        response_code: int | None = None,
+        elapsed: float | None = None,
+        error: str | None = None,
+        response_file: Path | None = None,
+    ) -> None:
         """Add debug information to a tree node."""
 
         if response_code is not None:
-            node.add(Text(f"Response Code: {response_code}", style=THEME['info']))
+            node.add(Text(f"Response Code: {response_code}", style=THEME["info"]))
         if response_file is not None:
-            node.add(Text(f"Response File: {response_file}", style=THEME['info']))
+            node.add(Text(f"Response File: {response_file}", style=THEME["info"]))
         if elapsed is not None:
-            node.add(Text(f"Elapsed: {elapsed:.2f}s", style=THEME['info']))
+            node.add(Text(f"Elapsed: {elapsed:.2f}s", style=THEME["info"]))
         if error is not None:
-            node.add(Text(f"Error: {error}", style=THEME['error']))
+            node.add(Text(f"Error: {error}", style=THEME["error"]))
+
 
 def display_version() -> None:
     """Display version and metadata of the application."""
 
     version_table = Table.grid(padding=(0, 2))
-    version_table.add_column(style=THEME['info'])
+    version_table.add_column(style=THEME["info"])
     version_table.add_column(style="bold")
 
     version_table.add_row("Version:", __version__)
@@ -139,11 +162,12 @@ def display_version() -> None:
     panel = Panel(
         version_table,
         title="[bold]:mag: Naminter[/]",
-        border_style=THEME['muted'],
+        border_style=THEME["muted"],
         box=box.ROUNDED,
     )
 
     console.print(panel)
+
 
 def _display_message(message: str, style: str, symbol: str, label: str) -> None:
     """Display a styled message with symbol and label."""
@@ -152,28 +176,32 @@ def _display_message(message: str, style: str, symbol: str, label: str) -> None:
     formatted_message.append(symbol, style=style)
     formatted_message.append(f" [{label}] ", style=style)
     formatted_message.append(message)
-    
+
     console.print(formatted_message)
     console.file.flush()
+
 
 def display_error(message: str, show_traceback: bool = False) -> None:
     """Display an error message."""
 
-    _display_message(message, THEME['error'], "!", "ERROR")
+    _display_message(message, THEME["error"], "!", "ERROR")
     if show_traceback:
         console.print_exception()
+
 
 def display_warning(message: str) -> None:
     """Display a warning message."""
 
-    _display_message(message, THEME['warning'], "?", "WARNING")
+    _display_message(message, THEME["warning"], "?", "WARNING")
+
 
 def display_info(message: str) -> None:
     """Display an info message."""
 
-    _display_message(message, THEME['info'], "*", "INFO")
+    _display_message(message, THEME["info"], "*", "INFO")
+
 
 def display_success(message: str) -> None:
     """Display a success message."""
 
-    _display_message(message, THEME['success'], "+", "SUCCESS")
+    _display_message(message, THEME["success"], "+", "SUCCESS")

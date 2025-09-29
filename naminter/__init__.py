@@ -8,4 +8,4 @@ __description__ = "Asynchronous OSINT username enumeration tool that searches hu
 __license__ = "MIT"
 __email__ = "contact@3xp0rt.com"
 __url__ = "https://github.com/3xp0rt/Naminter"
-__all__ = ['Naminter']
+__all__ = ["Naminter"]

@@ -1,7 +1,9 @@
+import json
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import List, Optional, Union, Dict, Any
-import json
+from typing import Any
+
+from curl_cffi import BrowserTypeLiteral, ExtraFingerprints
 
 from ..cli.console import display_warning
 from ..core.constants import (
@@ -11,30 +13,30 @@ from ..core.constants import (
     WMN_SCHEMA_URL,
 )
 from ..core.exceptions import ConfigurationError
-from curl_cffi import BrowserTypeLiteral, ExtraFingerprints
 
 
 @dataclass
 class NaminterConfig:
     """Configuration for Naminter CLI tool.
-    
+
     Holds all configuration parameters for username enumeration operations, including network settings, export options, filtering, and validation parameters.
     """
+
     # Required parameters
-    usernames: List[str]
-    sites: Optional[List[str]] = None
-    logger: Optional[object] = None
+    usernames: list[str]
+    sites: list[str] | None = None
+    logger: object | None = None
 
     # List and schema sources
-    local_list_paths: Optional[List[Union[Path, str]]] = None
-    remote_list_urls: Optional[List[str]] = None
-    local_schema_path: Optional[Union[Path, str]] = None
-    remote_schema_url: Optional[str] = WMN_SCHEMA_URL
+    local_list_paths: list[Path | str] | None = None
+    remote_list_urls: list[str] | None = None
+    local_schema_path: Path | str | None = None
+    remote_schema_url: str | None = WMN_SCHEMA_URL
 
     # Validation and filtering
     skip_validation: bool = False
-    include_categories: List[str] = field(default_factory=list)
-    exclude_categories: List[str] = field(default_factory=list)
+    include_categories: list[str] = field(default_factory=list)
+    exclude_categories: list[str] = field(default_factory=list)
     filter_all: bool = False
     filter_found: bool = False
     filter_ambiguous: bool = False
@@ -46,37 +48,37 @@ class NaminterConfig:
     # Network and concurrency
     max_tasks: int = MAX_CONCURRENT_TASKS
     timeout: int = HTTP_REQUEST_TIMEOUT_SECONDS
-    proxy: Optional[str] = None
+    proxy: str | None = None
     allow_redirects: bool = False
     verify_ssl: bool = False
-    impersonate: Optional[BrowserTypeLiteral] = "chrome"
-    ja3: Optional[str] = None
-    akamai: Optional[str] = None
-    extra_fp: Optional[Union[ExtraFingerprints, Dict[str, Any], str]] = None
+    impersonate: BrowserTypeLiteral | None = "chrome"
+    ja3: str | None = None
+    akamai: str | None = None
+    extra_fp: ExtraFingerprints | dict[str, Any] | str | None = None
     browse: bool = False
     fuzzy_mode: bool = False
     self_enumeration: bool = False
     no_progressbar: bool = False
 
     # Logging
-    log_level: Optional[str] = None
-    log_file: Optional[str] = None
+    log_level: str | None = None
+    log_file: str | None = None
     show_details: bool = False
 
     # Response saving
     save_response: bool = False
-    response_path: Optional[str] = None
+    response_path: str | None = None
     open_response: bool = False
 
     # Export options
     csv_export: bool = False
-    csv_path: Optional[str] = None
+    csv_path: str | None = None
     pdf_export: bool = False
-    pdf_path: Optional[str] = None
+    pdf_path: str | None = None
     html_export: bool = False
-    html_path: Optional[str] = None
+    html_path: str | None = None
     json_export: bool = False
-    json_path: Optional[str] = None
+    json_path: str | None = None
 
     def __post_init__(self) -> None:
         """Validate and normalize configuration after initialization."""
@@ -102,11 +104,11 @@ class NaminterConfig:
             self.filter_unknown,
             self.filter_not_found,
             self.filter_not_valid,
-            self.filter_errors
+            self.filter_errors,
         ]
         if not any(filter_fields):
             self.filter_found = True
-            
+
         if isinstance(self.impersonate, str) and self.impersonate.lower() == "none":
             self.impersonate = None
 
@@ -118,20 +120,19 @@ class NaminterConfig:
             except TypeError as e:
                 raise ConfigurationError(f"Invalid data type in extra_fp: {e}") from e
 
-
     @property
-    def response_dir(self) -> Optional[Path]:
+    def response_dir(self) -> Path | None:
         """Return response directory Path if save_response is enabled."""
         if not self.save_response:
             return None
 
         if self.response_path:
             return Path(self.response_path)
-            
+
         return Path.cwd() / "responses"
 
     @property
-    def export_formats(self) -> Dict[str, Optional[str]]:
+    def export_formats(self) -> dict[str, str | None]:
         """Return enabled export formats with their custom paths."""
         export_configs = [
             ("csv", self.csv_export, self.csv_path),
@@ -139,14 +140,14 @@ class NaminterConfig:
             ("html", self.html_export, self.html_path),
             ("json", self.json_export, self.json_path),
         ]
-        
+
         return {
-            format_name: path 
-            for format_name, is_enabled, path in export_configs 
+            format_name: path
+            for format_name, is_enabled, path in export_configs
             if is_enabled
         }
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert configuration to a dictionary."""
         return {
             "usernames": self.usernames,
@@ -166,7 +167,9 @@ class NaminterConfig:
             "impersonate": self.impersonate,
             "ja3": self.ja3,
             "akamai": self.akamai,
-            "extra_fp": self.extra_fp.to_dict() if isinstance(self.extra_fp, ExtraFingerprints) else self.extra_fp,
+            "extra_fp": self.extra_fp.to_dict()
+            if isinstance(self.extra_fp, ExtraFingerprints)
+            else self.extra_fp,
             "browse": self.browse,
             "fuzzy_mode": self.fuzzy_mode,
             "self_enumeration": self.self_enumeration,

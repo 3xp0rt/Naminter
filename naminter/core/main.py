@@ -1,38 +1,50 @@
 import asyncio
 import json
 import logging
+from collections.abc import AsyncGenerator, Sequence
 from pathlib import Path
-from typing import Any, AsyncGenerator, Dict, List, Optional, Union, Set, Sequence, Tuple
-from ..core.models import ResultStatus, SiteResult, SelfEnumerationResult, ValidationMode, Summary
-from ..core.exceptions import (
-    DataError,
-    ValidationError,
-    SchemaError,
-    FileAccessError,
-    NetworkError,
-    TimeoutError,
-    SessionError,
+from typing import (
+    Any,
 )
-from ..core.utils import (
-    validate_usernames,
-    deduplicate_strings,
-    merge_lists,
-)
+
+import aiofiles
+import jsonschema
+
 from ..core.constants import (
-    MAX_CONCURRENT_TASKS,
     ACCOUNT_PLACEHOLDER,
+    MAX_CONCURRENT_TASKS,
     REQUIRED_KEYS_ENUMERATE,
     REQUIRED_KEYS_SELF_ENUM,
-    WMN_REMOTE_URL,
-    WMN_KEY_SITES,
-    WMN_KEY_CATEGORIES,
     WMN_KEY_AUTHORS,
+    WMN_KEY_CATEGORIES,
     WMN_KEY_LICENSE,
     WMN_KEY_NAME,
+    WMN_KEY_SITES,
+    WMN_REMOTE_URL,
+)
+from ..core.exceptions import (
+    DataError,
+    FileAccessError,
+    NetworkError,
+    SchemaError,
+    SessionError,
+    TimeoutError,
+    ValidationError,
+)
+from ..core.models import (
+    ResultStatus,
+    SelfEnumerationResult,
+    SiteResult,
+    Summary,
+    ValidationMode,
 )
 from ..core.network import BaseSession
-import jsonschema
-import aiofiles
+from ..core.utils import (
+    deduplicate_strings,
+    merge_lists,
+    validate_usernames,
+)
+
 
 class Naminter:
     """Main class for Naminter username enumeration."""
@@ -40,13 +52,13 @@ class Naminter:
     def __init__(
         self,
         http_client: BaseSession,
-        wmn_data: Optional[Dict[str, Any]] = None,
-        wmn_schema: Optional[Dict[str, Any]] = None,
-        local_list_paths: Optional[List[Path]] = None,
-        remote_list_urls: Optional[List[str]] = None,
+        wmn_data: dict[str, Any] | None = None,
+        wmn_schema: dict[str, Any] | None = None,
+        local_list_paths: list[Path] | None = None,
+        remote_list_urls: list[str] | None = None,
         skip_validation: bool = False,
-        local_schema_path: Optional[Path] = None,
-        remote_schema_url: Optional[str] = None,
+        local_schema_path: Path | None = None,
+        remote_schema_url: str | None = None,
         max_tasks: int = MAX_CONCURRENT_TASKS,
     ) -> None:
         """Initialize Naminter with configuration parameters."""
@@ -63,8 +75,8 @@ class Naminter:
         self._local_schema_path = local_schema_path
         self._remote_schema_url = remote_schema_url
 
-        self._wmn_data: Optional[Dict[str, Any]] = wmn_data
-        self._wmn_schema: Optional[Dict[str, Any]] = wmn_schema
+        self._wmn_data: dict[str, Any] | None = wmn_data
+        self._wmn_schema: dict[str, Any] | None = wmn_schema
         self._semaphore = asyncio.Semaphore(self.max_tasks)
         self._session_lock = asyncio.Lock()
         self._http: BaseSession = http_client
@@ -79,7 +91,7 @@ class Naminter:
                 self._logger.error("Failed to open HTTP session: %s", e)
                 raise DataError(f"HTTP session initialization failed: {e}") from e
 
-    async def _fetch_json(self, url: str) -> Dict[str, Any]:
+    async def _fetch_json(self, url: str) -> dict[str, Any]:
         """Fetch and parse JSON from a URL."""
         if not url.strip():
             raise ValidationError(f"Invalid URL: {url}")
@@ -92,19 +104,19 @@ class Naminter:
             raise DataError(f"Session error while fetching from {url}: {e}") from e
         except NetworkError as e:
             raise DataError(f"Network error while fetching from {url}: {e}") from e
-            
+
         if response.status_code < 200 or response.status_code >= 300:
             raise DataError(f"Failed to fetch from {url}: HTTP {response.status_code}")
-        
+
         try:
             return response.json()
         except (ValueError, json.JSONDecodeError) as e:
             raise DataError(f"Failed to parse JSON from {url}: {e}") from e
 
-    async def _read_json_file(self, path: Union[str, Path]) -> Dict[str, Any]:
+    async def _read_json_file(self, path: str | Path) -> dict[str, Any]:
         """Read JSON from a local file without blocking the event loop."""
         try:
-            async with aiofiles.open(path, mode="r", encoding="utf-8") as file:
+            async with aiofiles.open(path, encoding="utf-8") as file:
                 content = await file.read()
         except FileNotFoundError as e:
             raise FileAccessError(f"File not found: {path}") from e
@@ -112,34 +124,45 @@ class Naminter:
             raise FileAccessError(f"Permission denied accessing file: {path}") from e
         except OSError as e:
             raise FileAccessError(f"Error reading file {path}: {e}") from e
-        
+
         try:
             return json.loads(content)
         except json.JSONDecodeError as e:
             raise DataError(f"Invalid JSON in file {path}: {e}") from e
 
-    async def _load_schema(self) -> Dict[str, Any]:
+    async def _load_schema(self) -> dict[str, Any]:
         """Load WMN schema from local or remote source."""
         if self._skip_validation:
             return {}
-        
+
         try:
             if self._local_schema_path:
                 return await self._read_json_file(self._local_schema_path)
             elif self._remote_schema_url:
                 return await self._fetch_json(self._remote_schema_url)
             else:
-                raise DataError("No schema source provided - either local_schema_path or remote_schema_url is required")
+                raise DataError(
+                    "No schema source provided - either local_schema_path or remote_schema_url is required"
+                )
         except (OSError, json.JSONDecodeError) as e:
-            raise DataError(f"Failed to load required WMN schema from local file: {e}") from e
+            raise DataError(
+                f"Failed to load required WMN schema from local file: {e}"
+            ) from e
         except NetworkError as e:
-            raise DataError(f"Failed to load required WMN schema from {self._remote_schema_url}: {e}") from e
+            raise DataError(
+                f"Failed to load required WMN schema from {self._remote_schema_url}: {e}"
+            ) from e
 
-    async def _load_dataset(self) -> Dict[str, Any]:
+    async def _load_dataset(self) -> dict[str, Any]:
         """Load WMN data from configured sources."""
-        dataset: Dict[str, Any] = {WMN_KEY_SITES: [], WMN_KEY_CATEGORIES: [], WMN_KEY_AUTHORS: [], WMN_KEY_LICENSE: []}
-        
-        sources: List[Tuple[Union[str, Path], bool]] = []
+        dataset: dict[str, Any] = {
+            WMN_KEY_SITES: [],
+            WMN_KEY_CATEGORIES: [],
+            WMN_KEY_AUTHORS: [],
+            WMN_KEY_LICENSE: [],
+        }
+
+        sources: list[tuple[str | Path, bool]] = []
         if self._remote_list_urls:
             sources.extend([(url, True) for url in self._remote_list_urls])
         if self._local_list_paths:
@@ -156,30 +179,38 @@ class Naminter:
 
         results = await asyncio.gather(*coroutines, return_exceptions=True)
 
-        failures: List[str] = []
-        for src, res in zip(sources, results):
+        failures: list[str] = []
+        for src, res in zip(sources, results, strict=False):
             if isinstance(res, Exception):
                 source, is_remote = src
-                failures.append(f"{source} ({'remote' if is_remote else 'local'}): {res}")
+                failures.append(
+                    f"{source} ({'remote' if is_remote else 'local'}): {res}"
+                )
                 self._logger.warning("Failed to load WMN data from %s: %s", source, res)
             else:
                 merge_lists(res, dataset)
 
         if not dataset[WMN_KEY_SITES]:
-            detail = "; ".join(failures) if failures else "no sources produced any sites"
+            detail = (
+                "; ".join(failures) if failures else "no sources produced any sites"
+            )
             raise DataError(f"No sites loaded from any source; details: {detail}")
-        
+
         return dataset
 
-    def _deduplicate_data(self, data: Dict[str, Any]) -> None:
+    def _deduplicate_data(self, data: dict[str, Any]) -> None:
         """Deduplicate and clean the WMN data in place."""
-        unique_sites = {site[WMN_KEY_NAME]: site for site in data[WMN_KEY_SITES] if isinstance(site, dict) and site.get(WMN_KEY_NAME)}
+        unique_sites = {
+            site[WMN_KEY_NAME]: site
+            for site in data[WMN_KEY_SITES]
+            if isinstance(site, dict) and site.get(WMN_KEY_NAME)
+        }
         data[WMN_KEY_SITES] = list(unique_sites.values())
         data[WMN_KEY_CATEGORIES] = list(dict.fromkeys(data[WMN_KEY_CATEGORIES]))
         data[WMN_KEY_AUTHORS] = list(dict.fromkeys(data[WMN_KEY_AUTHORS]))
         data[WMN_KEY_LICENSE] = list(dict.fromkeys(data[WMN_KEY_LICENSE]))
 
-    async def _load_wmn_lists(self) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    async def _load_wmn_lists(self) -> tuple[dict[str, Any], dict[str, Any]]:
         """Unified async loader for WMN data and schema.
 
         Returns a mapping with keys: data (dataset dict) and schema (schema dict).
@@ -196,7 +227,7 @@ class Naminter:
         return (dataset, dataset_schema)
 
     @staticmethod
-    def _validate_data(data: Dict[str, Any], schema: Dict[str, Any]) -> None:
+    def _validate_data(data: dict[str, Any], schema: dict[str, Any]) -> None:
         """Validate WMN data against schema. Raises on failure."""
         if not schema:
             return
@@ -212,14 +243,17 @@ class Naminter:
         """Load and validate the WMN dataset and schema if not already loaded."""
         if self._wmn_data and self._wmn_schema:
             return
-            
+
         try:
             data, schema = await self._load_wmn_lists()
             if not self._skip_validation:
                 self._validate_data(data, schema)
             self._wmn_data = data
             self._wmn_schema = schema
-            self._logger.info("WMN dataset loaded (sites=%d)", len(self._wmn_data.get(WMN_KEY_SITES, [])))
+            self._logger.info(
+                "WMN dataset loaded (sites=%d)",
+                len(self._wmn_data.get(WMN_KEY_SITES, [])),
+            )
         except SchemaError as e:
             raise DataError(f"WMN validation failed: {e}") from e
         except Exception as e:
@@ -241,20 +275,22 @@ class Naminter:
         await self._open_session()
         try:
             await self._ensure_dataset()
-        except DataError as e:
+        except DataError:
             self._logger.error("Dataset load failed")
             raise
         return self
-    
-    async def __aexit__(self, exc_type: Optional[type], exc_val: Optional[BaseException], exc_tb: Optional[Any]) -> None:
+
+    async def __aexit__(
+        self, exc_type: type | None, exc_val: BaseException | None, exc_tb: Any | None
+    ) -> None:
         """Async context manager exit."""
         await self._close_session()
 
     async def get_wmn_summary(
         self,
-        site_names: Optional[List[str]] = None,
-        include_categories: Optional[List[str]] = None,
-        exclude_categories: Optional[List[str]] = None,
+        site_names: list[str] | None = None,
+        include_categories: list[str] | None = None,
+        exclude_categories: list[str] | None = None,
     ) -> Summary:
         """Get enriched WMN metadata information for diagnostics and UI.
 
@@ -262,11 +298,11 @@ class Naminter:
         """
         try:
             await self._ensure_dataset()
-        except DataError as e:
+        except DataError:
             self._logger.error("Dataset load failed")
             raise
         try:
-            sites: List[Dict[str, Any]] = self._filter_sites(
+            sites: list[dict[str, Any]] = self._filter_sites(
                 site_names,
                 include_categories=include_categories,
                 exclude_categories=exclude_categories,
@@ -275,12 +311,15 @@ class Naminter:
             self._logger.error("Site filtering failed: %s", e)
             raise
         try:
+            category_list: list[str] = [
+                site.get("cat") for site in sites if site.get("cat")
+            ]
+            site_name_list: list[str] = [
+                site.get("name") for site in sites if site.get("name")
+            ]
 
-            category_list: List[str] = [site.get("cat") for site in sites if site.get("cat")]
-            site_name_list: List[str] = [site.get("name") for site in sites if site.get("name")]
-            
             total_known_accounts: int = 0
-            
+
             for site in sites:
                 known_list = site.get("known")
                 if isinstance(known_list, list) and len(known_list) > 0:
@@ -296,8 +335,11 @@ class Naminter:
                 known_accounts_total=total_known_accounts,
             )
 
-            self._logger.info("WMN summary computed (sites=%d, categories=%d)",
-                              wmn_summary.sites_count, wmn_summary.categories_count)
+            self._logger.info(
+                "WMN summary computed (sites=%d, categories=%d)",
+                wmn_summary.sites_count,
+                wmn_summary.categories_count,
+            )
             return wmn_summary
         except DataError:
             raise
@@ -305,57 +347,63 @@ class Naminter:
             self._logger.exception("Failed to compute WMN summary")
             raise DataError(f"Failed to retrieve metadata: {e}") from e
 
-    
     def _filter_sites(
         self,
-        site_names: Optional[List[str]],
-        include_categories: Optional[List[str]] = None,
-        exclude_categories: Optional[List[str]] = None,
-    ) -> List[Dict[str, Any]]:
+        site_names: list[str] | None,
+        include_categories: list[str] | None = None,
+        exclude_categories: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
         """Filter sites by names and categories for the current WMN dataset."""
-        sites: List[Dict[str, Any]] = self._wmn_data.get("sites", [])
+        sites: list[dict[str, Any]] = self._wmn_data.get("sites", [])
         if site_names:
-            filtered_site_names: Set[str] = set(deduplicate_strings(site_names))
-            available_names: Set[str] = {site.get("name") for site in sites}
+            filtered_site_names: set[str] = set(deduplicate_strings(site_names))
+            available_names: set[str] = {site.get("name") for site in sites}
             missing_names = filtered_site_names - available_names
             if missing_names:
                 raise DataError(f"Unknown site names: {sorted(missing_names)}")
         else:
             filtered_site_names = set()
 
-        filtered_sites: List[Dict[str, Any]] = sites
+        filtered_sites: list[dict[str, Any]] = sites
 
         if filtered_site_names:
             filtered_sites = [
-                site for site in filtered_sites if site.get("name") in filtered_site_names
+                site
+                for site in filtered_sites
+                if site.get("name") in filtered_site_names
             ]
 
         if include_categories:
-            include_set: Set[str] = set(deduplicate_strings(include_categories))
+            include_set: set[str] = set(deduplicate_strings(include_categories))
             filtered_sites = [
                 site for site in filtered_sites if site.get("cat") in include_set
             ]
 
         if exclude_categories:
-            exclude_set: Set[str] = set(deduplicate_strings(exclude_categories))
+            exclude_set: set[str] = set(deduplicate_strings(exclude_categories))
             filtered_sites = [
                 site for site in filtered_sites if site.get("cat") not in exclude_set
             ]
 
         self._logger.debug(
             "Filter result %d/%d (names=%s include=%s exclude=%s)",
-            len(filtered_sites), len(sites),
-            bool(site_names), bool(include_categories), bool(exclude_categories),
+            len(filtered_sites),
+            len(sites),
+            bool(site_names),
+            bool(include_categories),
+            bool(exclude_categories),
         )
         return filtered_sites
-    
-    def _get_missing_keys(self, site: Dict[str, Any], required_keys: Sequence[str]) -> List[str]:
+
+    def _get_missing_keys(
+        self, site: dict[str, Any], required_keys: Sequence[str]
+    ) -> list[str]:
         """Return a list of required keys missing from a site mapping."""
         return [key for key in required_keys if key not in site]
-    
+
     async def enumerate_site(
         self,
-        site: Dict[str, Any],
+        site: dict[str, Any],
         username: str,
         fuzzy_mode: bool = False,
     ) -> SiteResult:
@@ -363,7 +411,7 @@ class Naminter:
         await self._open_session()
         try:
             await self._ensure_dataset()
-        except DataError as e:
+        except DataError:
             self._logger.error("Dataset load failed")
             raise
 
@@ -374,7 +422,7 @@ class Naminter:
                 category=site.get("cat", "unknown"),
                 username=username,
                 status=ResultStatus.ERROR,
-                error=f"Site entry missing required keys: {missing_keys}"
+                error=f"Site entry missing required keys: {missing_keys}",
             )
 
         name = site["name"]
@@ -384,14 +432,25 @@ class Naminter:
         strip_bad_char = site.get("strip_bad_char", "")
         clean_username = username.translate(str.maketrans("", "", strip_bad_char))
         if not clean_username:
-            return SiteResult(name, category, username, ResultStatus.ERROR,
-                              error=f"Username became empty after stripping")
+            return SiteResult(
+                name,
+                category,
+                username,
+                ResultStatus.ERROR,
+                error="Username became empty after stripping",
+            )
 
         uri_check = uri_check_template.replace(ACCOUNT_PLACEHOLDER, clean_username)
-        uri_pretty = site.get("uri_pretty", uri_check_template).replace(ACCOUNT_PLACEHOLDER, clean_username)
+        uri_pretty = site.get("uri_pretty", uri_check_template).replace(
+            ACCOUNT_PLACEHOLDER, clean_username
+        )
 
-        self._logger.debug("Enumerating site=%s user=%s mode=%s", name, username,
-                           "FUZZY" if fuzzy_mode else "STRICT")
+        self._logger.debug(
+            "Enumerating site=%s user=%s mode=%s",
+            name,
+            username,
+            "FUZZY" if fuzzy_mode else "STRICT",
+        )
 
         headers = site.get("headers", {})
         post_body = site.get("post_body")
@@ -404,37 +463,59 @@ class Naminter:
         try:
             async with self._semaphore:
                 if post_body:
-                    response = await self._http.post(uri_check, headers=headers, data=post_body)
+                    response = await self._http.post(
+                        uri_check, headers=headers, data=post_body
+                    )
                 else:
                     response = await self._http.get(uri_check, headers=headers)
                 elapsed = response.elapsed
-                self._logger.debug("Request ok (status=%d, elapsed=%.2fs)", response.status_code, elapsed)
+                self._logger.debug(
+                    "Request ok (status=%d, elapsed=%.2fs)",
+                    response.status_code,
+                    elapsed,
+                )
         except asyncio.CancelledError:
             self._logger.warning("Request cancelled")
             raise
         except TimeoutError as e:
             self._logger.warning("Request timeout for %s: %s", name, e)
             return SiteResult(
-                name=name, category=category, username=username, result_url=uri_pretty, 
-                status=ResultStatus.ERROR, error=f"Request timeout: {e}"
+                name=name,
+                category=category,
+                username=username,
+                result_url=uri_pretty,
+                status=ResultStatus.ERROR,
+                error=f"Request timeout: {e}",
             )
         except SessionError as e:
             self._logger.warning("Session error for %s: %s", name, e)
             return SiteResult(
-                name=name, category=category, username=username, result_url=uri_pretty,
-                status=ResultStatus.ERROR, error=f"Session error: {e}"
+                name=name,
+                category=category,
+                username=username,
+                result_url=uri_pretty,
+                status=ResultStatus.ERROR,
+                error=f"Session error: {e}",
             )
         except NetworkError as e:
             self._logger.warning("Network error for %s: %s", name, e)
             return SiteResult(
-                name=name, category=category, username=username, result_url=uri_pretty, 
-                status=ResultStatus.ERROR, error=f"Network error: {e}"
+                name=name,
+                category=category,
+                username=username,
+                result_url=uri_pretty,
+                status=ResultStatus.ERROR,
+                error=f"Network error: {e}",
             )
         except Exception as e:
             self._logger.exception("Unexpected error during request for %s", name)
             return SiteResult(
-                name=name, category=category, username=username, result_url=uri_pretty, 
-                status=ResultStatus.ERROR, error=f"Unexpected error: {e}"
+                name=name,
+                category=category,
+                username=username,
+                result_url=uri_pretty,
+                status=ResultStatus.ERROR,
+                error=f"Unexpected error: {e}",
             )
 
         result_status = SiteResult.get_result_status(
@@ -447,7 +528,9 @@ class Naminter:
             fuzzy_mode=fuzzy_mode,
         )
 
-        self._logger.debug("Result=%s (HTTP %d)", result_status.name, response.status_code)
+        self._logger.debug(
+            "Result=%s (HTTP %d)", result_status.name, response.status_code
+        )
 
         return SiteResult(
             name=name,
@@ -462,18 +545,18 @@ class Naminter:
 
     async def enumerate_usernames(
         self,
-        usernames: List[str],
-        site_names: Optional[List[str]] = None,
-        include_categories: Optional[List[str]] = None,
-        exclude_categories: Optional[List[str]] = None,
+        usernames: list[str],
+        site_names: list[str] | None = None,
+        include_categories: list[str] | None = None,
+        exclude_categories: list[str] | None = None,
         fuzzy_mode: bool = False,
         as_generator: bool = False,
-    ) -> Union[List[SiteResult], AsyncGenerator[SiteResult, None]]:
+    ) -> list[SiteResult] | AsyncGenerator[SiteResult, None]:
         """Enumerate one or multiple usernames across all loaded sites."""
         await self._open_session()
         try:
             await self._ensure_dataset()
-        except DataError as e:
+        except DataError:
             self._logger.exception("Dataset load failed")
             raise
 
@@ -484,7 +567,7 @@ class Naminter:
             raise DataError("Invalid usernames") from e
         else:
             self._logger.info("Usernames validated (count=%d)", len(usernames))
-        
+
         try:
             sites = self._filter_sites(
                 site_names,
@@ -497,7 +580,8 @@ class Naminter:
 
         coroutines = [
             self.enumerate_site(site, username, fuzzy_mode)
-            for site in sites for username in usernames
+            for site in sites
+            for username in usernames
         ]
 
         async def iterate_results() -> AsyncGenerator[SiteResult, None]:
@@ -511,17 +595,17 @@ class Naminter:
 
     async def self_enumeration(
         self,
-        site_names: Optional[List[str]] = None,
-        include_categories: Optional[List[str]] = None,
-        exclude_categories: Optional[List[str]] = None,
+        site_names: list[str] | None = None,
+        include_categories: list[str] | None = None,
+        exclude_categories: list[str] | None = None,
         fuzzy_mode: bool = False,
-        as_generator: bool = False
-    ) -> Union[List[SelfEnumerationResult], AsyncGenerator[SelfEnumerationResult, None]]:
+        as_generator: bool = False,
+    ) -> list[SelfEnumerationResult] | AsyncGenerator[SelfEnumerationResult, None]:
         """Run self-enumeration using known accounts for each site."""
         await self._open_session()
         try:
             await self._ensure_dataset()
-        except DataError as e:
+        except DataError:
             self._logger.exception("Dataset load failed")
             raise
 
@@ -535,43 +619,51 @@ class Naminter:
             self._logger.error("Site filtering failed: %s", e)
             raise
 
-        self._logger.info("Starting self-enumeration (sites=%d, mode=%s)",
-                          len(sites), ValidationMode.FUZZY if fuzzy_mode else ValidationMode.STRICT)
+        self._logger.info(
+            "Starting self-enumeration (sites=%d, mode=%s)",
+            len(sites),
+            ValidationMode.FUZZY if fuzzy_mode else ValidationMode.STRICT,
+        )
 
-        async def _enumerate_known(site: Dict[str, Any]) -> SelfEnumerationResult:
+        async def _enumerate_known(site: dict[str, Any]) -> SelfEnumerationResult:
             """Helper function to enumerate a site with all its known users."""
             missing_keys = self._get_missing_keys(site, REQUIRED_KEYS_SELF_ENUM)
             if missing_keys:
                 return SelfEnumerationResult(
                     name=site.get("name", "unknown"),
                     category=site.get("cat", "unknown"),
-                    error=f"Site data missing required keys: {missing_keys}"
+                    error=f"Site data missing required keys: {missing_keys}",
                 )
-            
+
             name = site["name"]
             category = site["cat"]
             known = site["known"]
-            
-            self._logger.debug("Self-enumerating site=%s category=%s known_count=%d",
-                               name, category, len(known))
+
+            self._logger.debug(
+                "Self-enumerating site=%s category=%s known_count=%d",
+                name,
+                category,
+                len(known),
+            )
 
             try:
-                coroutines = [self.enumerate_site(site, username, fuzzy_mode) for username in known]
+                coroutines = [
+                    self.enumerate_site(site, username, fuzzy_mode)
+                    for username in known
+                ]
                 results = await asyncio.gather(*coroutines)
 
                 return SelfEnumerationResult(
-                    name=name,
-                    category=category,
-                    results=results
+                    name=name, category=category, results=results
                 )
             except Exception as e:
                 self._logger.exception("Self-enumeration failed for site=%s", name)
                 return SelfEnumerationResult(
                     name=name,
                     category=category,
-                    error=f"Unexpected error during self-enumeration: {e}"
+                    error=f"Unexpected error during self-enumeration: {e}",
                 )
-        
+
         coroutines = [
             _enumerate_known(site) for site in sites if isinstance(site, dict)
         ]
@@ -582,5 +674,5 @@ class Naminter:
 
         if as_generator:
             return iterate_results()
-        
+
         return await asyncio.gather(*coroutines)
