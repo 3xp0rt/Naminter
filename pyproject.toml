@@ -1,13 +1,13 @@
-[tool.poetry]
+[project]
 name = "naminter"
 version = "1.0.7"
 description = "A Python package and command-line interface (CLI) tool for asynchronous OSINT username enumeration using the WhatsMyName dataset"
-authors = ["3xp0rt <contact@3xp0rt.com>"]
-license = "MIT"
+authors = [
+    {name = "3xp0rt", email = "contact@3xp0rt.com"}
+]
+license = {text = "MIT"}
 readme = "README.md"
-packages = [{include = "naminter"}]
-include = ["naminter/cli/templates/*.html"]
-
+requires-python = ">=3.11"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
@@ -21,7 +21,6 @@ classifiers = [
     "Topic :: Internet",
     "Topic :: Utilities"
 ]
-
 keywords = [
     "osint",
     "username",
@@ -33,40 +32,36 @@ keywords = [
     "investigation",
     "naminter"
 ]
+dependencies = [
+    "click>=8.3.0",
+    "curl-cffi>=0.13.0",
+    "aiofiles>=25.1.0",
+    "jinja2>=3.1.6",
+    "jsonschema>=4.25.1",
+    "rich>=14.2.0",
+    "rich-click>=1.9.4",
+    "weasyprint>=66.0",
+]
 
-[tool.poetry.urls]
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.14.4",
+]
+
+[project.urls]
 Homepage = "https://github.com/3xp0rt/naminter"
 Repository = "https://github.com/3xp0rt/naminter"
-BugTracker = "https://github.com/3xp0rt/naminter/issues"
+"Bug Tracker" = "https://github.com/3xp0rt/naminter/issues"
 Documentation = "https://github.com/3xp0rt/naminter#readme"
 Source = "https://github.com/3xp0rt/naminter"
 
-[tool.poetry.dependencies]
-python = "^3.11"
-click = "^8.3.0"
-curl-cffi = "^0.13.0"
-aiofiles = "^24.1.0"
-jinja2 = "^3.1.6"
-jsonschema = "^4.25.1"
-rich = "^14.1.0"
-rich-click = "^1.9.1"
-weasyprint = "^66.0"
-
-[tool.poetry.group.dev.dependencies]
-ruff = "^0.13.2"
-taskipy = "^1.14.1"
-
-[tool.poetry.scripts]
+[project.scripts]
 naminter = "naminter.cli.main:entry_point"
 
 [build-system]
-requires = ["poetry-core"]
-build-backend = "poetry.core.masonry.api"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-# Taskipy tasks
-[tool.taskipy.tasks]
-lint = "ruff check .; ruff check . --diff"
-format = "ruff check . --fix; ruff format ."
 
 # Ruff configuration
 [tool.ruff]

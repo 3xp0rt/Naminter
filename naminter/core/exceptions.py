@@ -1,3 +1,7 @@
+from typing import Any
+
+
+# Base exception
 class NaminterError(Exception):
     """Base exception class for Naminter errors.
 
@@ -12,14 +16,7 @@ class NaminterError(Exception):
         self.cause = cause
 
 
-class ConfigurationError(NaminterError):
-    """Raised when there's an error in the configuration parameters.
-
-    This includes invalid configuration values, missing required settings,
-    or configuration file parsing errors.
-    """
-
-
+# Network/HTTP errors
 class HttpError(NaminterError):
     """Raised when network-related errors occur.
 
@@ -44,54 +41,41 @@ class HttpTimeoutError(HttpError):
     """
 
 
-class DataError(NaminterError):
-    """Raised when there are issues with data processing or validation.
+# Data processing errors
+class WMNDataError(NaminterError):
+    """Raised when there are issues with WMN data processing or validation.
 
     This includes malformed data, parsing errors, and data integrity issues.
     """
 
 
-class SchemaError(DataError):
-    """Raised when WMN schema validation fails.
+class WMNSchemaError(WMNDataError):
+    """Raised when the WMN JSON Schema itself is invalid or cannot be used."""
 
-    This occurs when the WhatsMyName list format doesn't match
-    the expected schema structure, or when the schema itself is invalid.
+
+class WMNValidationError(WMNDataError):
+    """Raised when WMN dataset does not conform to the provided JSON Schema.
+
+    Attributes:
+        errors: Structured list of validation errors to display/inspect.
     """
 
-
-class ValidationError(DataError):
-    """Raised when input validation fails.
-
-    This includes invalid usernames, malformed URLs,
-    and other input parameter validation errors.
-    """
-
-
-class FileAccessError(DataError):
-    """Raised when file operations fail.
-
-    This includes reading/writing local lists, responses, exports,
-    and other file system operations.
-    """
-
-
-class ExportError(NaminterError):
-    """Raised when export operations fail.
-
-    This includes file writing errors, format conversion errors,
-    and other export-related issues.
-    """
+    def __init__(
+        self,
+        message: str,
+        errors: list[Any] | None = None,
+        cause: Exception | None = None,
+    ) -> None:
+        super().__init__(message, cause)
+        self.errors: list[Any] = errors or []
 
 
 __all__ = [
-    "ConfigurationError",
-    "DataError",
-    "ExportError",
-    "FileAccessError",
     "HttpError",
     "HttpSessionError",
     "HttpTimeoutError",
     "NaminterError",
-    "SchemaError",
-    "ValidationError",
+    "WMNDataError",
+    "WMNSchemaError",
+    "WMNValidationError",
 ]

@@ -1,28 +1,38 @@
 import asyncio
 import logging
 import typing
-import webbrowser
 from pathlib import Path
-from typing import Any
+from typing import Any, Final
 
-import aiofiles
 import rich_click as click
 from curl_cffi import BrowserTypeLiteral
 
-from naminter import __version__
 from naminter.cli.config import NaminterConfig
 from naminter.cli.console import (
     ResultFormatter,
     console,
     display_error,
+    display_validation_errors,
     display_version,
     display_warning,
 )
-from naminter.cli.constants import RESPONSE_FILE_DATE_FORMAT, RESPONSE_FILE_EXTENSION
+from naminter.cli.constants import (
+    EXIT_CODE_ERROR,
+    PROGRESS_ADVANCE_INCREMENT,
+)
 from naminter.cli.exporters import Exporter
 from naminter.cli.progress import ProgressManager, ResultsTracker
-from naminter.cli.utils import sanitize_filename
+from naminter.cli.utils import (
+    fetch_json,
+    generate_response_filename,
+    open_browser,
+    read_json,
+    write_file,
+)
 from naminter.core.constants import (
+    BROWSER_IMPERSONATE_AGENT,
+    BROWSER_IMPERSONATE_NONE,
+    DEFAULT_FILE_ENCODING,
     HTTP_ALLOW_REDIRECTS,
     HTTP_REQUEST_TIMEOUT_SECONDS,
     HTTP_SSL_VERIFY,
@@ -30,14 +40,15 @@ from naminter.core.constants import (
     MAX_CONCURRENT_TASKS,
     WMN_SCHEMA_URL,
 )
-from naminter.core.exceptions import ConfigurationError, DataError, ExportError
+from naminter.core.exceptions import HttpError, WMNDataError, WMNValidationError
 from naminter.core.main import Naminter
-from naminter.core.models import ResultStatus, SelfEnumerationResult, SiteResult
+from naminter.core.models import WMNMode, WMNResult, WMNStatus, WMNValidationResult
 from naminter.core.network import CurlCFFISession
-from naminter.core.utils import validate_numeric_values
+
+from .exceptions import BrowserError, ConfigurationError, ExportError, FileIOError
 
 
-def _version_callback(ctx: click.Context, _param: click.Option, value: bool) -> None:
+def _version_callback(ctx: click.Context, _param: click.Parameter, value: bool) -> None:
     """Eager callback to display version and exit."""
     if not value or ctx.resilient_parsing:
         return
@@ -54,6 +65,14 @@ class NaminterCLI:
             show_details=config.show_details
         )
         self._response_dir: Path | None = self._setup_response_dir()
+        self._status_filters: Final[dict[WMNStatus, bool]] = {
+            WMNStatus.FOUND: config.filter_found,
+            WMNStatus.AMBIGUOUS: config.filter_ambiguous,
+            WMNStatus.UNKNOWN: config.filter_unknown,
+            WMNStatus.NOT_FOUND: config.filter_not_found,
+            WMNStatus.NOT_VALID: config.filter_not_valid,
+            WMNStatus.ERROR: config.filter_errors,
+        }
 
     def _setup_response_dir(self) -> Path | None:
         """Setup response directory if response saving is enabled."""
@@ -62,11 +81,10 @@ class NaminterCLI:
 
         try:
             dir_path = self.config.response_dir
-            if dir_path is None:
-                return None
-
-            dir_path.mkdir(parents=True, exist_ok=True)
-            return dir_path
+            if dir_path is not None:
+                dir_path.mkdir(parents=True, exist_ok=True)
+                return dir_path
+            return None
         except PermissionError as e:
             display_error(
                 f"Permission denied creating/accessing response directory: {e}"
@@ -80,13 +98,17 @@ class NaminterCLI:
             return None
 
     @staticmethod
-    def _setup_logging(config: NaminterConfig) -> None:
+    def setup_logging(config: NaminterConfig) -> None:
         """Configure project logging."""
         if not config.log_file:
             return
 
         log_path = Path(config.log_file)
-        log_path.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError) as e:
+            msg = f"Failed to create log directory {log_path.parent}: {e}"
+            raise FileIOError(msg) from e
 
         level_value = getattr(
             logging, str(config.log_level or "INFO").upper(), logging.INFO
@@ -100,26 +122,22 @@ class NaminterCLI:
             isinstance(handler, logging.FileHandler) for handler in logger.handlers
         )
         if not has_file_handler:
-            file_handler = logging.FileHandler(
-                str(log_path), mode="a", encoding="utf-8"
-            )
-            formatter = logging.Formatter(LOGGING_FORMAT)
-            file_handler.setFormatter(formatter)
-            file_handler.setLevel(level_value)
-            logger.addHandler(file_handler)
+            try:
+                file_handler = logging.FileHandler(
+                    str(log_path),
+                    mode="a",
+                    encoding=DEFAULT_FILE_ENCODING,
+                )
+                formatter = logging.Formatter(LOGGING_FORMAT)
+                file_handler.setFormatter(formatter)
+                file_handler.setLevel(level_value)
+                logger.addHandler(file_handler)
+            except (PermissionError, OSError) as e:
+                msg = f"Failed to create log file {log_path}: {e}"
+                raise FileIOError(msg) from e
 
     async def run(self) -> None:
         """Main execution method with progress tracking."""
-        try:
-            warnings = validate_numeric_values(
-                self.config.max_tasks, self.config.timeout
-            )
-            for message in warnings:
-                display_warning(message)
-        except ConfigurationError as e:
-            display_error(f"Configuration error: {e}")
-            return
-
         http_client = CurlCFFISession(
             proxies=self.config.proxy,
             verify=self.config.verify_ssl,
@@ -131,40 +149,48 @@ class NaminterCLI:
             extra_fp=self.config.extra_fp,
         )
 
+        wmn_data: dict[str, Any] | None = None
+        if self.config.local_list_path:
+            wmn_data = await read_json(self.config.local_list_path)
+        elif self.config.remote_list_url:
+            wmn_data = await fetch_json(http_client, self.config.remote_list_url)
+
+        wmn_schema: dict[str, Any] | None = None
+        if not self.config.skip_validation:
+            if self.config.local_schema_path:
+                wmn_schema = await read_json(self.config.local_schema_path)
+            elif self.config.remote_schema_url:
+                wmn_schema = await fetch_json(
+                    http_client, self.config.remote_schema_url
+                )
+
         async with Naminter(
             http_client=http_client,
+            wmn_data=wmn_data,
+            wmn_schema=wmn_schema,
             max_tasks=self.config.max_tasks,
-            local_list_paths=self.config.local_list_paths,
-            remote_list_urls=self.config.remote_list_urls,
-            skip_validation=self.config.skip_validation,
-            local_schema_path=self.config.local_schema_path,
-            remote_schema_url=self.config.remote_schema_url,
         ) as naminter:
-            if self.config.self_enumeration:
-                results = await self._run_self_enumeration(naminter)
+            if self.config.validate_sites:
+                results = await self._run_validation(naminter)
             else:
                 results = await self._run_check(naminter)
 
             if self.config.export_formats and results:
-                try:
-                    export_manager = Exporter(self.config.usernames or [], __version__)
-                    export_manager.export(results, self.config.export_formats)
-                except ExportError as e:
-                    display_error(f"Export error: {e}")
-                    return
+                exporter = Exporter(self.config.usernames or [])
+                exporter.export(results, self.config.export_formats)
 
-    async def _run_check(self, naminter: Naminter) -> list[SiteResult]:
+    async def _run_check(self, naminter: Naminter) -> list[WMNResult]:
         """Run the username enumeration functionality."""
         summary = await naminter.get_wmn_summary(
             site_names=self.config.sites,
             include_categories=self.config.include_categories,
             exclude_categories=self.config.exclude_categories,
         )
-        actual_site_count = int(summary.sites_count)
+        actual_site_count = summary.sites_count
         total_sites = actual_site_count * len(self.config.usernames)
 
         tracker = ResultsTracker(total_sites)
-        results: list[SiteResult] = []
+        results: list[WMNResult] = []
 
         with ProgressManager(
             console, disabled=self.config.no_progressbar
@@ -178,7 +204,7 @@ class NaminterCLI:
                 site_names=self.config.sites,
                 include_categories=self.config.include_categories,
                 exclude_categories=self.config.exclude_categories,
-                fuzzy_mode=self.config.fuzzy_mode,
+                mode=self.config.mode,
                 as_generator=True,
             )
 
@@ -186,43 +212,48 @@ class NaminterCLI:
                 tracker.add_result(result)
 
                 if self._filter_result(result):
-                    response_file_path = await self._process_result(result)
-                    formatted_output = self._formatter.format_result(
-                        result, response_file_path
-                    )
-                    console.print(formatted_output)
-                    results.append(result)
+                    try:
+                        file_path = await self._process_result(result)
+                        formatted_output = self._formatter.format_result(
+                            result, file_path
+                        )
+                        console.print(formatted_output)
+                        results.append(result)
+                    except Exception as e:
+                        display_error(f"Error processing result for {result.name}: {e}")
 
-                progress_mgr.update(advance=1, description=tracker.get_progress_text())
+                progress_mgr.update(
+                    advance=PROGRESS_ADVANCE_INCREMENT,
+                    description=tracker.get_progress_text(),
+                )
 
         return results
 
-    async def _run_self_enumeration(
-        self, naminter: Naminter
-    ) -> list[SelfEnumerationResult]:
-        """Run the self-enumeration functionality."""
+    async def _run_validation(self, naminter: Naminter) -> list[WMNValidationResult]:
+        """Run the site validation functionality."""
         summary = await naminter.get_wmn_summary(
             site_names=self.config.sites,
             include_categories=self.config.include_categories,
             exclude_categories=self.config.exclude_categories,
         )
-        total_tests = int(summary.known_accounts_total)
+        total_tests = summary.known_count
 
         tracker = ResultsTracker(total_tests)
-        results: list[SelfEnumerationResult] = []
+        results: list[WMNValidationResult] = []
 
         with ProgressManager(
             console, disabled=self.config.no_progressbar
         ) as progress_mgr:
             progress_mgr.start(
-                total_tests, "[bright_cyan]Running self-enumeration...[/bright_cyan]"
+                total_tests,
+                "[bright_cyan]Validating sites...[/bright_cyan]",
             )
 
-            result_stream = await naminter.self_enumeration(
+            result_stream = await naminter.validate_sites(
                 site_names=self.config.sites,
                 include_categories=self.config.include_categories,
                 exclude_categories=self.config.exclude_categories,
-                fuzzy_mode=self.config.fuzzy_mode,
+                mode=self.config.mode,
                 as_generator=True,
             )
 
@@ -230,101 +261,69 @@ class NaminterCLI:
                 for site_result in result.results:
                     tracker.add_result(site_result)
                     progress_mgr.update(
-                        advance=1, description=tracker.get_progress_text()
+                        advance=PROGRESS_ADVANCE_INCREMENT,
+                        description=tracker.get_progress_text(),
                     )
 
                 if self._filter_result(result):
-                    response_files: list[Path | None] = []
-                    for site_result in result.results:
-                        response_file_path = await self._process_result(site_result)
-                        if response_file_path:
-                            response_files.append(response_file_path)
-                        else:
-                            response_files.append(None)
-                    formatted_output = self._formatter.format_self_enumeration(
-                        result, response_files
-                    )
-                    console.print(formatted_output)
-                    results.append(result)
+                    try:
+                        response_files: list[Path | None] = []
+                        for site_result in result.results:
+                            response_file_path = await self._process_result(site_result)
+                            if response_file_path:
+                                response_files.append(response_file_path)
+                            else:
+                                response_files.append(None)
+                        formatted_output = self._formatter.format_validation(
+                            result, response_files
+                        )
+                        console.print(formatted_output)
+                        results.append(result)
+                    except Exception as e:
+                        display_error(
+                            f"Error processing validation result for {result.name}: {e}"
+                        )
 
         return results
 
-    def _filter_result(self, result: SiteResult | SelfEnumerationResult) -> bool:
+    def _filter_result(self, result: WMNResult | WMNValidationResult) -> bool:
         """Determine if a result should be included based on filter settings."""
-        status = result.status
-
         if self.config.filter_all:
             return True
 
-        filter_map = {
-            self.config.filter_found: ResultStatus.FOUND,
-            self.config.filter_ambiguous: ResultStatus.AMBIGUOUS,
-            self.config.filter_unknown: ResultStatus.UNKNOWN,
-            self.config.filter_not_found: ResultStatus.NOT_FOUND,
-            self.config.filter_not_valid: ResultStatus.NOT_VALID,
-            self.config.filter_errors: ResultStatus.ERROR,
-        }
+        return self._status_filters.get(result.status, False)
 
-        return any(
-            filter_enabled and status == expected_status
-            for filter_enabled, expected_status in filter_map.items()
-        ) or not any(filter_map.keys())
-
-    async def _process_result(self, result: SiteResult) -> Path | None:
+    async def _process_result(self, result: WMNResult) -> Path | None:
         """Handle browser opening, response saving, and console output for a result."""
-        response_file = None
-
-        if result.result_url and self.config.browse:
-            await self._open_browser(result.result_url)
-
-        if self.config.save_response and result.response_text and self._response_dir:
+        if result.url and self.config.browse:
             try:
-                safe_site_name = sanitize_filename(result.name)
-                safe_username = sanitize_filename(result.username)
-                status_str = result.status.value
-                created_at_str = result.created_at.strftime(RESPONSE_FILE_DATE_FORMAT)
+                await open_browser(result.url)
+            except BrowserError as e:
+                display_error(str(e))
 
-                base_filename = (
-                    f"{status_str}_{result.response_code}_"
-                    f"{safe_site_name}_{safe_username}_{created_at_str}"
-                    f"{RESPONSE_FILE_EXTENSION}"
-                )
-                response_file = self._response_dir / base_filename
+        if not self.config.save_response:
+            return None
 
-                await self._write_file(response_file, result.response_text)
+        if not result.response_text or not self._response_dir:
+            return None
 
-                if self.config.open_response:
-                    file_uri = response_file.resolve().as_uri()
-                    await self._open_browser(file_uri)
-            except PermissionError as e:
-                display_error(f"Permission denied saving response to file: {e}")
-            except OSError as e:
-                display_error(f"OS error saving response to file: {e}")
-            except Exception as e:
-                display_error(f"Failed to save response to file: {e}")
+        filename = generate_response_filename(result)
+        file_path = self._response_dir / filename
 
-        return response_file
-
-    @staticmethod
-    async def _open_browser(url: str) -> None:
-        """Open a URL in the browser with error handling."""
         try:
-            await asyncio.to_thread(webbrowser.open, url)
-        except Exception as e:
-            display_error(f"Error opening browser for {url}: {e}")
+            await write_file(file_path, result.response_text)
+        except FileIOError as e:
+            display_error(str(e))
+            return None
 
-    @staticmethod
-    async def _write_file(file_path: Path, content: str) -> None:
-        """Write content to a file with error handling."""
-        try:
-            async with aiofiles.open(file_path, "w", encoding="utf-8") as file:
-                await file.write(content)
-        except PermissionError as e:
-            display_error(f"Permission denied writing to {file_path}: {e}")
-        except OSError as e:
-            display_error(f"OS error writing to {file_path}: {e}")
-        except Exception as e:
-            display_error(f"Failed to write to {file_path}: {e}")
+        if self.config.open_response:
+            file_uri = file_path.resolve().as_uri()
+            try:
+                await open_browser(file_uri)
+            except BrowserError as e:
+                display_error(str(e))
+
+        return file_path
 
 
 @click.group(
@@ -354,17 +353,14 @@ class NaminterCLI:
     "--site",
     "-s",
     multiple=True,
-    help='Specific site name(s) to enumerate (e.g., "GitHub", "Twitter")',
+    help='Specific site name(s) to enumerate (e.g., "GitHub", "X")',
 )
 @click.option(
     "--local-list",
     type=click.Path(exists=True, path_type=Path),
-    multiple=True,
-    help="Path(s) to local JSON file(s) containing WhatsMyName site data",
+    help="Path to a local JSON file containing WhatsMyName site data",
 )
-@click.option(
-    "--remote-list", multiple=True, help="URL(s) to fetch remote WhatsMyName site data"
-)
+@click.option("--remote-list", help="URL to fetch remote WhatsMyName site data")
 @click.option(
     "--local-schema",
     type=click.Path(exists=True, path_type=Path),
@@ -373,7 +369,10 @@ class NaminterCLI:
 @click.option(
     "--remote-schema",
     default=WMN_SCHEMA_URL,
-    help="URL to fetch custom WhatsMyName JSON schema for validation",
+    help=(
+        "URL to fetch WhatsMyName JSON schema for validation "
+        "(ignored with --skip-validation)"
+    ),
 )
 @click.option(
     "--skip-validation",
@@ -381,9 +380,9 @@ class NaminterCLI:
     help="Skip JSON schema validation of WhatsMyName data",
 )
 @click.option(
-    "--self-enumeration",
+    "--validate-sites",
     is_flag=True,
-    help="Run self-enumeration mode to validate site detection accuracy",
+    help="Validate site detection methods by checking known usernames",
 )
 @click.option(
     "--include-categories",
@@ -419,8 +418,8 @@ class NaminterCLI:
 )
 @click.option(
     "--impersonate",
-    type=click.Choice(["none", *typing.get_args(BrowserTypeLiteral)]),
-    default="chrome",
+    type=click.Choice([BROWSER_IMPERSONATE_NONE, *typing.get_args(BrowserTypeLiteral)]),
+    default=BROWSER_IMPERSONATE_AGENT,
     help='Browser to impersonate in HTTP requests (use "none" to disable)',
 )
 @click.option("--ja3", help="JA3 fingerprint string for TLS fingerprinting")
@@ -442,7 +441,10 @@ class NaminterCLI:
     help="Maximum number of concurrent tasks",
 )
 @click.option(
-    "--fuzzy", "fuzzy_mode", is_flag=True, help="Enable fuzzy validation mode"
+    "--mode",
+    type=click.Choice([WMNMode.ANY.value, WMNMode.ALL.value]),
+    default=WMNMode.ALL.value,
+    help="Validation mode: 'all' for strict (AND), 'any' for fuzzy (OR)",
 )
 @click.option(
     "--log-level",
@@ -456,21 +458,47 @@ class NaminterCLI:
 @click.option("--browse", is_flag=True, help="Open found profiles in web browser")
 @click.option(
     "--save-response",
-    is_flag=True,
-    help="Save HTTP response content for each result to files",
+    "save_response_opt",
+    type=str,
+    flag_value="__AUTO__",
+    default=None,
+    help="Save HTTP responses; optionally specify directory path",
 )
-@click.option("--response-path", help="Custom directory path for saving response files")
 @click.option(
     "--open-response", is_flag=True, help="Open saved response files in web browser"
 )
-@click.option("--csv", "csv_export", is_flag=True, help="Export results to CSV file")
-@click.option("--csv-path", help="Custom path for CSV export")
-@click.option("--pdf", "pdf_export", is_flag=True, help="Export results to PDF file")
-@click.option("--pdf-path", help="Custom path for PDF export")
-@click.option("--html", "html_export", is_flag=True, help="Export results to HTML file")
-@click.option("--html-path", help="Custom path for HTML export")
-@click.option("--json", "json_export", is_flag=True, help="Export results to JSON file")
-@click.option("--json-path", help="Custom path for JSON export")
+@click.option(
+    "--csv",
+    "csv_opt",
+    type=str,
+    flag_value="__AUTO__",
+    default=None,
+    help="Export results to CSV; optionally specify a custom path",
+)
+@click.option(
+    "--pdf",
+    "pdf_opt",
+    type=str,
+    flag_value="__AUTO__",
+    default=None,
+    help="Export results to PDF; optionally specify a custom path",
+)
+@click.option(
+    "--html",
+    "html_opt",
+    type=str,
+    flag_value="__AUTO__",
+    default=None,
+    help="Export results to HTML; optionally specify a custom path",
+)
+@click.option(
+    "--json",
+    "json_opt",
+    type=str,
+    flag_value="__AUTO__",
+    default=None,
+    help="Export results to JSON; optionally specify a custom path",
+)
 @click.option(
     "--filter-all",
     is_flag=True,
@@ -508,7 +536,10 @@ class NaminterCLI:
 )
 @click.pass_context
 def main(ctx: click.Context, **kwargs: Any) -> None:
-    """A Python package and command-line interface (CLI) tool for asynchronous OSINT username enumeration using the WhatsMyName dataset."""
+    """A Python package and command-line interface (CLI) tool.
+    For asynchronous OSINT username enumeration using the
+    WhatsMyName dataset.
+    """
 
     if ctx.invoked_subcommand is not None:
         return
@@ -517,11 +548,46 @@ def main(ctx: click.Context, **kwargs: Any) -> None:
         console.no_color = True
 
     try:
+        csv_export = kwargs.get("csv_opt") is not None
+        csv_path = (
+            None
+            if kwargs.get("csv_opt") in {None, "__AUTO__"}
+            else kwargs.get("csv_opt")
+        )
+
+        pdf_export = kwargs.get("pdf_opt") is not None
+        pdf_path = (
+            None
+            if kwargs.get("pdf_opt") in {None, "__AUTO__"}
+            else kwargs.get("pdf_opt")
+        )
+
+        html_export = kwargs.get("html_opt") is not None
+        html_path = (
+            None
+            if kwargs.get("html_opt") in {None, "__AUTO__"}
+            else kwargs.get("html_opt")
+        )
+
+        json_export = kwargs.get("json_opt") is not None
+        json_path = (
+            None
+            if kwargs.get("json_opt") in {None, "__AUTO__"}
+            else kwargs.get("json_opt")
+        )
+
+        save_response = kwargs.get("save_response_opt") is not None
+        response_path = (
+            None
+            if kwargs.get("save_response_opt") in {None, "__AUTO__"}
+            else kwargs.get("save_response_opt")
+        )
+
         config = NaminterConfig(
-            usernames=kwargs.get("username"),
+            usernames=list(kwargs.get("username") or []),
             sites=kwargs.get("site"),
-            local_list_paths=kwargs.get("local_list"),
-            remote_list_urls=kwargs.get("remote_list"),
+            local_list_path=kwargs.get("local_list"),
+            remote_list_url=kwargs.get("remote_list"),
             local_schema_path=kwargs.get("local_schema"),
             remote_schema_url=kwargs.get("remote_schema"),
             skip_validation=kwargs.get("skip_validation"),
@@ -530,61 +596,66 @@ def main(ctx: click.Context, **kwargs: Any) -> None:
             max_tasks=kwargs.get("max_tasks"),
             timeout=kwargs.get("timeout"),
             proxy=kwargs.get("proxy"),
-            allow_redirects=kwargs.get("allow_redirects"),
-            verify_ssl=kwargs.get("verify_ssl"),
+            allow_redirects=bool(kwargs.get("allow_redirects")),
+            verify_ssl=bool(kwargs.get("verify_ssl")),
             impersonate=kwargs.get("impersonate"),
             ja3=kwargs.get("ja3"),
             akamai=kwargs.get("akamai"),
             extra_fp=kwargs.get("extra_fp"),
-            fuzzy_mode=kwargs.get("fuzzy_mode"),
-            self_enumeration=kwargs.get("self_enumeration"),
+            mode=WMNMode(kwargs.get("mode", WMNMode.ALL.value)),
+            validate_sites=bool(kwargs.get("validate_sites")),
             log_level=kwargs.get("log_level"),
             log_file=kwargs.get("log_file"),
-            show_details=kwargs.get("show_details"),
-            browse=kwargs.get("browse"),
-            save_response=kwargs.get("save_response"),
-            response_path=kwargs.get("response_path"),
-            open_response=kwargs.get("open_response"),
-            csv_export=kwargs.get("csv_export"),
-            csv_path=kwargs.get("csv_path"),
-            pdf_export=kwargs.get("pdf_export"),
-            pdf_path=kwargs.get("pdf_path"),
-            html_export=kwargs.get("html_export"),
-            html_path=kwargs.get("html_path"),
-            json_export=kwargs.get("json_export"),
-            json_path=kwargs.get("json_path"),
-            filter_all=kwargs.get("filter_all"),
-            filter_found=kwargs.get("filter_found"),
-            filter_ambiguous=kwargs.get("filter_ambiguous"),
-            filter_unknown=kwargs.get("filter_unknown"),
-            filter_not_found=kwargs.get("filter_not_found"),
-            filter_not_valid=kwargs.get("filter_not_valid"),
-            filter_errors=kwargs.get("filter_errors"),
-            no_progressbar=kwargs.get("no_progressbar"),
+            show_details=bool(kwargs.get("show_details")),
+            browse=bool(kwargs.get("browse")),
+            save_response=save_response,
+            response_path=response_path,
+            open_response=bool(kwargs.get("open_response")),
+            csv_export=csv_export,
+            csv_path=csv_path,
+            pdf_export=pdf_export,
+            pdf_path=pdf_path,
+            html_export=html_export,
+            html_path=html_path,
+            json_export=json_export,
+            json_path=json_path,
+            filter_all=bool(kwargs.get("filter_all")),
+            filter_found=bool(kwargs.get("filter_found")),
+            filter_ambiguous=bool(kwargs.get("filter_ambiguous")),
+            filter_unknown=bool(kwargs.get("filter_unknown")),
+            filter_not_found=bool(kwargs.get("filter_not_found")),
+            filter_not_valid=bool(kwargs.get("filter_not_valid")),
+            filter_errors=bool(kwargs.get("filter_errors")),
+            no_progressbar=bool(kwargs.get("no_progressbar")),
         )
 
-        NaminterCLI._setup_logging(config)
+        NaminterCLI.setup_logging(config)
 
         naminter_cli = NaminterCLI(config)
         asyncio.run(naminter_cli.run())
     except KeyboardInterrupt:
         display_warning("Operation interrupted")
-        ctx.exit(1)
-    except TimeoutError:
-        display_error("Operation timed out")
-        ctx.exit(1)
+        ctx.exit(EXIT_CODE_ERROR)
     except ConfigurationError as e:
         display_error(f"Configuration error: {e}")
-        ctx.exit(1)
-    except DataError as e:
+        ctx.exit(EXIT_CODE_ERROR)
+    except HttpError as e:
+        display_error(f"Network error: {e}")
+        ctx.exit(EXIT_CODE_ERROR)
+    except WMNDataError as e:
         display_error(f"Data error: {e}")
-        ctx.exit(1)
+        if isinstance(e, WMNValidationError) and e.errors:
+            display_validation_errors(e.errors)
+        ctx.exit(EXIT_CODE_ERROR)
+    except FileIOError as e:
+        display_error(f"File I/O error: {e}")
+        ctx.exit(EXIT_CODE_ERROR)
     except ExportError as e:
         display_error(f"Export error: {e}")
-        ctx.exit(1)
+        ctx.exit(EXIT_CODE_ERROR)
     except Exception as e:
-        display_error(f"Fatal error: {e}")
-        ctx.exit(1)
+        display_error(f"Unexpected error: {e}")
+        ctx.exit(EXIT_CODE_ERROR)
 
 
 def entry_point() -> None:

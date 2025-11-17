@@ -14,7 +14,8 @@ from rich.progress import (
 )
 
 from naminter.cli.console import THEME
-from naminter.core.models import ResultStatus, SiteResult
+from naminter.cli.constants import PROGRESS_ADVANCE_INCREMENT
+from naminter.core.models import WMNResult, WMNStatus
 
 
 class ResultsTracker:
@@ -22,26 +23,26 @@ class ResultsTracker:
 
     def __init__(self, total_sites: int) -> None:
         """Initialize the results tracker."""
-        self.total_sites = total_sites
+        self.total_sites = max(total_sites, 0)
         self.results_count = 0
         self.start_time = time.time()
-        self.status_counts: dict[ResultStatus, int] = dict.fromkeys(ResultStatus, 0)
+        self.status_counts: dict[WMNStatus, int] = dict.fromkeys(WMNStatus, 0)
 
-    def add_result(self, result: SiteResult) -> None:
+    def add_result(self, result: WMNResult) -> None:
         """Update counters with a new result."""
         self.results_count += 1
         self.status_counts[result.status] += 1
 
     def get_progress_text(self) -> str:
         """Get formatted progress text with request speed and statistics."""
-        elapsed = time.time() - self.start_time
+        elapsed = time.time() - self.start_time if self.start_time else 0.0
 
-        found = self.status_counts[ResultStatus.FOUND]
-        ambiguous = self.status_counts[ResultStatus.AMBIGUOUS]
-        unknown = self.status_counts[ResultStatus.UNKNOWN]
-        not_found = self.status_counts[ResultStatus.NOT_FOUND]
-        not_valid = self.status_counts[ResultStatus.NOT_VALID]
-        errors = self.status_counts[ResultStatus.ERROR]
+        found = self.status_counts[WMNStatus.FOUND]
+        ambiguous = self.status_counts[WMNStatus.AMBIGUOUS]
+        unknown = self.status_counts[WMNStatus.UNKNOWN]
+        not_found = self.status_counts[WMNStatus.NOT_FOUND]
+        not_valid = self.status_counts[WMNStatus.NOT_VALID]
+        errors = self.status_counts[WMNStatus.ERROR]
 
         valid_count = self.results_count - errors - not_valid
         valid_count = max(valid_count, 0)
@@ -62,8 +63,9 @@ class ResultsTracker:
         if not_valid > 0:
             sections.append(f"[{THEME['warning']}]x {not_valid}[/]")
 
+        total = max(self.total_sites, self.results_count)
         sections.append(
-            f"[{THEME['primary']}]{self.results_count}/{self.total_sites}[/]"
+            f"[{THEME['primary']}]{self.results_count}/{total}[/]"
         )
         return " │ ".join(sections)
 
@@ -101,7 +103,9 @@ class ProgressManager:
             self.progress.start()
             self.task_id = self.progress.add_task(description, total=total)
 
-    def update(self, advance: int = 1, description: str | None = None) -> None:
+    def update(
+        self, advance: int = PROGRESS_ADVANCE_INCREMENT, description: str | None = None
+    ) -> None:
         """Update the progress bar."""
         if self.progress and self.task_id is not None:
             update_kwargs: dict[str, Any] = {"advance": advance}

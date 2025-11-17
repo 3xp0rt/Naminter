@@ -1,4 +1,4 @@
-# 🔍 Naminter
+# Naminter
 
 [![Python Version](https://img.shields.io/badge/python-3.11%2B-blue)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green)](LICENSE)
@@ -33,11 +33,11 @@ Naminter is a Python package and command-line interface (CLI) tool for asynchron
 - **Browser Impersonation:** Simulate Chrome, Firefox, Safari, Edge for accurate detection
 - **Real-Time Console UI:** Live progress bar, colored output, and instant feedback
 - **Concurrent & Fast:** High-speed, concurrent checks with adjustable task limits
-- **Fuzzy Matching:** Optional fuzzy mode for broader username discovery
+- **Validation Modes:** Strict (ALL) or permissive (ANY) matching for detection criteria
 - **Category Filters:** Include or exclude sites by category
 - **Custom Site Lists:** Use your own or remote WhatsMyName-format lists and schemas
 - **Proxy & Network Options:** Full proxy support, SSL verification, and redirect control
-- **Self-Enumeration Mode:** Validate detection methods for reliability
+- **Site Validation Mode:** Validate detection methods for reliability
 - **Export Results:** Output to CSV, JSON, HTML, and PDF
 - **Response Handling:** Save/open HTTP responses for analysis
 - **Flexible Filtering:** Filter results by found, not found, errors, or unknown
@@ -127,8 +127,14 @@ naminter --username alice_bob \
     --html \
     --filter-all
 
-# Self-enumeration with detailed output
-naminter --self-enumeration \
+# Export with custom paths using merged flags
+naminter --username alice_bob \
+    --csv results.csv \
+    --json results.json \
+    --html report.html
+
+# Site validation with detailed output
+naminter --validate-sites \
     --show-details \
     --log-level DEBUG \
     --log-file debug.log
@@ -188,7 +194,7 @@ async def main():
         results = await naminter.enumerate_usernames(["example_username"])
         for result in results:
             if result.status.value == "found":
-                print(f"✅ {result.username} found on {result.name}: {result.result_url}")
+                print(f"✅ {result.username} found on {result.name}: {result.url}")
             elif result.status.value == "not_found":
                 print(f"❌ {result.username} not found on {result.name}")
             elif result.status.value == "error":
@@ -213,7 +219,7 @@ async def main():
         results = await naminter.enumerate_usernames(["example_username"], as_generator=True)
         async for result in results:
             if result.status.value == "found":
-                print(f"✅ {result.username} found on {result.name}: {result.result_url}")
+                print(f"✅ {result.username} found on {result.name}: {result.url}")
             elif result.status.value == "not_found":
                 print(f"❌ {result.username} not found on {result.name}")
 
@@ -225,6 +231,7 @@ asyncio.run(main())
 ```python
 import asyncio
 from naminter import Naminter
+from naminter.core.models import WMNMode
 
 async def main():
     wmn_data, wmn_schema = await load_wmn_data()
@@ -240,12 +247,12 @@ async def main():
         proxy="http://proxy:8080"
     ) as naminter:
         usernames = ["user1", "user2", "user3"]
-        results = await naminter.enumerate_usernames(usernames, fuzzy_mode=True)
+        results = await naminter.enumerate_usernames(usernames, mode=WMNMode.ANY)
         
         for result in results:
             if result.status.value == "found":
                 print(f"✅ Found: {result.username} on {result.name}")
-                print(f"   URL: {result.result_url}")
+                print(f"   URL: {result.url}")
                 print(f"   Response time: {result.elapsed:.2f}s")
             else:
                 print(f"❌ Not found: {result.username} on {result.name}")
@@ -253,7 +260,7 @@ async def main():
 asyncio.run(main())
 ```
 
-#### Self-Enumeration and Validation
+#### Site Validation
 
 ```python
 import asyncio
@@ -263,10 +270,10 @@ async def main():
     wmn_data, wmn_schema = await load_wmn_data()
     
     async with Naminter(wmn_data, wmn_schema) as naminter:
-        # Perform self-enumeration to validate site configurations
-        self_enumeration_results = await naminter.self_enumeration()
+        # Validate site detection methods using known usernames
+        validation_results = await naminter.validate_sites()
         
-        for site_result in self_enumeration_results:
+        for site_result in validation_results:
             if site_result.error:
                 print(f"❌ {site_result.name}: {site_result.error}")
             else:
@@ -312,16 +319,16 @@ asyncio.run(main())
 ### Input Lists
 | Option                      | Description                                                |
 |-----------------------------|------------------------------------------------------------|
-| `--local-list`              | Path(s) to local file(s) containing list of sites to enumerate |
-| `--remote-list`             | URL(s) to fetch remote list(s) of sites to enumerate       |
+| `--local-list`              | Path to a local file containing the list of sites to enumerate |
+| `--remote-list`             | URL to fetch a remote list of sites to enumerate           |
 | `--skip-validation`         | Skip WhatsMyName schema validation for lists               |
 | `--local-schema`            | Path to local WhatsMyName schema file                      |
 | `--remote-schema`           | URL to fetch custom WhatsMyName schema                     |
 
-### Self-Enumeration
+### Site Validation
 | Option                      | Description                                                |
 |-----------------------------|------------------------------------------------------------|
-| `--self-enumeration`              | Perform self-enumeration of the application                      |
+| `--validate-sites`          | Validate site detection methods by checking known usernames |
 
 ### Category Filters
 | Option                      | Description                                                |
@@ -342,7 +349,7 @@ asyncio.run(main())
 | Option                      | Description                                                |
 |-----------------------------|------------------------------------------------------------|
 | `--max-tasks`               | Maximum number of concurrent tasks (default: 50)           |
-| `--fuzzy`                   | Enable fuzzy validation mode                                |
+| `--mode`                    | Validation mode: `all` for strict matching (all detection criteria must match) or `any` for permissive matching (at least one detection criterion must match) |
 | `--log-level`               | Set logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)  |
 | `--log-file`                | Path to log file for debug output                          |
 | `--show-details`            | Show detailed information in console output                 |
@@ -351,21 +358,16 @@ asyncio.run(main())
 ### Response Handling
 | Option                      | Description                                                |
 |-----------------------------|------------------------------------------------------------|
-| `--save-response`           | Save HTTP response body for each result to files           |
-| `--response-path`           | Custom directory path for saving response files            |
+| `--save-response [DIR]`     | Save HTTP response body; optionally specify directory      |
 | `--open-response`           | Open saved response file in browser                        |
 
 ### Export Options
-| Option                      | Description                                                |
-|-----------------------------|------------------------------------------------------------|
-| `--csv`                     | Export results to CSV file                                 |
-| `--csv-path`                | Custom path for CSV export                                 |
-| `--pdf`                     | Export results to PDF file                                 |
-| `--pdf-path`                | Custom path for PDF export                                 |
-| `--html`                    | Export results to HTML file                                |
-| `--html-path`               | Custom path for HTML export                                |
-| `--json`                    | Export results to JSON file                                |
-| `--json-path`               | Custom path for JSON export                                |
+| Option        | Description |
+|---------------|-------------|
+| `--csv [PATH]`  | Export results to CSV; optionally specify output path |
+| `--pdf [PATH]`  | Export results to PDF; optionally specify output path |
+| `--html [PATH]` | Export results to HTML; optionally specify output path |
+| `--json [PATH]` | Export results to JSON; optionally specify output path |
 
 ### Result Filters
 | Option                      | Description                                                |

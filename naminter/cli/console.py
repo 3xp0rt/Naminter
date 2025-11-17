@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import Any
 
 from rich import box
 from rich.console import Console
@@ -16,7 +17,7 @@ from naminter import (
     __url__,
     __version__,
 )
-from naminter.core.models import ResultStatus, SelfEnumerationResult, SiteResult
+from naminter.core.models import WMNResult, WMNStatus, WMNValidationResult
 
 console: Console = Console()
 
@@ -29,22 +30,22 @@ THEME: dict[str, str] = {
     "muted": "bright_black",
 }
 
-_STATUS_SYMBOLS: dict[ResultStatus, str] = {
-    ResultStatus.FOUND: "+",
-    ResultStatus.AMBIGUOUS: "*",
-    ResultStatus.UNKNOWN: "?",
-    ResultStatus.NOT_FOUND: "-",
-    ResultStatus.NOT_VALID: "X",
-    ResultStatus.ERROR: "!",
+_STATUS_SYMBOLS: dict[WMNStatus, str] = {
+    WMNStatus.FOUND: "+",
+    WMNStatus.AMBIGUOUS: "*",
+    WMNStatus.UNKNOWN: "?",
+    WMNStatus.NOT_FOUND: "-",
+    WMNStatus.NOT_VALID: "X",
+    WMNStatus.ERROR: "!",
 }
 
-_STATUS_STYLES: dict[ResultStatus, Style] = {
-    ResultStatus.FOUND: Style(color=THEME["success"], bold=True),
-    ResultStatus.AMBIGUOUS: Style(color=THEME["warning"], bold=True),
-    ResultStatus.UNKNOWN: Style(color=THEME["warning"]),
-    ResultStatus.NOT_FOUND: Style(color=THEME["error"]),
-    ResultStatus.NOT_VALID: Style(color=THEME["error"]),
-    ResultStatus.ERROR: Style(color=THEME["error"], bold=True),
+_STATUS_STYLES: dict[WMNStatus, Style] = {
+    WMNStatus.FOUND: Style(color=THEME["success"], bold=True),
+    WMNStatus.AMBIGUOUS: Style(color=THEME["warning"], bold=True),
+    WMNStatus.UNKNOWN: Style(color=THEME["warning"]),
+    WMNStatus.NOT_FOUND: Style(color=THEME["error"]),
+    WMNStatus.NOT_VALID: Style(color=THEME["error"]),
+    WMNStatus.ERROR: Style(color=THEME["error"], bold=True),
 }
 
 
@@ -56,7 +57,7 @@ class ResultFormatter:
         self.show_details = show_details
 
     def format_result(
-        self, site_result: SiteResult, response_file_path: Path | None = None
+        self, site_result: WMNResult, response_file_path: Path | None = None
     ) -> Tree:
         """Format a single result as a tree-style output."""
 
@@ -68,7 +69,7 @@ class ResultFormatter:
         root_label.append(" [", style=THEME["muted"])
         root_label.append(site_result.name or "Unknown", style=THEME["info"])
         root_label.append("] ", style=THEME["muted"])
-        root_label.append(site_result.result_url or "No URL", style=THEME["primary"])
+        root_label.append(site_result.url or "No URL", style=THEME["primary"])
 
         tree = Tree(root_label, guide_style=THEME["muted"])
 
@@ -83,52 +84,50 @@ class ResultFormatter:
 
         return tree
 
-    def format_self_enumeration(
+    def format_validation(
         self,
-        self_enumeration_result: SelfEnumerationResult,
+        validation_result: WMNValidationResult,
         response_files: list[Path | None] | None = None,
     ) -> Tree:
-        """Format self-enumeration results into a tree structure."""
+        """Format validation results into a tree structure."""
 
         root_label = Text()
         root_label.append(
-            _STATUS_SYMBOLS.get(self_enumeration_result.status, "?"),
-            style=_STATUS_STYLES.get(self_enumeration_result.status, Style()),
+            _STATUS_SYMBOLS.get(validation_result.status, "?"),
+            style=_STATUS_STYLES.get(validation_result.status, Style()),
         )
         root_label.append(" [", style=THEME["muted"])
-        root_label.append(self_enumeration_result.name, style=THEME["info"])
+        root_label.append(validation_result.name, style=THEME["info"])
         root_label.append("]", style=THEME["muted"])
 
         tree = Tree(root_label, guide_style=THEME["muted"], expanded=True)
 
-        for i, test in enumerate(self_enumeration_result.results):
-            if test is None:
-                continue
-
-            url_text = Text()
-            url_text.append(
-                _STATUS_SYMBOLS.get(test.status, "?"),
-                style=_STATUS_STYLES.get(test.status, Style()),
-            )
-            url_text.append(" ", style=THEME["muted"])
-            url_text.append(f"{test.username}: ", style=THEME["info"])
-            url_text.append(test.result_url or "No URL", style=THEME["primary"])
-
-            test_node = tree.add(url_text)
-
-            if self.show_details:
-                response_file = (
-                    response_files[i]
-                    if response_files and i < len(response_files)
-                    else None
+        if validation_result.results:
+            for i, result in enumerate(validation_result.results):
+                url_text = Text()
+                url_text.append(
+                    _STATUS_SYMBOLS.get(result.status, "?"),
+                    style=_STATUS_STYLES.get(result.status, Style()),
                 )
-                self._add_debug_info(
-                    test_node,
-                    test.response_code,
-                    test.elapsed,
-                    test.error,
-                    response_file,
-                )
+                url_text.append(" ", style=THEME["muted"])
+                url_text.append(f"{result.username}: ", style=THEME["info"])
+                url_text.append(result.url or "No URL", style=THEME["primary"])
+
+                result_node = tree.add(url_text)
+
+                if self.show_details:
+                    response_file = (
+                        response_files[i]
+                        if response_files and i < len(response_files)
+                        else None
+                    )
+                    self._add_debug_info(
+                        result_node,
+                        result.response_code,
+                        result.elapsed,
+                        result.error,
+                        response_file,
+                    )
 
         return tree
 
@@ -212,3 +211,34 @@ def display_success(message: str) -> None:
     """Display a success message."""
 
     _display_message(message, THEME["success"], "+", "SUCCESS")
+
+
+def display_validation_errors(errors: list[Any]) -> None:
+    """Display validation errors in a formatted table."""
+    if not errors:
+        return
+
+    table = Table(
+        title="[bold bright_red]Validation Errors[/bold bright_red]",
+        border_style=THEME["error"],
+        box=box.ROUNDED,
+        show_lines=True,
+    )
+
+    table.add_column("Path", style=THEME["info"], no_wrap=False)
+    table.add_column("Message", style=THEME["warning"])
+    table.add_column("Data Preview", style=THEME["muted"], overflow="fold")
+
+    for error in errors:
+        path = getattr(error, "path", "N/A") or "N/A"
+        message = getattr(error, "message", "Unknown error")
+        data = getattr(error, "data", None)
+
+        data_preview = (
+            data[:200] + "..." if data and len(data) > 200 else (data or "N/A")
+        )
+
+        table.add_row(path, message, data_preview)
+
+    console.print(table)
+    console.file.flush()

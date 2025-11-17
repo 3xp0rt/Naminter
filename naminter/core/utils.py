@@ -1,157 +1,115 @@
+import json
 import logging
+from collections.abc import Sequence
 from typing import Any
 
+from jsonschema import Draft7Validator
+from jsonschema.exceptions import SchemaError as JsonSchemaError
+
 from .constants import (
-    EXTREME_CONCURRENCY_THRESHOLD,
-    HIGH_CONCURRENCY_MIN_TIMEOUT,
-    HIGH_CONCURRENCY_THRESHOLD,
-    LOW_TIMEOUT_WARNING_THRESHOLD,
-    MAX_TASKS_LIMIT,
-    MAX_TIMEOUT,
-    MIN_TASKS,
-    MIN_TIMEOUT,
-    VERY_HIGH_CONCURRENCY_MIN_TIMEOUT,
-    VERY_HIGH_CONCURRENCY_THRESHOLD,
-    WMN_LIST_FIELDS,
+    DEFAULT_JSON_ENSURE_ASCII,
+    DEFAULT_JSON_INDENT,
+    SITE_KEY_NAME,
+    WMN_KEY_SITES,
 )
-from .exceptions import (
-    ConfigurationError,
-    ValidationError,
-)
+from .exceptions import WMNSchemaError
+from .models import WMNDataset, WMNValidationModel
 
 logger = logging.getLogger(__name__)
 
 
-def deduplicate_strings(values: list[str] | None) -> list[str]:
-    """Return a list of unique, non-empty strings preserving original order."""
-    if not values:
+def validate_dataset(
+    data: WMNDataset, schema: dict[str, Any]
+) -> list[WMNValidationModel]:
+    """Validate WMN dataset against JSON Schema and return list of errors.
+
+    Raises WMNSchemaError if the provided schema is invalid.
+
+    Args:
+        data: WMN dataset to validate
+        schema: JSON Schema to validate against
+    """
+    if not schema:
         return []
 
-    seen: set[str] = set()
-    unique_values: list[str] = []
+    try:
+        validator = Draft7Validator(schema)
+    except JsonSchemaError as error:
+        msg = f"Invalid JSON schema: {error}"
+        raise WMNSchemaError(msg) from error
 
-    for item in values:
-        if isinstance(item, str):
-            normalized = item.strip()
-            if normalized and normalized not in seen:
-                seen.add(normalized)
-                unique_values.append(normalized)
+    errors: list[WMNValidationModel] = []
+    for error in validator.iter_errors(data):  # type: ignore[reportUnknownMemberType]
+        message_text = error.message
+        path_string = error.json_path
+        data_preview: str | None = None
 
-    return unique_values
+        try:
+            if error.absolute_path:
+                current_data = data
+                for segment in error.absolute_path:
+                    current_data = current_data[segment]
+                if current_data is not None:
+                    data_preview = json.dumps(
+                        current_data,
+                        ensure_ascii=DEFAULT_JSON_ENSURE_ASCII,
+                        indent=DEFAULT_JSON_INDENT,
+                    )
+        except Exception:
+            data_preview = None
 
-
-def validate_numeric_values(max_tasks: int, timeout: int) -> list[str]:
-    """Validate numeric configuration values and return warnings."""
-    warnings: list[str] = []
-
-    if not (MIN_TASKS <= max_tasks <= MAX_TASKS_LIMIT):
-        msg = (
-            "Invalid max_tasks: "
-            f"{max_tasks} must be between {MIN_TASKS} and {MAX_TASKS_LIMIT}"
-        )
-        raise ConfigurationError(
-            msg
-        )
-
-    if not (MIN_TIMEOUT <= timeout <= MAX_TIMEOUT):
-        msg = (
-            "Invalid timeout: "
-            f"{timeout} must be between {MIN_TIMEOUT} and {MAX_TIMEOUT} seconds"
-        )
-        raise ConfigurationError(
-            msg
-        )
-
-    if (
-        max_tasks > HIGH_CONCURRENCY_THRESHOLD
-        and timeout < HIGH_CONCURRENCY_MIN_TIMEOUT
-    ):
-        warnings.append(
-            "High concurrency ("
-            f"{max_tasks}) with low timeout ({timeout}s) may cause failures; "
-            "consider increasing timeout or reducing max_tasks."
-        )
-    elif (
-        max_tasks > VERY_HIGH_CONCURRENCY_THRESHOLD
-        and timeout < VERY_HIGH_CONCURRENCY_MIN_TIMEOUT
-    ):
-        warnings.append(
-            "Very high concurrency ("
-            f"{max_tasks}) with very low timeout ({timeout}s) may cause connection "
-            "issues; recommend timeout >= "
-            f"{HIGH_CONCURRENCY_MIN_TIMEOUT}s for max_tasks > "
-            f"{VERY_HIGH_CONCURRENCY_THRESHOLD}."
-        )
-
-    if max_tasks > EXTREME_CONCURRENCY_THRESHOLD:
-        warnings.append(
-            "Extremely high concurrency ("
-            f"{max_tasks}) may overwhelm servers or cause rate limiting; "
-            "lowering value is recommended."
-        )
-
-    if timeout < LOW_TIMEOUT_WARNING_THRESHOLD:
-        warnings.append(
-            "Very low timeout ("
-            f"{timeout}s) may cause legitimate requests to fail; increase "
-            "timeout for better accuracy."
-        )
-
-    return warnings
-
-
-def configure_proxy(proxy: str | dict[str, str] | None) -> dict[str, str] | None:
-    """Validate and configure proxy settings."""
-    if proxy is None:
-        return None
-
-    if isinstance(proxy, str):
-        if not proxy.strip():
-            msg = "Invalid proxy: proxy string cannot be empty"
-            raise ConfigurationError(msg)
-
-        if not (
-            proxy.startswith(("http://", "https://", "socks5://"))
-        ):
-            msg = "Invalid proxy: must be http://, https://, or socks5:// URL"
-            raise ConfigurationError(
-                msg
+        errors.append(
+            WMNValidationModel(
+                path=path_string,
+                data=data_preview,
+                message=message_text,
             )
+        )
 
-        logger.debug("Proxy configuration validated")
-        return {"http": proxy, "https": proxy}
+    sites_data = data.get(WMN_KEY_SITES, [])
 
-    elif isinstance(proxy, dict):
-        for protocol, proxy_url in proxy.items():
-            if protocol not in {"http", "https"}:
-                msg = f"Invalid proxy protocol: {protocol}"
-                raise ConfigurationError(msg)
+    name_indices: dict[str, list[int]] = {}
+    for index, site in enumerate(sites_data):
+        site_name = site.get(SITE_KEY_NAME)
+        if site_name:
+            name_indices.setdefault(site_name, []).append(index)
 
-            if not isinstance(proxy_url, str) or not proxy_url.strip():
-                msg = f"Invalid proxy URL for {protocol}: must be non-empty string"
-                raise ConfigurationError(
-                    msg
+    for site_name, indices in name_indices.items():
+        if len(indices) > 1:
+            for index in indices:
+                path_string = f"$.{WMN_KEY_SITES}[{index}]"
+                try:
+                    site_data = sites_data[index]
+                    data_preview = json.dumps(
+                        site_data,
+                        ensure_ascii=DEFAULT_JSON_ENSURE_ASCII,
+                        indent=DEFAULT_JSON_INDENT,
+                    )
+                except Exception:
+                    data_preview = None
+
+                errors.append(
+                    WMNValidationModel(
+                        path=path_string,
+                        data=data_preview,
+                        message=(
+                            f"Duplicate site name found: '{site_name}' "
+                            f"(appears {len(indices)} times)"
+                        ),
+                    )
                 )
 
-        logger.debug("Proxy dictionary configuration validated")
-        return proxy
+    return errors
 
 
-def validate_usernames(usernames: list[str]) -> list[str]:
-    """Validate and deduplicate usernames, preserving order."""
+def get_missing_keys(data: dict[str, Any], keys: Sequence[str]) -> list[str]:
+    """Return a list of required keys missing from a dictionary.
 
-    unique_usernames: list[str] = deduplicate_strings(usernames)
+    Args:
+        data: Dictionary to check for missing keys
+        keys: Sequence of keys that should be present
 
-    if not unique_usernames:
-        msg = "No valid usernames provided"
-        raise ValidationError(msg)
-
-    return unique_usernames
-
-
-def merge_lists(data: dict[str, Any], accumulator: dict[str, Any]) -> None:
-    """Merge list fields from data into the accumulator dictionary."""
-    if isinstance(data, dict):
-        for key in WMN_LIST_FIELDS:
-            if key in data and isinstance(data[key], list):
-                accumulator[key].extend(data[key])
+    Returns:
+        List of keys that are missing from the dictionary
+    """
+    return [key for key in keys if key not in data]

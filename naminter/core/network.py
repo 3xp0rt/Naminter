@@ -1,15 +1,20 @@
 import asyncio
 import logging
 from collections.abc import Mapping
-from typing import Any, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
-from curl_cffi import BrowserTypeLiteral
-from curl_cffi.requests import AsyncSession
+from curl_cffi import BrowserTypeLiteral, ExtraFingerprints
+from curl_cffi.requests import AsyncSession, ProxySpec
 from curl_cffi.requests.exceptions import RequestException as CurlRequestException
 from curl_cffi.requests.exceptions import Timeout as CurlTimeout
 
+if TYPE_CHECKING:
+    from curl_cffi.requests.session import HttpMethod
+
+
+from .constants import HTTP_REQUEST_TIMEOUT_SECONDS
 from .exceptions import HttpError, HttpSessionError, HttpTimeoutError
-from .models import Response
+from .models import WMNResponse
 
 
 @runtime_checkable
@@ -24,7 +29,9 @@ class BaseSession(Protocol):
         """Close the underlying HTTP session."""
         ...
 
-    async def get(self, url: str, headers: Mapping[str, str] | None = None) -> Response:
+    async def get(
+        self, url: str, headers: Mapping[str, str] | None = None
+    ) -> WMNResponse:
         """HTTP GET request (see class docstring for error contract)."""
         ...
 
@@ -33,7 +40,7 @@ class BaseSession(Protocol):
         url: str,
         headers: Mapping[str, str] | None = None,
         data: str | bytes | None = None,
-    ) -> Response:
+    ) -> WMNResponse:
         """HTTP POST request (see class docstring for error contract)."""
         ...
 
@@ -43,7 +50,7 @@ class BaseSession(Protocol):
         url: str,
         headers: Mapping[str, str] | None = None,
         data: str | bytes | None = None,
-    ) -> Response:
+    ) -> WMNResponse:
         """Generic HTTP request (see class docstring for error contract)."""
         ...
 
@@ -54,12 +61,12 @@ class CurlCFFISession:
         *,
         proxies: str | dict[str, str] | None = None,
         verify: bool = True,
-        timeout: int = 30,
+        timeout: int = HTTP_REQUEST_TIMEOUT_SECONDS,
         allow_redirects: bool = True,
         impersonate: BrowserTypeLiteral | None = None,
         ja3: str | None = None,
         akamai: str | None = None,
-        extra_fp: dict[str, Any] | None = None,
+        extra_fp: ExtraFingerprints | dict[str, Any] | None = None,
     ) -> None:
         self._logger = logging.getLogger(__name__)
         self._session: AsyncSession | None = None
@@ -67,38 +74,41 @@ class CurlCFFISession:
         if isinstance(proxies, str):
             proxies = {"http": proxies, "https": proxies}
 
-        self._proxies: str | dict[str, str] | None = proxies
+        self._proxies: dict[str, str] | None = proxies
         self._verify: bool = verify
         self._timeout: int = timeout
         self._allow_redirects: bool = allow_redirects
         self._impersonate: BrowserTypeLiteral | None = impersonate
         self._ja3: str | None = ja3
         self._akamai: str | None = akamai
-        self._extra_fp: dict[str, Any] | None = extra_fp
+        self._extra_fp: ExtraFingerprints | dict[str, Any] | None = extra_fp
 
         self._lock = asyncio.Lock()
 
     async def open(self) -> None:
         if self._session is not None:
             return
+
         async with self._lock:
             if self._session is None:
                 try:
+                    proxies_spec: ProxySpec | None = cast(
+                        "ProxySpec | None", self._proxies
+                    )
+                    extra_fp_spec: Any = self._extra_fp
                     self._session = AsyncSession(
-                        proxies=self._proxies,
+                        proxies=proxies_spec,
                         verify=self._verify,
                         timeout=self._timeout,
                         allow_redirects=self._allow_redirects,
                         impersonate=self._impersonate,
                         ja3=self._ja3,
                         akamai=self._akamai,
-                        extra_fp=self._extra_fp,
+                        extra_fp=extra_fp_spec,
                     )
                 except Exception as e:
-                    msg = "Failed to open curl-cffi session"
-                    raise HttpSessionError(
-                        msg, cause=e
-                    ) from e
+                    msg = "Unexpected error opening HTTP session"
+                    raise HttpSessionError(msg, cause=e) from e
 
     async def close(self) -> None:
         if not self._session:
@@ -106,62 +116,22 @@ class CurlCFFISession:
         try:
             await self._session.close()
         except Exception as e:
-            self._logger.warning("Error closing curl-cffi session: %s", e)
+            self._logger.warning("Unexpected error closing HTTP session: %s", e)
         finally:
             self._session = None
 
-    async def get(self, url: str, headers: Mapping[str, str] | None = None) -> Response:
-        await self.open()
-        if self._session is None:
-            msg = "Session not initialized"
-            raise HttpSessionError(msg)
-
-        try:
-            response = await self._session.get(
-                url, headers=dict(headers) if headers else None
-            )
-            elapsed = response.elapsed
-            return Response(
-                status_code=response.status_code, text=response.text, elapsed=elapsed
-            )
-        except CurlTimeout as e:
-            msg = f"GET timeout for {url}"
-            raise HttpTimeoutError(msg, cause=e) from e
-        except CurlRequestException as e:
-            msg = f"GET failed for {url}: {e}"
-            raise HttpError(msg, cause=e) from e
-        except Exception as e:
-            msg = f"GET failed for {url}: {e}"
-            raise HttpError(msg, cause=e) from e
+    async def get(
+        self, url: str, headers: Mapping[str, str] | None = None
+    ) -> WMNResponse:
+        return await self.request("GET", url, headers=headers)
 
     async def post(
         self,
         url: str,
         headers: Mapping[str, str] | None = None,
         data: str | bytes | None = None,
-    ) -> Response:
-        await self.open()
-        if self._session is None:
-            msg = "Session not initialized"
-            raise HttpSessionError(msg)
-
-        try:
-            response = await self._session.post(
-                url, headers=dict(headers) if headers else None, data=data
-            )
-            elapsed = response.elapsed
-            return Response(
-                status_code=response.status_code, text=response.text, elapsed=elapsed
-            )
-        except CurlTimeout as e:
-            msg = f"POST timeout for {url}"
-            raise HttpTimeoutError(msg, cause=e) from e
-        except CurlRequestException as e:
-            msg = f"POST failed for {url}: {e}"
-            raise HttpError(msg, cause=e) from e
-        except Exception as e:
-            msg = f"POST failed for {url}: {e}"
-            raise HttpError(msg, cause=e) from e
+    ) -> WMNResponse:
+        return await self.request("POST", url, headers=headers, data=data)
 
     async def request(
         self,
@@ -169,23 +139,23 @@ class CurlCFFISession:
         url: str,
         headers: Mapping[str, str] | None = None,
         data: str | bytes | None = None,
-    ) -> Response:
+    ) -> WMNResponse:
         await self.open()
-        if self._session is None:
-            msg = "Session not initialized"
-            raise HttpSessionError(msg)
+
+        assert self._session is not None
 
         try:
-            response = await self._session.request(
-                method=method,
+            response = await self._session.request(  # type: ignore[reportUnknownMemberType]
+                method=cast("HttpMethod", method.upper()),
                 url=url,
                 headers=dict(headers) if headers else None,
                 data=data,
             )
 
-            elapsed = response.elapsed
-            return Response(
-                status_code=response.status_code, text=response.text, elapsed=elapsed
+            return WMNResponse(
+                status_code=response.status_code,
+                text=response.text,
+                elapsed=response.elapsed,
             )
         except CurlTimeout as e:
             msg = f"{method} timeout for {url}"
@@ -194,12 +164,12 @@ class CurlCFFISession:
             msg = f"{method} failed for {url}: {e}"
             raise HttpError(msg, cause=e) from e
         except Exception as e:
-            msg = f"{method} failed for {url}: {e}"
+            msg = f"Unexpected error during {method} request to {url}: {e}"
             raise HttpError(msg, cause=e) from e
 
 
 __all__ = [
     "BaseSession",
     "CurlCFFISession",
-    "Response",
+    "WMNResponse",
 ]

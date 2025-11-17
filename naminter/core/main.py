@@ -1,43 +1,55 @@
 import asyncio
-import json
 import logging
-from collections.abc import AsyncGenerator, Sequence
-from pathlib import Path
-from typing import Any
-
-import aiofiles
-import jsonschema
+from collections.abc import AsyncGenerator, Awaitable, Callable
+from functools import wraps
+from typing import Any, Literal, TypeVar, overload
 
 from naminter.core.constants import (
     ACCOUNT_PLACEHOLDER,
+    DEFAULT_UNKNOWN_VALUE,
+    EMPTY_STRING,
     MAX_CONCURRENT_TASKS,
     REQUIRED_KEYS_ENUMERATE,
     REQUIRED_KEYS_SELF_ENUM,
+    SITE_KEY_CATEGORY,
+    SITE_KEY_E_CODE,
+    SITE_KEY_E_STRING,
+    SITE_KEY_HEADERS,
+    SITE_KEY_KNOWN,
+    SITE_KEY_M_CODE,
+    SITE_KEY_M_STRING,
+    SITE_KEY_NAME,
+    SITE_KEY_POST_BODY,
+    SITE_KEY_STRIP_BAD_CHAR,
+    SITE_KEY_URI_CHECK,
+    SITE_KEY_URI_PRETTY,
     WMN_KEY_AUTHORS,
-    WMN_KEY_CATEGORIES,
     WMN_KEY_LICENSE,
-    WMN_KEY_NAME,
     WMN_KEY_SITES,
-    WMN_REMOTE_URL,
 )
 from naminter.core.exceptions import (
-    DataError,
-    FileAccessError,
     HttpError,
     HttpSessionError,
     HttpTimeoutError,
-    SchemaError,
-    ValidationError,
+    WMNDataError,
+    WMNSchemaError,
+    WMNValidationError,
 )
 from naminter.core.models import (
-    ResultStatus,
-    SelfEnumerationResult,
-    SiteResult,
-    Summary,
-    ValidationMode,
+    WMNDataset,
+    WMNMode,
+    WMNResult,
+    WMNResponse,
+    WMNSummary,
+    WMNValidationResult,
 )
 from naminter.core.network import BaseSession
-from naminter.core.utils import deduplicate_strings, merge_lists, validate_usernames
+from naminter.core.utils import (
+    get_missing_keys,
+    validate_dataset,
+)
+
+T = TypeVar("T")
 
 
 class Naminter:
@@ -46,255 +58,109 @@ class Naminter:
     def __init__(
         self,
         http_client: BaseSession,
-        wmn_data: dict[str, Any] | None = None,
+        wmn_data: WMNDataset | None = None,
         wmn_schema: dict[str, Any] | None = None,
-        local_list_paths: list[Path] | None = None,
-        remote_list_urls: list[str] | None = None,
-        skip_validation: bool = False,
-        local_schema_path: Path | None = None,
-        remote_schema_url: str | None = None,
         max_tasks: int = MAX_CONCURRENT_TASKS,
     ) -> None:
         """Initialize Naminter with configuration parameters."""
         self._logger = logging.getLogger(__name__)
         self._logger.addHandler(logging.NullHandler())
 
-        self._logger.debug("Initializing Naminter (max_tasks=%d)", max_tasks)
-
-        self.max_tasks = max_tasks
-
-        self._local_list_paths = local_list_paths
-        self._remote_list_urls = remote_list_urls
-        self._skip_validation = skip_validation
-        self._local_schema_path = local_schema_path
-        self._remote_schema_url = remote_schema_url
-
-        self._wmn_data: dict[str, Any] | None = wmn_data
+        self._wmn_data: WMNDataset | None = wmn_data
         self._wmn_schema: dict[str, Any] | None = wmn_schema
-        self._semaphore = asyncio.Semaphore(self.max_tasks)
-        self._session_lock = asyncio.Lock()
+        self._semaphore = asyncio.Semaphore(max_tasks)
         self._http: BaseSession = http_client
 
+        self._session_open: bool = False
+        self._session_lock = asyncio.Lock()
+        self._dataset_ready: bool = False
+
     async def _open_session(self) -> None:
-        """Open the HTTP session (idempotent, safe under concurrency)."""
+        """Open the HTTP session."""
+        if self._session_open:
+            return
+
         async with self._session_lock:
+            if self._session_open:
+                return
             try:
                 await self._http.open()
-                self._logger.info("HTTP client opened")
+                self._session_open = True
+                self._logger.info("HTTP session opened")
             except HttpSessionError as e:
                 self._logger.error("Failed to open HTTP session: %s", e)
                 msg = f"HTTP session initialization failed: {e}"
-                raise DataError(msg) from e
-
-    async def _fetch_json(self, url: str) -> dict[str, Any]:
-        """Fetch and parse JSON from a URL."""
-        if not url.strip():
-            msg = f"Invalid URL: {url}"
-            raise ValidationError(msg)
-
-        try:
-            response = await self._http.get(url)
-        except HttpTimeoutError as e:
-            msg = f"Timeout while fetching from {url}: {e}"
-            raise DataError(msg) from e
-        except HttpSessionError as e:
-            msg = f"Session error while fetching from {url}: {e}"
-            raise DataError(msg) from e
-        except HttpError as e:
-            msg = f"Network error while fetching from {url}: {e}"
-            raise DataError(msg) from e
-
-        if response.status_code < 200 or response.status_code >= 300:
-            msg = f"Failed to fetch from {url}: HTTP {response.status_code}"
-            raise DataError(msg)
-
-        try:
-            return response.json()
-        except (ValueError, json.JSONDecodeError) as e:
-            msg = f"Failed to parse JSON from {url}: {e}"
-            raise DataError(msg) from e
-
-    @staticmethod
-    async def _read_json_file(path: str | Path) -> dict[str, Any]:
-        """Read JSON from a local file without blocking the event loop."""
-        try:
-            async with aiofiles.open(path, encoding="utf-8") as file:
-                content = await file.read()
-        except FileNotFoundError as e:
-            msg = f"File not found: {path}"
-            raise FileAccessError(msg) from e
-        except PermissionError as e:
-            msg = f"Permission denied accessing file: {path}"
-            raise FileAccessError(msg) from e
-        except OSError as e:
-            msg = f"Error reading file {path}: {e}"
-            raise FileAccessError(msg) from e
-
-        try:
-            return json.loads(content)
-        except json.JSONDecodeError as e:
-            msg = f"Invalid JSON in file {path}: {e}"
-            raise DataError(msg) from e
-
-    async def _load_schema(self) -> dict[str, Any]:
-        """Load WMN schema from local or remote source."""
-        if self._skip_validation:
-            return {}
-
-        try:
-            if self._local_schema_path:
-                return await self._read_json_file(self._local_schema_path)
-            elif self._remote_schema_url:
-                return await self._fetch_json(self._remote_schema_url)
-            else:
-                msg = (
-                    "No schema source provided - either local_schema_path or "
-                    "remote_schema_url is required"
-                )
-                raise DataError(msg)
-        except (OSError, json.JSONDecodeError) as e:
-            msg = f"Failed to load required WMN schema from local file: {e}"
-            raise DataError(
-                msg
-            ) from e
-        except HttpError as e:
-            msg = (
-                f"Failed to load required WMN schema from {self._remote_schema_url}: "
-                f"{e}"
-            )
-            raise DataError(msg) from e
-
-    async def _load_dataset(self) -> dict[str, Any]:
-        """Load WMN data from configured sources."""
-        dataset: dict[str, Any] = {
-            WMN_KEY_SITES: [],
-            WMN_KEY_CATEGORIES: [],
-            WMN_KEY_AUTHORS: [],
-            WMN_KEY_LICENSE: [],
-        }
-
-        sources: list[tuple[str | Path, bool]] = []
-        if self._remote_list_urls:
-            sources.extend([(url, True) for url in self._remote_list_urls])
-        if self._local_list_paths:
-            sources.extend([(path, False) for path in self._local_list_paths])
-        if not sources:
-            sources = [(WMN_REMOTE_URL, True)]
-
-        coroutines = []
-        for source, is_remote in sources:
-            if is_remote:
-                coroutines.append(self._fetch_json(str(source)))
-            else:
-                coroutines.append(self._read_json_file(source))
-
-        results = await asyncio.gather(*coroutines, return_exceptions=True)
-
-        failures: list[str] = []
-        for src, res in zip(sources, results, strict=False):
-            if isinstance(res, Exception):
-                source, is_remote = src
-                failures.append(
-                    f"{source} ({'remote' if is_remote else 'local'}): {res}"
-                )
-                self._logger.warning("Failed to load WMN data from %s: %s", source, res)
-            else:
-                merge_lists(res, dataset)
-
-        if not dataset[WMN_KEY_SITES]:
-            detail = (
-                "; ".join(failures) if failures else "no sources produced any sites"
-            )
-            msg = f"No sites loaded from any source; details: {detail}"
-            raise DataError(msg)
-
-        return dataset
-
-    @staticmethod
-    def _deduplicate_data(data: dict[str, Any]) -> None:
-        """Deduplicate and clean the WMN data in place."""
-        unique_sites = {
-            site[WMN_KEY_NAME]: site
-            for site in data[WMN_KEY_SITES]
-            if isinstance(site, dict) and site.get(WMN_KEY_NAME)
-        }
-        data[WMN_KEY_SITES] = list(unique_sites.values())
-        data[WMN_KEY_CATEGORIES] = list(dict.fromkeys(data[WMN_KEY_CATEGORIES]))
-        data[WMN_KEY_AUTHORS] = list(dict.fromkeys(data[WMN_KEY_AUTHORS]))
-        data[WMN_KEY_LICENSE] = list(dict.fromkeys(data[WMN_KEY_LICENSE]))
-
-    async def _load_wmn_lists(self) -> tuple[dict[str, Any], dict[str, Any]]:
-        """Unified async loader for WMN data and schema.
-
-        Returns a mapping with keys: data (dataset dict) and schema (schema dict).
-        """
-        if self._wmn_data and self._wmn_schema:
-            return (self._wmn_data, self._wmn_schema)
-
-        dataset, dataset_schema = await asyncio.gather(
-            self._load_dataset(),
-            self._load_schema(),
-        )
-        self._deduplicate_data(dataset)
-
-        return (dataset, dataset_schema)
-
-    @staticmethod
-    def _validate_data(data: dict[str, Any], schema: dict[str, Any]) -> None:
-        """Validate WMN data against schema. Raises on failure."""
-        if not schema:
-            return
-        try:
-            jsonschema.Draft7Validator.check_schema(schema)
-            jsonschema.Draft7Validator(schema).validate(data)
-        except jsonschema.ValidationError as e:
-            msg = f"WMN data does not match schema: {e.message}"
-            raise SchemaError(msg) from e
-        except jsonschema.SchemaError as e:
-            msg = f"Invalid WMN schema: {e.message}"
-            raise SchemaError(msg) from e
-
-    async def _ensure_dataset(self) -> None:
-        """Load and validate the WMN dataset and schema if not already loaded."""
-        if self._wmn_data and self._wmn_schema:
-            return
-
-        try:
-            data, schema = await self._load_wmn_lists()
-            if not self._skip_validation:
-                self._validate_data(data, schema)
-            self._wmn_data = data
-            self._wmn_schema = schema
-            self._logger.info(
-                "WMN dataset loaded (sites=%d)",
-                len(self._wmn_data.get(WMN_KEY_SITES, [])),
-            )
-        except SchemaError as e:
-            msg = f"WMN validation failed: {e}"
-            raise DataError(msg) from e
-        except Exception as e:
-            msg = f"WMN load failed: {e}"
-            raise DataError(msg) from e
+                raise WMNDataError(msg) from e
 
     async def _close_session(self) -> None:
         """Close the HTTP session if open."""
         async with self._session_lock:
+            if not self._session_open:
+                return
             try:
                 await self._http.close()
-                self._logger.info("HTTP client closed")
             except asyncio.CancelledError:
-                self._logger.warning("HTTP client close cancelled")
+                self._logger.debug("HTTP client close cancelled")
                 raise
-            except Exception as error:
-                self._logger.warning("Error during HTTP client close: %s", error)
+            except Exception as e:
+                self._logger.exception(
+                    "Unexpected error during HTTP client close: %s", e
+                )
+            finally:
+                self._session_open = False
+
+    async def _ensure_ready(self) -> None:
+        """Ensure HTTP session is open and dataset is loaded."""
+        if not self._session_open:
+            await self._open_session()
+
+        if self._dataset_ready:
+            return
+
+        if not self._wmn_data:
+            msg = "WMN data must be provided to Naminter constructor"
+            raise WMNDataError(msg)
+
+        async with self._session_lock:
+            if self._dataset_ready:
+                return
+
+            try:
+                if self._wmn_schema:
+                    errors = validate_dataset(self._wmn_data, self._wmn_schema)
+                    if errors:
+                        msg = "WMN dataset validation failed"
+                        raise WMNValidationError(msg, errors=errors)
+
+                self._dataset_ready = True
+                self._logger.info(
+                    "Dataset loaded: %d sites",
+                    len(self._wmn_data.get(WMN_KEY_SITES, [])),
+                )
+            except WMNSchemaError as e:
+                msg = f"WMN schema error: {e}"
+                raise WMNDataError(msg) from e
+            except WMNValidationError:
+                raise
+            except Exception as e:
+                msg = f"Unexpected error loading WMN data: {e}"
+                raise WMNDataError(msg) from e
+
+    @staticmethod
+    def _ensure_initialized(
+        method: Callable[..., Any],
+    ) -> Callable[..., Any]:
+        """Decorator to ensure the instance is ready before calling a method."""
+
+        @wraps(method)
+        async def wrapper(self: "Naminter", *args: Any, **kwargs: Any) -> Any:
+            await self._ensure_ready()
+            return await method(self, *args, **kwargs)
+
+        return wrapper
 
     async def __aenter__(self) -> "Naminter":
-        await self._open_session()
-        try:
-            await self._ensure_dataset()
-        except DataError:
-            self._logger.error("Dataset load failed")
-            raise
+        await self._ensure_ready()
         return self
 
     async def __aexit__(
@@ -303,68 +169,6 @@ class Naminter:
         """Async context manager exit."""
         await self._close_session()
 
-    async def get_wmn_summary(
-        self,
-        site_names: list[str] | None = None,
-        include_categories: list[str] | None = None,
-        exclude_categories: list[str] | None = None,
-    ) -> Summary:
-        """Get enriched WMN metadata information for diagnostics and UI.
-
-        Filters can be applied to compute statistics on a subset of sites.
-        """
-        try:
-            await self._ensure_dataset()
-        except DataError:
-            self._logger.error("Dataset load failed")
-            raise
-        try:
-            sites: list[dict[str, Any]] = self._filter_sites(
-                site_names,
-                include_categories=include_categories,
-                exclude_categories=exclude_categories,
-            )
-        except DataError as e:
-            self._logger.error("Site filtering failed: %s", e)
-            raise
-        try:
-            category_list: list[str] = [
-                site.get("cat") for site in sites if site.get("cat")
-            ]
-            site_name_list: list[str] = [
-                site.get("name") for site in sites if site.get("name")
-            ]
-
-            total_known_accounts: int = 0
-
-            for site in sites:
-                known_list = site.get("known")
-                if isinstance(known_list, list) and len(known_list) > 0:
-                    total_known_accounts += len(known_list)
-
-            wmn_summary = Summary(
-                license=list(dict.fromkeys(self._wmn_data.get("license", []))),
-                authors=list(dict.fromkeys(self._wmn_data.get("authors", []))),
-                site_names=list(dict.fromkeys(site_name_list)),
-                sites_count=len(sites),
-                categories=list(dict.fromkeys(category_list)),
-                categories_count=len(set(category_list)),
-                known_accounts_total=total_known_accounts,
-            )
-
-            self._logger.info(
-                "WMN summary computed (sites=%d, categories=%d)",
-                wmn_summary.sites_count,
-                wmn_summary.categories_count,
-            )
-            return wmn_summary
-        except DataError:
-            raise
-        except Exception as e:
-            self._logger.exception("Failed to compute WMN summary")
-            msg = f"Failed to retrieve metadata: {e}"
-            raise DataError(msg) from e
-
     def _filter_sites(
         self,
         site_names: list[str] | None,
@@ -372,117 +176,249 @@ class Naminter:
         exclude_categories: list[str] | None = None,
     ) -> list[dict[str, Any]]:
         """Filter sites by names and categories for the current WMN dataset."""
-        sites: list[dict[str, Any]] = self._wmn_data.get("sites", [])
+        assert self._wmn_data is not None
+        sites: list[dict[str, Any]] = self._wmn_data.get(WMN_KEY_SITES, [])
+
+        if not any((site_names, include_categories, exclude_categories)):
+            return sites
+
+        filtered_names: frozenset[str] = frozenset()
         if site_names:
-            filtered_site_names: set[str] = set(deduplicate_strings(site_names))
-            available_names: set[str] = {site.get("name") for site in sites}
-            missing_names = filtered_site_names - available_names
+            filtered_names = frozenset(site_names)
+            available_names: frozenset[str] = frozenset({
+                name for site in sites if (name := site.get(SITE_KEY_NAME)) is not None
+            })
+            missing_names: frozenset[str] = filtered_names - available_names
             if missing_names:
                 msg = f"Unknown site names: {sorted(missing_names)}"
-                raise DataError(msg)
-        else:
-            filtered_site_names = set()
+                raise WMNDataError(msg)
 
-        filtered_sites: list[dict[str, Any]] = sites
+        include_set: frozenset[str] = (
+            frozenset(include_categories) if include_categories else frozenset()
+        )
+        exclude_set: frozenset[str] = (
+            frozenset(exclude_categories) if exclude_categories else frozenset()
+        )
 
-        if filtered_site_names:
-            filtered_sites = [
-                site
-                for site in filtered_sites
-                if site.get("name") in filtered_site_names
-            ]
-
-        if include_categories:
-            include_set: set[str] = set(deduplicate_strings(include_categories))
-            filtered_sites = [
-                site for site in filtered_sites if site.get("cat") in include_set
-            ]
-
-        if exclude_categories:
-            exclude_set: set[str] = set(deduplicate_strings(exclude_categories))
-            filtered_sites = [
-                site for site in filtered_sites if site.get("cat") not in exclude_set
-            ]
+        filtered_sites = [
+            site
+            for site in sites
+            if (not filtered_names or site.get(SITE_KEY_NAME) in filtered_names)
+            and (not include_set or site.get(SITE_KEY_CATEGORY) in include_set)
+            and (not exclude_set or site.get(SITE_KEY_CATEGORY) not in exclude_set)
+        ]
 
         self._logger.debug(
-            "Filter result %d/%d (names=%s include=%s exclude=%s)",
+            "Sites filtered: %d of %d sites remaining",
             len(filtered_sites),
             len(sites),
-            bool(site_names),
-            bool(include_categories),
-            bool(exclude_categories),
         )
         return filtered_sites
 
-    @staticmethod
-    def _get_missing_keys(
-        site: dict[str, Any], required_keys: Sequence[str]
-    ) -> list[str]:
-        """Return a list of required keys missing from a site mapping."""
-        return [key for key in required_keys if key not in site]
+    @_ensure_initialized
+    async def get_wmn_summary(
+        self,
+        site_names: list[str] | None = None,
+        include_categories: list[str] | None = None,
+        exclude_categories: list[str] | None = None,
+    ) -> WMNSummary:
+        """Get enriched WMN metadata information for diagnostics and UI.
 
+        Retrieves comprehensive summary information about the loaded WhatsMyName
+        dataset, including site counts, categories, authors, and license information.
+        Filters can be applied to compute statistics on a subset of sites.
+
+        Args:
+            site_names: Optional list of specific site names to include in the summary.
+                If None, all sites are included (subject to category filters).
+            include_categories: Optional list of categories to include. Only sites
+                in these categories will be counted. If None, all categories are
+                included (subject to exclude_categories).
+            exclude_categories: Optional list of categories to exclude. Sites in these
+                categories will not be counted.
+
+        Returns:
+            WMNSummary: Summary object containing license, authors, site names, counts,
+                categories, and known usernames count.
+
+        Raises:
+            WMNDataError: If site_names contains unknown site names.
+
+        Example:
+            ```python
+            async with Naminter(wmn_data, wmn_schema) as naminter:
+                # Get summary of all sites
+                summary = await naminter.get_wmn_summary()
+                print(f"Total sites: {summary.sites_count}")
+
+                # Get summary for specific categories
+                summary = await naminter.get_wmn_summary(
+                    include_categories=["social", "coding"]
+                )
+                print(f"Social/coding sites: {summary.sites_count}")
+            ```
+        """
+        assert self._wmn_data is not None
+        sites = self._filter_sites(
+            site_names,
+            include_categories=include_categories,
+            exclude_categories=exclude_categories,
+        )
+
+        category_list = [
+            site.get(SITE_KEY_CATEGORY) for site in sites if site.get(SITE_KEY_CATEGORY)
+        ]
+        site_name_list = [
+            site.get(SITE_KEY_NAME) for site in sites if site.get(SITE_KEY_NAME)
+        ]
+        known_count = sum(
+            len(site.get(SITE_KEY_KNOWN, []))
+            for site in sites
+            if isinstance(site.get(SITE_KEY_KNOWN), list)
+        )
+
+        wmn_summary = WMNSummary(
+            license=tuple(self._wmn_data.get(WMN_KEY_LICENSE, [])),
+            authors=tuple(self._wmn_data.get(WMN_KEY_AUTHORS, [])),
+            site_names=tuple(str(name) for name in site_name_list),
+            sites_count=len(sites),
+            categories=tuple(str(cat) for cat in category_list),
+            categories_count=len(set(category_list)),
+            known_count=known_count,
+        )
+
+        self._logger.debug(
+            "WMN summary computed (sites=%d, categories=%d)",
+            wmn_summary.sites_count,
+            wmn_summary.categories_count,
+        )
+        return wmn_summary
+
+    @_ensure_initialized
     async def enumerate_site(
         self,
         site: dict[str, Any],
         username: str,
-        fuzzy_mode: bool = False,
-    ) -> SiteResult:
-        """Enumerate a single site for the given username."""
-        await self._open_session()
-        try:
-            await self._ensure_dataset()
-        except DataError:
-            self._logger.error("Dataset load failed")
-            raise
+        mode: WMNMode = WMNMode.ALL,
+    ) -> WMNResult:
+        """Enumerate a single site for the given username.
 
-        missing_keys = self._get_missing_keys(site, REQUIRED_KEYS_ENUMERATE)
+        Performs a single username lookup for a single site definition
+        from the loaded WhatsMyName (WMN) dataset. It builds the URL and optional
+        POST body using the site's configuration, sends an HTTP request, and then
+        evaluates the response using the site's detection rules to determine
+        whether the username is present on that site.
+
+        Args:
+            site:
+                A single site configuration dictionary from the WMN dataset. This dict
+                must contain, at minimum, the following keys:
+                - "name": site name
+                - "cat": site category
+                - "uri_check": URL template with "{account}" placeholder
+                - "e_code": expected HTTP status for a "found" account
+                - "e_string": expected string in body for a "found" account
+                - "m_code": expected HTTP status for a "missing" account
+                - "m_string": expected string in body for a "missing" account
+                Optional keys include:
+                - "headers": dict of HTTP headers to send with the request.
+                - "post_body": POST body template containing "{account}".
+                - "strip_bad_char": characters to strip from the username
+                  before substitution in the URL/body.
+                - "uri_pretty": an optional "pretty" URL template for reporting.
+            username:
+                The raw username to test on this site. It is used to build the
+                request URL and optional POST body. If the site defines
+                "strip_bad_char", those characters are removed from the
+                username before substitution.
+            mode:
+                Detection mode that controls how the "expected" (E) and "missing" (M)
+                criteria are interpreted when classifying the HTTP response:
+                - WMNMode.ALL: All configured conditions for a state must match
+                  (strict AND logic).
+                - WMNMode.ANY: Any matching condition is sufficient
+                  (looser OR logic).
+
+        Returns:
+            WMNResult:
+                A single WMNResult instance that encapsulates:
+                - name: site name (from "name"),
+                - category: site category (from "cat"),
+                - username: the username that was tested,
+                - url: the final URL used for reporting (may be "uri_pretty"),
+                - status: high-level classification, e.g. FOUND, NOT_FOUND,
+                  AMBIGUOUS, UNKNOWN, ERROR, or NOT_VALID,
+                - response_code / response_text / elapsed (if the HTTP request
+                  completed successfully),
+                - error message (if an error occurred).
+
+        Raises:
+            asyncio.CancelledError:
+                Propagated if the caller cancels the task while the HTTP request
+                is in progress.
+            WMNDataError:
+                Not raised directly from this method, but may be raised earlier
+                when initializing the Naminter instance or when validating the
+                underlying dataset.
+
+        Example:
+            ```python
+            site = {
+                "name": "GitHub",
+                "uri_check": "https://github.com/{account}",
+                "e_code": 200,
+                "e_string": "GitHub Profile",
+                "m_code": 404,
+                "m_string": "Not Found",
+                "cat": "coding",
+            }
+
+            async with Naminter(http_client, wmn_data, wmn_schema) as naminter:
+                result = await naminter.enumerate_site(site, "torvalds")
+                print(result.name, result.username, result.status, result.url)
+            ```
+        """
+        missing_keys = get_missing_keys(site, REQUIRED_KEYS_ENUMERATE)
         if missing_keys:
-            error_result = SiteResult(
-                name=site.get("name", "unknown"),
-                category=site.get("cat", "unknown"),
+            site_name = site.get(SITE_KEY_NAME, DEFAULT_UNKNOWN_VALUE)
+            self._logger.warning(
+                "Site '%s' is missing required keys: %s",
+                site_name,
+                missing_keys,
+            )
+            return WMNResult.from_error(
+                name=site_name,
+                category=site.get(SITE_KEY_CATEGORY, DEFAULT_UNKNOWN_VALUE),
                 username=username,
-                status=ResultStatus.ERROR,
-                error=f"Site entry missing required keys: {missing_keys}",
+                message=f"Site entry missing required keys: {missing_keys}",
             )
-            return error_result
 
-        name = site["name"]
-        category = site["cat"]
-
-        uri_check_template = site["uri_check"]
-        strip_bad_char = site.get("strip_bad_char", "")
-        clean_username = username.translate(str.maketrans("", "", strip_bad_char))
-        if not clean_username:
-            error_result = SiteResult(
-                name,
-                category,
-                username,
-                ResultStatus.ERROR,
-                error="Username became empty after stripping",
+        name = site[SITE_KEY_NAME]
+        category = site[SITE_KEY_CATEGORY]
+        strip_bad_char = site.get(SITE_KEY_STRIP_BAD_CHAR, EMPTY_STRING)
+        if strip_bad_char:
+            clean_username = username.translate(
+                str.maketrans(dict.fromkeys(strip_bad_char))
             )
-            return error_result
+        else:
+            clean_username = username
 
+        uri_check_template = site[SITE_KEY_URI_CHECK]
         uri_check = uri_check_template.replace(ACCOUNT_PLACEHOLDER, clean_username)
-        uri_pretty = site.get("uri_pretty", uri_check_template).replace(
+        uri_pretty = site.get(SITE_KEY_URI_PRETTY, uri_check_template).replace(
             ACCOUNT_PLACEHOLDER, clean_username
         )
 
-        self._logger.debug(
-            "Enumerating site=%s user=%s mode=%s",
-            name,
-            username,
-            "FUZZY" if fuzzy_mode else "STRICT",
-        )
-
-        headers = site.get("headers", {})
-        post_body = site.get("post_body")
+        headers = site.get(SITE_KEY_HEADERS, {})
+        post_body = site.get(SITE_KEY_POST_BODY)
         if post_body:
             post_body = post_body.replace(ACCOUNT_PLACEHOLDER, clean_username)
-            self._logger.debug("POST %s (body_present=%s)", uri_check, True)
+            self._logger.debug("Checking %s with POST request", uri_check)
         else:
-            self._logger.debug("GET %s", uri_check)
+            self._logger.debug("Checking %s with GET request", uri_check)
 
-        error_result: SiteResult | None = None
+        result: WMNResult | None = None
+        response: WMNResponse | None = None
         try:
             async with self._semaphore:
                 if post_body:
@@ -491,215 +427,370 @@ class Naminter:
                     )
                 else:
                     response = await self._http.get(uri_check, headers=headers)
-                elapsed = response.elapsed
+
                 self._logger.debug(
-                    "Request ok (status=%d, elapsed=%.2fs)",
+                    "Response from %s: status=%d, elapsed=%.2fs",
+                    name,
                     response.status_code,
-                    elapsed,
+                    response.elapsed,
                 )
         except asyncio.CancelledError:
-            self._logger.warning("Request cancelled")
+            self._logger.debug("Request cancelled")
             raise
         except HttpTimeoutError as e:
-            self._logger.warning("Request timeout for %s: %s", name, e)
-            error_result = SiteResult(
+            self._logger.warning("Request to '%s' timed out: %s", name, e)
+            result = WMNResult.from_error(
                 name=name,
                 category=category,
                 username=username,
-                result_url=uri_pretty,
-                status=ResultStatus.ERROR,
-                error=f"Request timeout: {e}",
+                url=uri_pretty,
+                message=f"Request timeout: {e}",
             )
         except HttpSessionError as e:
-            self._logger.warning("Session error for %s: %s", name, e)
-            error_result = SiteResult(
+            self._logger.warning("Session error for '%s': %s", name, e)
+            result = WMNResult.from_error(
                 name=name,
                 category=category,
                 username=username,
-                result_url=uri_pretty,
-                status=ResultStatus.ERROR,
-                error=f"Session error: {e}",
+                url=uri_pretty,
+                message=f"Session error: {e}",
             )
         except HttpError as e:
-            self._logger.warning("Network error for %s: %s", name, e)
-            error_result = SiteResult(
+            self._logger.warning("Network error for '%s': %s", name, e)
+            result = WMNResult.from_error(
                 name=name,
                 category=category,
                 username=username,
-                result_url=uri_pretty,
-                status=ResultStatus.ERROR,
-                error=f"Network error: {e}",
+                url=uri_pretty,
+                message=f"Network error: {e}",
             )
         except Exception as e:
-            self._logger.exception("Unexpected error during request for %s", name)
-            error_result = SiteResult(
+            self._logger.exception("Unexpected error during request for '%s'", name)
+            result = WMNResult.from_error(
                 name=name,
                 category=category,
                 username=username,
-                result_url=uri_pretty,
-                status=ResultStatus.ERROR,
-                error=f"Unexpected error: {e}",
+                url=uri_pretty,
+                message=f"Unexpected error: {e}",
             )
 
-        if error_result is not None:
-            return error_result
+        if result is not None:
+            return result
 
-        result_status = SiteResult.get_result_status(
-            response_code=response.status_code,
-            response_text=response.text,
-            e_code=site["e_code"],
-            e_string=site["e_string"],
-            m_code=site["m_code"],
-            m_string=site["m_string"],
-            fuzzy_mode=fuzzy_mode,
-        )
-
-        self._logger.debug(
-            "Result=%s (HTTP %d)", result_status.name, response.status_code
-        )
-
-        return SiteResult(
+        result = WMNResult.from_response(
             name=name,
             category=category,
             username=username,
-            result_url=uri_pretty,
-            status=result_status,
+            url=uri_pretty,
             response_code=response.status_code,
-            elapsed=elapsed,
             response_text=response.text,
+            elapsed=response.elapsed,
+            mode=mode,
+            e_code=site[SITE_KEY_E_CODE],
+            e_string=site[SITE_KEY_E_STRING],
+            m_code=site[SITE_KEY_M_CODE],
+            m_string=site[SITE_KEY_M_STRING],
         )
 
+        self._logger.debug(
+            "Check result for '%s': %s (HTTP %d)",
+            name,
+            result.status.name,
+            response.status_code,
+        )
+
+        return result
+
+    @staticmethod
+    async def _execute_tasks(
+        coroutines: list[Awaitable[T]],
+        as_generator: bool,
+    ) -> list[T] | AsyncGenerator[T, None]:
+        """Execute tasks and return results as list or generator."""
+        if as_generator:
+
+            async def _generator() -> AsyncGenerator[T, None]:
+                tasks = [asyncio.create_task(coroutine) for coroutine in coroutines]
+                try:
+                    for task in asyncio.as_completed(tasks):
+                        yield await task
+                finally:
+                    for task in tasks:
+                        if not task.done():
+                            task.cancel()
+                    if tasks:
+                        await asyncio.gather(*tasks, return_exceptions=True)
+
+            return _generator()
+        return list(await asyncio.gather(*coroutines))
+
+    @overload
     async def enumerate_usernames(
         self,
         usernames: list[str],
         site_names: list[str] | None = None,
         include_categories: list[str] | None = None,
         exclude_categories: list[str] | None = None,
-        fuzzy_mode: bool = False,
+        mode: WMNMode = WMNMode.ALL,
+        as_generator: Literal[True] = ...,
+    ) -> AsyncGenerator[WMNResult, None]: ...
+
+    @overload
+    async def enumerate_usernames(
+        self,
+        usernames: list[str],
+        site_names: list[str] | None = None,
+        include_categories: list[str] | None = None,
+        exclude_categories: list[str] | None = None,
+        mode: WMNMode = WMNMode.ALL,
+        as_generator: Literal[False] = ...,
+    ) -> list[WMNResult]: ...
+
+    @_ensure_initialized
+    async def enumerate_usernames(
+        self,
+        usernames: list[str],
+        site_names: list[str] | None = None,
+        include_categories: list[str] | None = None,
+        exclude_categories: list[str] | None = None,
+        mode: WMNMode = WMNMode.ALL,
         as_generator: bool = False,
-    ) -> list[SiteResult] | AsyncGenerator[SiteResult, None]:
-        """Enumerate one or multiple usernames across all loaded sites."""
-        await self._open_session()
-        try:
-            await self._ensure_dataset()
-        except DataError:
-            self._logger.exception("Dataset load failed")
-            raise
+    ) -> list[WMNResult] | AsyncGenerator[WMNResult, None]:
+        """Enumerate one or multiple usernames across one or multiple sites.
 
-        try:
-            usernames = validate_usernames(usernames)
-        except ValidationError as e:
-            self._logger.error("Invalid usernames: %s", e)
-            msg = "Invalid usernames"
-            raise DataError(msg) from e
-        else:
-            self._logger.info("Usernames validated (count=%d)", len(usernames))
+        This is the high-level method for running bulk username checks. It takes:
+        - one list of usernames, and
+        - a selection of sites (by name and/or category filters),
+        then runs enumerate_site for every (site, username) pair.
 
-        try:
-            sites = self._filter_sites(
-                site_names,
-                include_categories=include_categories,
-                exclude_categories=exclude_categories,
-            )
-        except DataError as e:
-            self._logger.error("Site filtering failed: %s", e)
-            raise
+        The method can operate in two modes:
+        - "batch" mode (as_generator=False): returns a list of all WMNResult objects
+          once all checks are complete.
+        - "streaming" mode (as_generator=True): returns an async generator that yields
+          WMNResult objects one by one as they finish, without waiting for all tasks.
+
+        Args:
+            usernames:
+                A non-empty list of usernames to enumerate across sites.
+                Each username is tested independently on every selected site.
+            site_names:
+                Optional list of site names to restrict enumeration to a subset of
+                sites. If None, all sites from the WMN dataset are considered
+                (subject to category filters). If provided, every name must correspond
+                to a known site; otherwise a WMNDataError is raised.
+            include_categories:
+                Optional list of site categories (values of the "cat" field) to
+                include. When provided, only sites whose category is in this list
+                are considered. This filter is applied in addition to site_names.
+            exclude_categories:
+                Optional list of site categories (values of the "cat" field) to
+                exclude. When provided, any site whose category is in this list is
+                skipped. This filter is also applied in addition to site_names and
+                include_categories.
+            mode:
+                Detection mode forwarded to enumerate_site for each check:
+                - WMNMode.ALL: strict evaluation (all "found" indicators must match).
+                - WMNMode.ANY: relaxed evaluation (any "found" indicator can match).
+            as_generator:
+                Controls the shape of the returned value:
+                - If False (default), all checks are scheduled, awaited, and a full
+                  list[WMNResult] is returned when everything is done.
+                - If True, an AsyncGenerator[WMNResult, None] is returned instead.
+                  The caller can then `async for` over individual WMNResult objects
+                  as they become available.
+
+        Returns:
+            Union[list[WMNResult], AsyncGenerator[WMNResult, None]]:
+                - If as_generator is False:
+                    A flat list of WMNResult objects, one per (site, username) pair.
+                    The list order is not guaranteed to match submission order.
+                - If as_generator is True:
+                    An async generator that yields WMNResult objects one at a time
+                    as tasks complete. This allows streaming processing of results.
+
+        Raises:
+            WMNDataError:
+                If any requested site name in site_names does not exist in the
+                loaded WMN dataset. This validation is performed during site filtering
+                before any network requests are made.
+            WMNDataError / WMNValidationError:
+                May be raised earlier when preparing the dataset (via _ensure_ready),
+                before enumeration starts.
+        """
+        sites = self._filter_sites(
+            site_names,
+            include_categories=include_categories,
+            exclude_categories=exclude_categories,
+        )
+
+        self._logger.info(
+            "Starting enumeration for %d username(s) on %d site(s)",
+            len(usernames),
+            len(sites),
+        )
 
         coroutines = [
-            self.enumerate_site(site, username, fuzzy_mode)
+            self.enumerate_site(site, username, mode)
             for site in sites
             for username in usernames
         ]
 
-        async def iterate_results() -> AsyncGenerator[SiteResult, None]:
-            for completed_task in asyncio.as_completed(coroutines):
-                yield await completed_task
+        return await self._execute_tasks(coroutines, as_generator)
 
-        if as_generator:
-            return iterate_results()
-
-        return await asyncio.gather(*coroutines)
-
-    async def self_enumeration(
+    @overload
+    async def validate_sites(
         self,
         site_names: list[str] | None = None,
         include_categories: list[str] | None = None,
         exclude_categories: list[str] | None = None,
-        fuzzy_mode: bool = False,
+        mode: WMNMode = WMNMode.ALL,
+        as_generator: Literal[True] = ...,
+    ) -> AsyncGenerator[WMNValidationResult, None]: ...
+
+    @overload
+    async def validate_sites(
+        self,
+        site_names: list[str] | None = None,
+        include_categories: list[str] | None = None,
+        exclude_categories: list[str] | None = None,
+        mode: WMNMode = WMNMode.ALL,
+        as_generator: Literal[False] = ...,
+    ) -> list[WMNValidationResult]: ...
+
+    @_ensure_initialized
+    async def validate_sites(
+        self,
+        site_names: list[str] | None = None,
+        include_categories: list[str] | None = None,
+        exclude_categories: list[str] | None = None,
+        mode: WMNMode = WMNMode.ALL,
         as_generator: bool = False,
-    ) -> list[SelfEnumerationResult] | AsyncGenerator[SelfEnumerationResult, None]:
-        """Run self-enumeration using known accounts for each site."""
-        await self._open_session()
-        try:
-            await self._ensure_dataset()
-        except DataError:
-            self._logger.exception("Dataset load failed")
-            raise
+    ) -> list[WMNValidationResult] | AsyncGenerator[WMNValidationResult, None]:
+        """Validate site detection rules using known usernames from the dataset.
 
-        try:
-            sites = self._filter_sites(
-                site_names,
-                include_categories=include_categories,
-                exclude_categories=exclude_categories,
-            )
-        except DataError as e:
-            self._logger.error("Site filtering failed: %s", e)
-            raise
+        This method is intended for maintainers and for automated health checks of
+        the WMN dataset. Instead of testing arbitrary usernames, it:
+        - Selects a subset of sites (optionally filtered by site_names and
+          categories).
+        - For each selected site, reads its list of "known good" usernames
+          from the "known" field.
+        - For each (site, known_username) pair, calls enumerate_site.
+        - Aggregates all WMNResult objects into a single WMNValidationResult per site.
 
-        self._logger.info(
-            "Starting self-enumeration (sites=%d, mode=%s)",
-            len(sites),
-            ValidationMode.FUZZY if fuzzy_mode else ValidationMode.STRICT,
+        This allows you to confirm that:
+        - The configured detection rules ("e_code", "e_string", "m_code", "m_string")
+          still correctly identify accounts, and
+        - The site entries themselves are structurally valid and complete.
+
+        Args:
+            site_names:
+                Optional list of site names to validate. If None, all sites from the
+                dataset are considered (subject to category filters). If provided,
+                all names must exist in the dataset; unknown names lead to a
+                WMNDataError raised during site filtering.
+            include_categories:
+                Optional list of categories (values of the "cat" field) to include
+                during validation. Only sites whose category is in this list are
+                validated. This is combined with site_names if both are provided.
+            exclude_categories:
+                Optional list of categories (values of the "cat" field) to exclude
+                from validation. Any site whose category is in this list is skipped.
+                This exclusion is applied after site_names and include_categories.
+            mode:
+                Detection mode passed down to enumerate_site for each known username:
+                - WMNMode.ALL: strict evaluation (recommended for validation).
+                - WMNMode.ANY: relaxed evaluation (useful for exploratory checks).
+            as_generator:
+                Controls the return type:
+                - If False (default), returns a list[WMNValidationResult] after all
+                  sites have been validated.
+                - If True, returns an AsyncGenerator[WMNValidationResult, None] that
+                  yields one WMNValidationResult per site as soon as that site's
+                  validation has finished.
+
+        Returns:
+            Union[list[WMNValidationResult], AsyncGenerator[WMNValidationResult, None]]:
+                - If as_generator is False:
+                    A list where each item is a WMNValidationResult describing one
+                    site and the WMNResult objects for all of its known usernames.
+                - If as_generator is True:
+                    An async generator that yields WMNValidationResult objects for
+                    each validated site in completion order.
+
+            Each WMNValidationResult includes:
+                - name: site name,
+                - category: site category (the value of the "cat" field),
+                - results: list[WMNResult] for each known username (may be empty),
+                - status: aggregate status derived from underlying WMNResult values
+                  (e.g. ERROR if any check failed),
+                - error: textual description if validation could not be performed
+                  for that site (e.g. missing required keys or unexpected error).
+
+        Raises:
+            WMNDataError:
+                If any of the requested site_names does not exist in the dataset.
+            WMNDataError / WMNValidationError:
+                May be raised earlier from _ensure_ready if the dataset or schema
+                is invalid.
+
+        Site-level error handling:
+            - If a site is missing required keys needed for self-validation
+              (as defined by REQUIRED_KEYS_SELF_ENUM in code), a WMNValidationResult
+              is returned with `error` populated and `results` left empty.
+            - If an unexpected exception occurs when validating a site, it is caught
+              and converted into a WMNValidationResult with `error` set accordingly.
+        """
+        sites = self._filter_sites(
+            site_names,
+            include_categories=include_categories,
+            exclude_categories=exclude_categories,
         )
 
-        async def _enumerate_known(site: dict[str, Any]) -> SelfEnumerationResult:
-            """Helper function to enumerate a site with all its known users."""
-            missing_keys = self._get_missing_keys(site, REQUIRED_KEYS_SELF_ENUM)
+        self._logger.info(
+            "Starting validation for %d site(s) (mode=%s)",
+            len(sites),
+            mode,
+        )
+
+        async def _enumerate_known(site: dict[str, Any]) -> WMNValidationResult:
+            """Helper function to validate a site with all its known users."""
+            site_name = site.get(SITE_KEY_NAME, DEFAULT_UNKNOWN_VALUE)
+            site_category = site.get(SITE_KEY_CATEGORY, DEFAULT_UNKNOWN_VALUE)
+
+            missing_keys = get_missing_keys(site, REQUIRED_KEYS_SELF_ENUM)
             if missing_keys:
-                return SelfEnumerationResult(
-                    name=site.get("name", "unknown"),
-                    category=site.get("cat", "unknown"),
+                self._logger.warning(
+                    "Site '%s' is missing required keys for validation: %s",
+                    site_name,
+                    missing_keys,
+                )
+                return WMNValidationResult(
+                    name=site_name,
+                    category=site_category,
                     error=f"Site data missing required keys: {missing_keys}",
                 )
 
-            name = site["name"]
-            category = site["cat"]
-            known = site["known"]
-
+            known = site[SITE_KEY_KNOWN]
             self._logger.debug(
-                "Self-enumerating site=%s category=%s known_count=%d",
-                name,
-                category,
+                "Validating '%s' with %d known user(s)",
+                site_name,
                 len(known),
             )
 
             try:
-                coroutines = [
-                    self.enumerate_site(site, username, fuzzy_mode)
-                    for username in known
-                ]
-                results = await asyncio.gather(*coroutines)
-
-                return SelfEnumerationResult(
-                    name=name, category=category, results=results
+                results = await asyncio.gather(
+                    *(self.enumerate_site(site, username, mode) for username in known)
+                )
+                return WMNValidationResult(
+                    name=site_name, category=site_category, results=results
                 )
             except Exception as e:
-                self._logger.exception("Self-enumeration failed for site=%s", name)
-                return SelfEnumerationResult(
-                    name=name,
-                    category=category,
-                    error=f"Unexpected error during self-enumeration: {e}",
+                self._logger.exception("Validation failed for site='%s'", site_name)
+                return WMNValidationResult(
+                    name=site_name,
+                    category=site_category,
+                    error=f"Unexpected error during site validation: {e}",
                 )
 
-        coroutines = [
-            _enumerate_known(site) for site in sites if isinstance(site, dict)
-        ]
-
-        async def iterate_results() -> AsyncGenerator[SelfEnumerationResult, None]:
-            for completed_task in asyncio.as_completed(coroutines):
-                yield await completed_task
-
-        if as_generator:
-            return iterate_results()
-
-        return await asyncio.gather(*coroutines)
+        coroutines = [_enumerate_known(site) for site in sites]
+        return await self._execute_tasks(coroutines, as_generator)
