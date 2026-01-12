@@ -1,38 +1,43 @@
-from naminter.core.exceptions import NaminterError
+class CLIError(Exception):
+    """Base class for all CLI-layer errors."""
 
 
-# Configuration errors
-class ConfigurationError(NaminterError):
-    """Raised when there's an error in the configuration parameters.
+class FileError(CLIError):
+    """File-related errors (paths, permissions, encoding, JSON content, etc.)."""
 
-    This includes invalid configuration values, missing required settings,
-    configuration file parsing errors, or invalid URLs.
+
+class NetworkError(CLIError):
+    """Network-related errors (URLs, HTTP failures, invalid remote JSON, etc.)."""
+
+
+class BrowserError(CLIError):
+    """Browser-related errors (invalid URL, browser launch problems, etc.)."""
+
+
+class ExportError(CLIError):
+    """Errors raised during export operations in the CLI layer."""
+
+
+class ConfigurationError(CLIError):
+    """Configuration validation errors.
+
+    Invalid CLI arguments, conflicting options, etc.
     """
 
 
-# File/IO errors
-class FileIOError(NaminterError):
-    """Raised when file operations fail.
+class ValidationError(CLIError):
+    """Input format validation errors.
 
-    This includes reading/writing local lists, responses, exports,
-    and other file system operations.
+    Invalid username format, site name format, etc.
     """
-
-
-# Browser errors
-class BrowserError(NaminterError):
-    """Raised when browser operations fail in the CLI layer."""
-
-
-# Export errors
-class ExportError(NaminterError):
-    """Raised when export operations fail in the CLI layer."""
 
 
 __all__ = [
     "BrowserError",
+    "CLIError",
     "ConfigurationError",
     "ExportError",
-    "FileIOError",
-    "NaminterError",
+    "FileError",
+    "NetworkError",
+    "ValidationError",
 ]

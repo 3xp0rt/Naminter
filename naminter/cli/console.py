@@ -1,3 +1,6 @@
+from dataclasses import dataclass
+from datetime import timedelta
+import difflib
 from pathlib import Path
 from typing import Any
 
@@ -17,66 +20,96 @@ from naminter import (
     __url__,
     __version__,
 )
-from naminter.core.models import WMNResult, WMNStatus, WMNValidationResult
+from naminter.cli.constants import (
+    STATUS_STYLES,
+    STATUS_SYMBOLS,
+)
+from naminter.core.models import WMNResult, WMNStatus, WMNTestResult
 
 console: Console = Console()
 
-THEME: dict[str, str] = {
-    "primary": "bright_blue",
-    "success": "bright_green",
-    "error": "bright_red",
-    "warning": "bright_yellow",
-    "info": "bright_cyan",
-    "muted": "bright_black",
-}
 
-_STATUS_SYMBOLS: dict[WMNStatus, str] = {
-    WMNStatus.FOUND: "+",
-    WMNStatus.AMBIGUOUS: "*",
-    WMNStatus.UNKNOWN: "?",
-    WMNStatus.NOT_FOUND: "-",
-    WMNStatus.NOT_VALID: "X",
-    WMNStatus.ERROR: "!",
-}
+@dataclass(frozen=True)
+class Theme:
+    """Application color theme configuration."""
 
-_STATUS_STYLES: dict[WMNStatus, Style] = {
-    WMNStatus.FOUND: Style(color=THEME["success"], bold=True),
-    WMNStatus.AMBIGUOUS: Style(color=THEME["warning"], bold=True),
-    WMNStatus.UNKNOWN: Style(color=THEME["warning"]),
-    WMNStatus.NOT_FOUND: Style(color=THEME["error"]),
-    WMNStatus.NOT_VALID: Style(color=THEME["error"]),
-    WMNStatus.ERROR: Style(color=THEME["error"], bold=True),
-}
+    primary: str = "bright_blue"
+    success: str = "bright_green"
+    error: str = "bright_red"
+    warning: str = "bright_yellow"
+    info: str = "bright_cyan"
+    muted: str = "bright_black"
+
+
+THEME = Theme()
+
+
+def _get_status_symbol(status: WMNStatus) -> str:
+    """Get display symbol for a status using constants.
+
+    Args:
+        status: The WMNStatus to get symbol for.
+
+    Returns:
+        Symbol character for the status.
+    """
+    return STATUS_SYMBOLS.get(status.value, "?")
+
+
+def _get_status_style(status: WMNStatus) -> Style:
+    """Get Rich Style for a status using constants.
+
+    Args:
+        status: The WMNStatus to get styling for.
+
+    Returns:
+        Rich Style object with appropriate color and formatting.
+    """
+    style_str = STATUS_STYLES.get(status.value, "white")
+    return Style.parse(style_str)
 
 
 class ResultFormatter:
     """Formats test results for console output."""
 
-    def __init__(self, show_details: bool = False) -> None:
-        """Initialize the result formatter."""
+    def __init__(self, *, show_details: bool = False) -> None:
+        """Initialize the result formatter.
+
+        Args:
+            show_details: Whether to include detailed debug information in output.
+        """
         self.show_details = show_details
 
     def format_result(
-        self, site_result: WMNResult, response_file_path: Path | None = None
+        self,
+        site_result: WMNResult,
+        response_file_path: Path | None = None,
     ) -> Tree:
-        """Format a single result as a tree-style output."""
+        """Format a single result as a tree-style output.
 
+        Args:
+            site_result: The result to format.
+            response_file_path: Optional path to the response file for debugging.
+
+        Returns:
+            A Rich Tree object containing the formatted result.
+        """
         root_label = Text()
-        status_symbol = _STATUS_SYMBOLS.get(site_result.status, "?")
-        status_style = _STATUS_STYLES.get(site_result.status, Style())
+        status_symbol = _get_status_symbol(site_result.status)
+        status_style = _get_status_style(site_result.status)
 
         root_label.append(status_symbol, style=status_style)
-        root_label.append(" [", style=THEME["muted"])
-        root_label.append(site_result.name or "Unknown", style=THEME["info"])
-        root_label.append("] ", style=THEME["muted"])
-        root_label.append(site_result.url or "No URL", style=THEME["primary"])
+        root_label.append(" [", style=THEME.muted)
+        root_label.append(site_result.name or "Unknown", style=THEME.info)
+        root_label.append("] ", style=THEME.muted)
+        root_label.append(site_result.url or "No URL", style=THEME.primary)
 
-        tree = Tree(root_label, guide_style=THEME["muted"])
+        tree = Tree(root_label, guide_style=THEME.muted)
 
         if self.show_details:
             self._add_debug_info(
                 tree,
-                site_result.response_code,
+                site_result.status_code,
                 site_result.elapsed,
                 site_result.error,
                 response_file_path,
@@ -86,32 +119,39 @@ class ResultFormatter:
 
     def format_validation(
         self,
-        validation_result: WMNValidationResult,
+        validation_result: WMNTestResult,
         response_files: list[Path | None] | None = None,
     ) -> Tree:
-        """Format validation results into a tree structure."""
+        """Format validation results into a tree structure.
 
+        Args:
+            validation_result: The validation result to format.
+            response_files: Optional list of response file paths for debugging.
+
+        Returns:
+            A Rich Tree object containing the formatted validation results.
+        """
         root_label = Text()
         root_label.append(
-            _STATUS_SYMBOLS.get(validation_result.status, "?"),
-            style=_STATUS_STYLES.get(validation_result.status, Style()),
+            _get_status_symbol(validation_result.status),
+            style=_get_status_style(validation_result.status),
         )
-        root_label.append(" [", style=THEME["muted"])
-        root_label.append(validation_result.name, style=THEME["info"])
-        root_label.append("]", style=THEME["muted"])
+        root_label.append(" [", style=THEME.muted)
+        root_label.append(validation_result.name, style=THEME.info)
+        root_label.append("]", style=THEME.muted)
 
-        tree = Tree(root_label, guide_style=THEME["muted"], expanded=True)
+        tree = Tree(root_label, guide_style=THEME.muted, expanded=True)
 
         if validation_result.results:
             for i, result in enumerate(validation_result.results):
                 url_text = Text()
                 url_text.append(
-                    _STATUS_SYMBOLS.get(result.status, "?"),
-                    style=_STATUS_STYLES.get(result.status, Style()),
+                    _get_status_symbol(result.status),
+                    style=_get_status_style(result.status),
                 )
-                url_text.append(" ", style=THEME["muted"])
-                url_text.append(f"{result.username}: ", style=THEME["info"])
-                url_text.append(result.url or "No URL", style=THEME["primary"])
+                url_text.append(" ", style=THEME.muted)
+                url_text.append(f"{result.username}: ", style=THEME.info)
+                url_text.append(result.url or "No URL", style=THEME.primary)
 
                 result_node = tree.add(url_text)
 
@@ -123,7 +163,7 @@ class ResultFormatter:
                     )
                     self._add_debug_info(
                         result_node,
-                        result.response_code,
+                        result.status_code,
                         result.elapsed,
                         result.error,
                         response_file,
@@ -134,28 +174,36 @@ class ResultFormatter:
     @staticmethod
     def _add_debug_info(
         node: Tree,
-        response_code: int | None = None,
-        elapsed: float | None = None,
+        status_code: int | None = None,
+        elapsed: timedelta | None = None,
         error: str | None = None,
         response_file: Path | None = None,
     ) -> None:
-        """Add debug information to a tree node."""
+        """Add debug information to a tree node.
 
-        if response_code is not None:
-            node.add(Text(f"Response Code: {response_code}", style=THEME["info"]))
+        Args:
+            node: The tree node to add information to.
+            status_code: Optional HTTP status code.
+            elapsed: Optional elapsed time in seconds.
+            error: Optional error message.
+            response_file: Optional path to response file.
+        """
+        if status_code is not None:
+            node.add(Text(f"Status Code: {status_code}", style=THEME.info))
         if response_file is not None:
-            node.add(Text(f"Response File: {response_file}", style=THEME["info"]))
+            node.add(Text(f"Response File: {response_file}", style=THEME.info))
         if elapsed is not None:
-            node.add(Text(f"Elapsed: {elapsed:.2f}s", style=THEME["info"]))
+            elapsed_seconds = elapsed.total_seconds()
+            node.add(Text(f"Elapsed: {elapsed_seconds:.2f}s", style=THEME.info))
         if error is not None:
-            node.add(Text(f"Error: {error}", style=THEME["error"]))
+            node.add(Text(f"Error: {error}", style=THEME.error))
 
 
 def display_version() -> None:
     """Display version and metadata of the application."""
 
     version_table = Table.grid(padding=(0, 2))
-    version_table.add_column(style=THEME["info"])
+    version_table.add_column(style=THEME.info)
     version_table.add_column(style="bold")
 
     version_table.add_row("Version:", __version__)
@@ -168,14 +216,20 @@ def display_version() -> None:
     panel = Panel(
         version_table,
         title="[bold]:mag: Naminter[/]",
-        border_style=THEME["muted"],
+        border_style=THEME.muted,
         box=box.ROUNDED,
     )
 
     console.print(panel)
 
 
-def _display_message(message: str, style: str, symbol: str, label: str) -> None:
+def _display_message(
+    message: str,
+    style: str,
+    symbol: str,
+    label: str,
+    end: str = "\n",
+) -> None:
     """Display a styled message with symbol and label."""
 
     formatted_message = Text()
@@ -183,14 +237,24 @@ def _display_message(message: str, style: str, symbol: str, label: str) -> None:
     formatted_message.append(f" [{label}] ", style=style)
     formatted_message.append(message)
 
-    console.print(formatted_message)
+    console.print(formatted_message, end=end)
     console.file.flush()
 
 
-def display_error(message: str, show_traceback: bool = False) -> None:
-    """Display an error message."""
+def display_error(
+    message: str,
+    *,
+    show_traceback: bool = False,
+    end: str = "\n",
+) -> None:
+    """Display an error message.
 
-    _display_message(message, THEME["error"], "!", "ERROR")
+    Args:
+        message: The error message to display.
+        show_traceback: Whether to print the full traceback.
+        end: String to append after the message (default: newline).
+    """
+    _display_message(message, THEME.error, "!", "ERROR", end=end)
     if show_traceback:
         console.print_exception()
 
@@ -198,47 +262,89 @@ def display_error(message: str, show_traceback: bool = False) -> None:
 def display_warning(message: str) -> None:
     """Display a warning message."""
 
-    _display_message(message, THEME["warning"], "?", "WARNING")
+    _display_message(message, THEME.warning, "?", "WARNING")
 
 
 def display_info(message: str) -> None:
     """Display an info message."""
 
-    _display_message(message, THEME["info"], "*", "INFO")
+    _display_message(message, THEME.info, "*", "INFO")
 
 
 def display_success(message: str) -> None:
     """Display a success message."""
 
-    _display_message(message, THEME["success"], "+", "SUCCESS")
+    _display_message(message, THEME.success, "+", "SUCCESS")
 
 
 def display_validation_errors(errors: list[Any]) -> None:
-    """Display validation errors in a formatted table."""
+    """Display validation errors in a formatted tree structure.
+
+    Args:
+        errors: List of validation errors to display.
+    """
     if not errors:
         return
 
-    table = Table(
-        title="[bold bright_red]Validation Errors[/bold bright_red]",
-        border_style=THEME["error"],
-        box=box.ROUNDED,
-        show_lines=True,
-    )
-
-    table.add_column("Path", style=THEME["info"], no_wrap=False)
-    table.add_column("Message", style=THEME["warning"])
-    table.add_column("Data Preview", style=THEME["muted"], overflow="fold")
+    root_label = Text()
+    tree = Tree(root_label, guide_style=THEME.muted, expanded=True)
 
     for error in errors:
-        path = getattr(error, "path", "N/A") or "N/A"
-        message = getattr(error, "message", "Unknown error")
+        path = str(getattr(error, "path", "N/A") or "N/A")
+        message = str(getattr(error, "message", "Unknown error"))
         data = getattr(error, "data", None)
 
-        data_preview = (
-            data[:200] + "..." if data and len(data) > 200 else (data or "N/A")
-        )
+        error_text = Text()
+        error_text.append("• ", style=THEME.error)
+        error_text.append(f"{path}: ", style=THEME.info)
+        error_text.append(message, style=THEME.warning)
 
-        table.add_row(path, message, data_preview)
+        error_node = tree.add(error_text)
 
-    console.print(table)
+        if data is not None:
+            error_node.add(Text(f"Data: {data}", style=THEME.muted))
+
+    console.print(tree)
+    console.file.flush()
+
+
+def display_diff(original: str, formatted: str, file_path: Path) -> None:
+    """Display a git-style diff showing changes between original and formatted content.
+
+    Args:
+        original: The original file content.
+        formatted: The formatted file content.
+        file_path: Path to the file being formatted.
+    """
+    original_lines = original.splitlines(keepends=False)
+    formatted_lines = formatted.splitlines(keepends=False)
+
+    diff = difflib.unified_diff(
+        original_lines,
+        formatted_lines,
+        fromfile=str(file_path),
+        tofile=str(file_path),
+        lineterm="",
+    )
+
+    diff_lines = list(diff)
+    if not diff_lines:
+        return
+
+    diff_text = Text()
+    for line in diff_lines:
+        if line.startswith(("---", "+++")):
+            diff_text.append(line, style=THEME.muted)
+        elif line.startswith("@@"):
+            diff_text.append(line, style=THEME.info)
+        elif line.startswith("-"):
+            diff_text.append(line, style=THEME.error)
+        elif line.startswith("+"):
+            diff_text.append(line, style=THEME.success)
+        else:
+            diff_text.append(line)
+
+        diff_text.append("\n")
+
+    console.print(diff_text)
     console.file.flush()

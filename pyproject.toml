@@ -33,19 +33,22 @@ keywords = [
     "naminter"
 ]
 dependencies = [
-    "click>=8.3.0",
-    "curl-cffi>=0.13.0",
+    "click>=8.3.1",
+    "curl-cffi>=0.14.0",
     "aiofiles>=25.1.0",
     "jinja2>=3.1.6",
-    "jsonschema>=4.25.1",
+    "jsonschema>=4.26.0",
     "rich>=14.2.0",
-    "rich-click>=1.9.4",
-    "weasyprint>=66.0",
+    "rich-click>=1.9.5",
+    "weasyprint>=67.0",
 ]
 
 [project.optional-dependencies]
 dev = [
-    "ruff>=0.14.4",
+    "ruff>=0.14.11",
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.7.1",
+    "mkdocstrings[python]>=1.0.0",
 ]
 
 [project.urls]
@@ -62,12 +65,39 @@ naminter = "naminter.cli.main:entry_point"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-
 # Ruff configuration
 [tool.ruff]
 line-length = 88
 target-version = "py311"
-exclude = []
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".ipynb_checkpoints",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pyenv",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    ".vscode",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "site-packages",
+    "venv",
+]
+respect-gitignore = true
 
 [tool.ruff.lint]
 preview = true
@@ -80,7 +110,7 @@ select = [
     'B',      # flake8-bugbear
     'C4',     # flake8-comprehensions
     'UP',     # pyupgrade
-    'ARG001', # unused-function-args
+    'ARG',    # flake8-unused-arguments
     'SIM',    # flake8-simplify
     'TCH',    # flake8-type-checking
     'TID',    # flake8-tidy-imports
@@ -96,29 +126,39 @@ select = [
     'PIE',    # flake8-pie
     'T20',    # flake8-print
     'YTT',    # flake8-2020
-]
-ignore = [
-    'PLR0913',  # too-many-arguments
-    'PLR0917',  # too-many-locals
-    'PLR0904',  # too-many-branches
-    'E701',     # multiple-statements-on-one-line
-    'B008',     # do-not-perform-function-calls-in-argument-defaults
-    'C901',     # too-complex
-    'PLR2004',  # magic-value-comparison
-    'PLR0912',  # too-many-branches
-    'PLR0915',  # too-many-statements
-    'PLR0916',  # too-many-boolean-expressions
-    'COM812',   # missing-trailing-comma (conflicts with formatter)
+    'ANN',    # flake8-annotations
+    'ASYNC',  # flake8-async
+    'S',      # flake8-bandit
+    'BLE',    # flake8-blind-except
+    'FBT',    # flake8-boolean-trap
+    'B904',   # raise-without-from-inside-except
+    'ERA',    # eradicate
+    'PD',     # pandas-vet
+    'PGH',    # pygrep-hooks
+    'PT',     # flake8-pytest-style
+    'RET',    # flake8-return
+    'SLF',    # flake8-self
+    'SLOT',   # flake8-slots
+    'TRY',    # tryceratops
+    'FA',     # flake8-future-annotations
+    'ISC',    # flake8-implicit-str-concat
+    'PTH',    # flake8-use-pathlib
+    'PERF',   # perflint
+    'NPY',    # numpy
 ]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]  # unused imports
+"tests/**/*.py" = ["S101", "PLR2004"]  # allow assert and magic values in tests
 
 [tool.ruff.lint.isort]
 known-first-party = ["naminter"]
+force-sort-within-sections = true
+split-on-trailing-comma = true
 
 [tool.ruff.lint.flake8-quotes]
 docstring-quotes = "double"
+inline-quotes = "double"
 
 [tool.ruff.lint.mccabe]
 max-complexity = 10
@@ -132,5 +172,8 @@ max-statements = 50
 [tool.ruff.format]
 preview = true
 quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
 docstring-code-format = true
 docstring-code-line-length = 79

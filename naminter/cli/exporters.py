@@ -1,39 +1,37 @@
 import csv
-import importlib.resources
-import json
 from datetime import UTC, datetime
+import importlib.resources
+from io import StringIO
+import json
 from pathlib import Path
-from typing import Any, Literal, Protocol
+from typing import Any, Literal, Protocol, get_args
 
 import jinja2
 from weasyprint import HTML
 
 from naminter import __version__
-from naminter.cli.constants import SUPPORTED_FORMATS
+from naminter.cli.constants import HTML_FIELDS_ORDER
+from naminter.cli.exceptions import ExportError, FileError
+from naminter.cli.utils import read_file, write_file
 from naminter.core.constants import (
-    DEFAULT_JSON_ENCODING,
     DEFAULT_JSON_ENSURE_ASCII,
     DEFAULT_JSON_INDENT,
     EMPTY_STRING,
 )
-from naminter.core.models import WMNResult, WMNValidationResult
+from naminter.core.models import WMNResult, WMNTestResult
 
-from .exceptions import ConfigurationError, ExportError, FileIOError
-
-FormatName = Literal["csv", "json", "html", "pdf"]
+FormatName = Literal["json", "csv", "html", "pdf"]
 ResultDict = dict[str, Any]
 
 
 class ExportMethod(Protocol):
     """Protocol for export method callables."""
 
-    def __call__(self, results: list[ResultDict], output_path: Path) -> None: ...
+    async def __call__(self, results: list[ResultDict], output_path: Path) -> None: ...
 
 
 class Exporter:
-    """
-    Unified exporter for CSV, JSON, HTML, and PDF formats.
-    """
+    """Unified exporter for CSV, JSON, HTML, and PDF formats."""
 
     def __init__(self, usernames: list[str] | None = None) -> None:
         self.usernames = usernames or []
@@ -44,120 +42,150 @@ class Exporter:
             "pdf": self._export_pdf,
         }
 
-    def export(
+    async def export(
         self,
-        results: list[WMNResult | WMNValidationResult],
+        results: list[WMNResult | WMNTestResult],
         formats: dict[FormatName, str | Path | None],
     ) -> None:
-        """
-        Export results in the given formats.
+        """Export results in the given formats.
+
+        Args:
+            results: List of results to export.
+            formats: Dictionary mapping format names to output paths (None for auto).
+
+        Raises:
+            ExportError: If export operation fails.
         """
         if not results:
             msg = "No results to export"
             raise ExportError(msg)
 
-        dict_results = [
-            result.to_dict(exclude_response_text=True) for result in results
-        ]
+        try:
+            dict_results = [result.to_dict(exclude_text=True) for result in results]
+        except (AttributeError, TypeError, ValueError) as e:
+            msg = f"Failed to convert results to dictionary format: {e}"
+            raise ExportError(msg) from e
 
-        for format_name, path in formats.items():
-            if format_name not in SUPPORTED_FORMATS:
-                msg = f"Unsupported export format: {format_name}"
-                raise ExportError(msg)
+        for format_name in get_args(FormatName):
+            if format_name not in formats:
+                continue
 
-            try:
-                out_path = self._resolve_path(format_name, path)
-                out_path.parent.mkdir(parents=True, exist_ok=True)
-                self.export_methods[format_name](dict_results, out_path)
-            except FileIOError as e:
-                msg = f"File access error during {format_name} export: {e}"
-                raise ExportError(msg) from e
-            except Exception as e:
-                msg = f"Unexpected error exporting {format_name}: {e}"
-                raise ExportError(msg) from e
+            path = formats[format_name]
+            out_path = self._resolve_path(format_name, path)
+
+            await self.export_methods[format_name](dict_results, out_path)
 
     @staticmethod
-    def _export_csv(results: list[ResultDict], output_path: Path) -> None:
-        """Export results to CSV format."""
-        fieldnames: list[str] = []
-        seen: set[str] = set()
-        for result in results:
-            for key in result:
-                if key not in seen:
-                    fieldnames.append(key)
-                    seen.add(key)
+    async def _export_csv(results: list[ResultDict], output_path: Path) -> None:
+        """Export results to CSV format.
+
+        Args:
+            results: List of result dictionaries to export.
+            output_path: Path where CSV file will be written.
+
+        Raises:
+            ExportError: If CSV serialization fails or unexpected error occurs.
+        """
+        fieldnames = list(dict.fromkeys(key for result in results for key in result))
+
+        if not fieldnames:
+            msg = "CSV data error: no fields found in results"
+            raise ExportError(msg)
 
         try:
-            with output_path.open("w", newline=EMPTY_STRING, encoding="utf-8") as f:
-                writer = csv.DictWriter(f, fieldnames=fieldnames)
+            with StringIO(newline=EMPTY_STRING) as csv_buffer:
+                writer = csv.DictWriter(
+                    csv_buffer,
+                    fieldnames=fieldnames,
+                    lineterminator="\n",
+                    extrasaction="raise",
+                )
                 writer.writeheader()
                 writer.writerows(results)
-        except PermissionError as e:
-            msg = f"Permission denied writing CSV file: {e}"
-            raise FileIOError(msg) from e
-        except OSError as e:
-            msg = f"OS error writing CSV file: {e}"
-            raise FileIOError(msg) from e
+                csv_content = csv_buffer.getvalue()
+
+            await write_file(output_path, csv_content)
+        except FileError as e:
+            msg = f"File access error during CSV export: {e}"
+            raise ExportError(msg) from e
+        except csv.Error as e:
+            msg = f"CSV serialization error: {e}"
+            raise ExportError(msg) from e
+        except (TypeError, ValueError, AttributeError, KeyError) as e:
+            msg = f"CSV data error: {e}"
+            raise ExportError(msg) from e
         except Exception as e:
             msg = f"Unexpected error during CSV export: {e}"
             raise ExportError(msg) from e
 
     @staticmethod
-    def _export_json(results: list[ResultDict], output_path: Path) -> None:
-        """Export results to JSON format."""
+    async def _export_json(results: list[ResultDict], output_path: Path) -> None:
+        """Export results to JSON format.
+
+        Args:
+            results: List of result dictionaries to export.
+            output_path: Path where JSON file will be written.
+
+        Raises:
+            ExportError: If JSON serialization fails or unexpected error occurs.
+        """
         try:
-            output_path.write_text(
-                json.dumps(
-                    results,
-                    ensure_ascii=DEFAULT_JSON_ENSURE_ASCII,
-                    indent=DEFAULT_JSON_INDENT,
-                ),
-                encoding=DEFAULT_JSON_ENCODING,
+            json_content = json.dumps(
+                results,
+                ensure_ascii=DEFAULT_JSON_ENSURE_ASCII,
+                indent=DEFAULT_JSON_INDENT,
             )
-        except PermissionError as e:
-            msg = f"Permission denied writing JSON file: {e}"
-            raise FileIOError(msg) from e
-        except OSError as e:
-            msg = f"OS error writing JSON file: {e}"
-            raise FileIOError(msg) from e
-        except (TypeError, ValueError) as e:
+            await write_file(output_path, json_content)
+        except FileError as e:
+            msg = f"File access error during JSON export: {e}"
+            raise ExportError(msg) from e
+        except (TypeError, ValueError, RecursionError) as e:
             msg = f"JSON serialization error: {e}"
             raise ExportError(msg) from e
         except Exception as e:
             msg = f"Unexpected error during JSON export: {e}"
             raise ExportError(msg) from e
 
-    def _generate_html(self, results: list[ResultDict]) -> str:
-        """Generate HTML report from results."""
+    async def _generate_html(self, results: list[ResultDict]) -> str:
+        """Generate HTML report from results.
+
+        Args:
+            results: List of result dictionaries to format as HTML.
+
+        Returns:
+            Generated HTML string.
+
+        Raises:
+            ExportError: If template loading or rendering fails.
+        """
         grouped: dict[str, list[ResultDict]] = {}
         for item in results:
-            cat = item.get("category", "uncategorized")
+            cat = item.get("category") or "uncategorized"
             grouped.setdefault(cat, []).append(item)
 
-        display_fields = ["name", "url", "elapsed"]
+        available_fields = {key for item in results for key in item}
+        display_fields = [
+            field for field in HTML_FIELDS_ORDER if field in available_fields
+        ] + sorted(available_fields - set(HTML_FIELDS_ORDER))
 
         try:
-            with (
-                importlib.resources.files("naminter.cli.templates")
-                .joinpath("report.html")
-                .open("r", encoding="utf-8") as f
-            ):
-                template_source = f.read()
-        except FileNotFoundError as e:
-            msg = f"HTML template not found: {e}"
-            raise ConfigurationError(msg) from e
-        except PermissionError as e:
-            msg = f"Permission denied reading HTML template: {e}"
-            raise FileIOError(msg) from e
-        except OSError as e:
-            msg = f"OS error reading HTML template: {e}"
-            raise FileIOError(msg) from e
+            template_resource = importlib.resources.files(
+                "naminter.cli.templates",
+            ).joinpath("report.html")
+            with importlib.resources.as_file(template_resource) as template_path:
+                template_source = await read_file(template_path)
+        except FileError as e:
+            msg = f"File access error loading HTML template: {e}"
+            raise ExportError(msg) from e
         except Exception as e:
             msg = f"Unexpected error loading HTML template: {e}"
-            raise ConfigurationError(msg) from e
+            raise ExportError(msg) from e
 
         try:
-            template = jinja2.Template(template_source, autoescape=True)
+            env = jinja2.Environment(
+                autoescape=jinja2.select_autoescape(["html", "xml"]),
+            )
+            template = env.from_string(template_source)
             return template.render(
                 grouped_results=grouped,
                 display_fields=display_fields,
@@ -171,45 +199,59 @@ class Exporter:
             msg = f"Template rendering error: {e}"
             raise ExportError(msg) from e
 
-    def _export_html(self, results: list[ResultDict], output_path: Path) -> None:
-        """Export results to HTML format."""
+    async def _export_html(self, results: list[ResultDict], output_path: Path) -> None:
+        """Export results to HTML format.
+
+        Args:
+            results: List of result dictionaries to export.
+            output_path: Path where HTML file will be written.
+
+        Raises:
+            ExportError: If template rendering or file writing fails.
+        """
         try:
-            html = self._generate_html(results)
-            output_path.write_text(html, encoding="utf-8")
-        except PermissionError as e:
-            msg = f"Permission denied writing HTML file: {e}"
-            raise FileIOError(msg) from e
-        except OSError as e:
-            msg = f"OS error writing HTML file: {e}"
-            raise FileIOError(msg) from e
+            html = await self._generate_html(results)
+            await write_file(output_path, html)
+        except FileError as e:
+            msg = f"File access error during HTML export: {e}"
+            raise ExportError(msg) from e
         except Exception as e:
             msg = f"Unexpected error during HTML export: {e}"
             raise ExportError(msg) from e
 
-    def _export_pdf(self, results: list[ResultDict], output_path: Path) -> None:
-        """Export results to PDF format."""
-        if not results:
-            msg = "No results to export to PDF"
-            raise ExportError(msg)
+    async def _export_pdf(self, results: list[ResultDict], output_path: Path) -> None:
+        """Export results to PDF format.
 
+        Args:
+            results: List of result dictionaries to export.
+            output_path: Path where PDF file will be written.
+
+        Raises:
+            ExportError: If PDF generation fails or unexpected error occurs.
+        """
         try:
-            html = self._generate_html(results)
-            HTML(string=html).write_pdf(str(output_path))
-        except PermissionError as e:
-            msg = f"Permission denied writing PDF file: {e}"
-            raise FileIOError(msg) from e
-        except OSError as e:
-            msg = f"OS error writing PDF file: {e}"
-            raise FileIOError(msg) from e
-        except (ValueError, TypeError) as e:
-            msg = f"PDF generation error: {e}"
+            html = await self._generate_html(results)
+            weasyprint_html = HTML(string=html)
+            pdf_bytes = weasyprint_html.write_pdf()
+            await write_file(output_path, pdf_bytes)
+        except FileError as e:
+            msg = f"File access error during PDF export: {e}"
             raise ExportError(msg) from e
         except Exception as e:
-            msg = f"Unexpected error during PDF export: {e}"
+            msg = f"PDF generation error: {e}"
             raise ExportError(msg) from e
 
     @staticmethod
     def _resolve_path(format_name: FormatName, custom: str | Path | None) -> Path:
+        """Resolve output path for export format.
+
+        Args:
+            format_name: Export format name (csv, json, html, pdf).
+            custom: Custom path if provided, None for auto-generated path.
+
+        Returns:
+            Resolved Path object for the output file.
+        """
         if custom:
             return Path(custom)
 

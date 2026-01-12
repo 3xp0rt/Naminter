@@ -1,13 +1,16 @@
 from __future__ import annotations
 
-import json
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from enum import StrEnum, auto
-from typing import TYPE_CHECKING, Any, TypedDict
+import json
+from typing import Any, NotRequired, TypedDict
 
-if TYPE_CHECKING:
-    from collections.abc import Sequence
+from naminter.core.constants import (
+    DEFAULT_UNKNOWN_VALUE,
+    SITE_KEY_CATEGORY,
+    SITE_KEY_NAME,
+)
 
 
 class WMNMode(StrEnum):
@@ -23,21 +26,60 @@ class WMNMode(StrEnum):
 class WMNStatus(StrEnum):
     """Status of username search results."""
 
-    FOUND = auto()
-    AMBIGUOUS = auto()
-    UNKNOWN = auto()
-    NOT_FOUND = auto()
-    NOT_VALID = auto()
     ERROR = auto()
+    NOT_VALID = auto()
+    CONFLICTING = auto()
+    PARTIAL = auto()
+    EXISTS = auto()
+    MISSING = auto()
+    UNKNOWN = auto()
+
+
+class WMNSite(TypedDict):
+    """Type definition for a single site in the WMN dataset structure.
+
+    Required fields per JSON schema: name, uri_check, e_code, e_string,
+    m_string, m_code, known, cat. Other fields are optional.
+    """
+
+    name: str
+    cat: str
+    uri_check: str
+    uri_pretty: NotRequired[str]
+    headers: NotRequired[dict[str, str]]
+    post_body: NotRequired[str]
+    strip_bad_char: NotRequired[str]
+    e_code: int
+    e_string: str
+    m_code: int
+    m_string: str
+    known: list[str]
+    valid: NotRequired[bool]
+    protection: NotRequired[list[str]]
+
+
+WMN_REQUIRED_KEYS: frozenset[str] = frozenset({
+    "name",
+    "cat",
+    "uri_check",
+    "e_code",
+    "e_string",
+    "m_code",
+    "m_string",
+    "known",
+})
 
 
 class WMNDataset(TypedDict):
-    """Type definition for WMN dataset structure."""
+    """Type definition for WMN dataset structure.
 
-    sites: list[dict[str, Any]]
-    categories: list[str]
+    All fields are required per JSON schema.
+    """
+
+    license: list[str]
     authors: list[str]
-    license: str | list[str]
+    categories: list[str]
+    sites: list[WMNSite]
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -73,9 +115,9 @@ class WMNResult:
     username: str
     status: WMNStatus
     url: str | None = None
-    response_code: int | None = None
-    response_text: str | None = None
-    elapsed: float | None = None
+    status_code: int | None = None
+    text: str | None = None
+    elapsed: timedelta | None = None
     error: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
 
@@ -83,79 +125,143 @@ class WMNResult:
     def from_error(
         cls,
         *,
-        name: str,
-        category: str,
         username: str,
         message: str,
+        site: WMNSite,
         url: str | None = None,
     ) -> WMNResult:
+        """Create error result.
+
+        Args:
+            username: Username being checked.
+            message: Error message.
+            site: Site configuration.
+            url: Optional URL.
+
+        Returns:
+            WMNResult with ERROR status.
+        """
         return cls(
-            name=name,
-            category=category,
+            name=site.get("name", "unknown"),
+            category=site.get("cat", "unknown"),
             username=username,
             url=url,
             status=WMNStatus.ERROR,
             error=message,
         )
 
+    @staticmethod
+    def _matches_any(
+        status_code: int,
+        text: str,
+        check_code: int,
+        check_string: str,
+    ) -> bool:
+        """Check if response matches criteria using OR logic (any match is
+        sufficient)."""
+        return status_code == check_code or check_string in text
+
+    @staticmethod
+    def _matches_all(
+        status_code: int,
+        text: str,
+        check_code: int,
+        check_string: str,
+    ) -> bool:
+        """Check if response matches criteria using AND logic (all must match)."""
+        return status_code == check_code and check_string in text
+
+    @staticmethod
+    def _determine_status(
+        *,
+        condition_exists: bool,
+        condition_missing: bool,
+        partial_exists: bool = False,
+        partial_missing: bool = False,
+    ) -> WMNStatus:
+        """Determine result status based on exists/missing conditions.
+
+        Priority order:
+        1. CONFLICTING - if both exists and missing conditions are True
+        2. PARTIAL - if partial match detected (only code OR only text matched)
+        3. EXISTS - if only exists condition is True
+        4. MISSING - if only missing condition is True
+        5. UNKNOWN - if neither condition is True
+        """
+        if condition_exists and condition_missing:
+            return WMNStatus.CONFLICTING
+        if partial_exists or partial_missing:
+            return WMNStatus.PARTIAL
+        if condition_exists:
+            return WMNStatus.EXISTS
+        if condition_missing:
+            return WMNStatus.MISSING
+        return WMNStatus.UNKNOWN
+
     @classmethod
     def from_response(
         cls,
         *,
-        name: str,
-        category: str,
         username: str,
-        url: str | None,
-        response_code: int,
-        response_text: str,
-        elapsed: float | None,
+        url: str,
+        response: WMNResponse,
+        site: WMNSite,
         mode: WMNMode,
-        e_code: int | None,
-        e_string: str | None,
-        m_code: int | None,
-        m_string: str | None,
     ) -> WMNResult:
-        if mode == WMNMode.ANY:
-            condition_found = (e_code is not None and response_code == e_code) or (
-                e_string is not None and e_string in response_text
-            )
-            condition_not_found = (m_code is not None and response_code == m_code) or (
-                m_string is not None and m_string in response_text
-            )
-        else:
-            condition_found = (
-                (e_code is None or response_code == e_code)
-                and (e_string is None or e_string in response_text)
-                and (e_code is not None or e_string is not None)
-            )
-            condition_not_found = (
-                (m_code is None or response_code == m_code)
-                and (m_string is None or m_string in response_text)
-                and (m_code is not None or m_string is not None)
-            )
+        """Create WMNResult from HTTP response by evaluating detection criteria.
 
-        if condition_found and condition_not_found:
-            status = WMNStatus.AMBIGUOUS
-        elif condition_found:
-            status = WMNStatus.FOUND
-        elif condition_not_found:
-            status = WMNStatus.NOT_FOUND
+        Args:
+            username: Username being checked.
+            url: URL that was checked (computed uri_pretty).
+            response: HTTP response object.
+            site: Site configuration dictionary with detection criteria.
+            mode: Detection mode (ANY or ALL).
+
+        Returns:
+            WMNResult with determined status.
+        """
+        exists_code_match = response.status_code == site["e_code"]
+        exists_text_match = site["e_string"] in response.text
+        missing_code_match = response.status_code == site["m_code"]
+        missing_text_match = site["m_string"] in response.text
+
+        partial_exists = (exists_code_match and not exists_text_match) or (
+            exists_text_match and not exists_code_match
+        )
+        partial_missing = (missing_code_match and not missing_text_match) or (
+            missing_text_match and not missing_code_match
+        )
+
+        if mode == WMNMode.ALL:
+            condition_exists = exists_code_match and exists_text_match
+            condition_missing = missing_code_match and missing_text_match
         else:
-            status = WMNStatus.UNKNOWN
+            condition_exists = exists_code_match or exists_text_match
+            condition_missing = missing_code_match or missing_text_match
+
+        status = cls._determine_status(
+            condition_exists=condition_exists,
+            condition_missing=condition_missing,
+            partial_exists=partial_exists,
+            partial_missing=partial_missing,
+        )
 
         return cls(
-            name=name,
-            category=category,
+            name=site["name"],
+            category=site["cat"],
             username=username,
             url=url,
             status=status,
-            response_code=response_code,
-            elapsed=elapsed,
-            response_text=response_text,
+            status_code=response.status_code,
+            elapsed=response.elapsed,
+            text=response.text,
         )
 
     def to_dict(
-        self, *, exclude_response_text: bool = False, include_none: bool = False
+        self,
+        *,
+        exclude_text: bool = False,
+        exclude_none: bool = True,
     ) -> dict[str, Any]:
         result_dict: dict[str, Any] = {
             "name": self.name,
@@ -163,14 +269,14 @@ class WMNResult:
             "username": self.username,
             "status": self.status.value,
             "url": self.url,
-            "response_code": self.response_code,
-            "elapsed": self.elapsed,
+            "status_code": self.status_code,
+            "elapsed": self.elapsed.total_seconds() if self.elapsed else None,
             "error": self.error,
             "created_at": self.created_at.isoformat(),
         }
-        if not exclude_response_text:
-            result_dict["response_text"] = self.response_text
-        if not include_none:
+        if not exclude_text:
+            result_dict["text"] = self.text
+        if exclude_none:
             result_dict = {
                 key: value for key, value in result_dict.items() if value is not None
             }
@@ -178,12 +284,12 @@ class WMNResult:
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
-class WMNValidationResult:
+class WMNTestResult:
     """Result of validation testing for a site's detection methods."""
 
     name: str
     category: str
-    results: Sequence[WMNResult] | None = None
+    results: list[WMNResult] | None = None
     error: str | None = None
     created_at: datetime = field(default_factory=lambda: datetime.now(UTC))
     status: WMNStatus = field(init=False)
@@ -191,34 +297,86 @@ class WMNValidationResult:
     def __post_init__(self) -> None:
         object.__setattr__(self, "status", self._get_result_status())
 
-    def _get_result_status(self) -> WMNStatus:
-        status = WMNStatus.UNKNOWN
-        if self.error:
-            status = WMNStatus.ERROR
-        elif not self.results:
-            status = WMNStatus.UNKNOWN
-        else:
-            statuses = {result.status for result in self.results}
-            if WMNStatus.ERROR in statuses:
-                status = WMNStatus.ERROR
-            elif WMNStatus.FOUND in statuses and WMNStatus.NOT_FOUND in statuses:
-                status = WMNStatus.AMBIGUOUS
-            elif len(statuses) == 1:
-                status = next(iter(statuses))
-        return status
+    @classmethod
+    def from_site(
+        cls,
+        site: WMNSite,
+        *,
+        results: list[WMNResult] | None = None,
+        error: str | None = None,
+    ) -> WMNTestResult:
+        """Create WMNTestResult from a site configuration.
 
-    def to_dict(self, *, exclude_response_text: bool = False) -> dict[str, Any]:
-        return {
+        Args:
+            site: Site configuration dictionary.
+            results: Optional list of WMNResult objects.
+            error: Optional error message.
+
+        Returns:
+            WMNTestResult with name and category extracted from site.
+        """
+        return cls(
+            name=site.get(SITE_KEY_NAME, DEFAULT_UNKNOWN_VALUE),
+            category=site.get(SITE_KEY_CATEGORY, DEFAULT_UNKNOWN_VALUE),
+            results=results,
+            error=error,
+        )
+
+    def _get_result_status(self) -> WMNStatus:
+        """Determine aggregate status from individual results.
+
+        Priority order:
+        1. ERROR - if error message exists or any result has ERROR status
+        2. UNKNOWN - if no results exist
+        3. Return the single status if all results have the same status
+        4. CONFLICTING - if both EXISTS and MISSING are present
+        5. PARTIAL - for other mixed statuses
+            (e.g., EXISTS + UNKNOWN, PARTIAL + MISSING)
+        """
+        if self.error:
+            return WMNStatus.ERROR
+
+        if not self.results:
+            return WMNStatus.UNKNOWN
+
+        statuses = {result.status for result in self.results}
+
+        if WMNStatus.ERROR in statuses:
+            return WMNStatus.ERROR
+
+        if len(statuses) == 1:
+            return next(iter(statuses))
+
+        if WMNStatus.EXISTS in statuses and WMNStatus.MISSING in statuses:
+            return WMNStatus.CONFLICTING
+
+        return WMNStatus.PARTIAL
+
+    def to_dict(
+        self,
+        *,
+        exclude_text: bool = False,
+        exclude_none: bool = True,
+    ) -> dict[str, Any]:
+        result_dict: dict[str, Any] = {
             "name": self.name,
             "category": self.category,
             "results": [
-                result.to_dict(exclude_response_text=exclude_response_text)
+                result.to_dict(
+                    exclude_text=exclude_text,
+                    exclude_none=exclude_none,
+                )
                 for result in (self.results or [])
             ],
             "error": self.error,
             "status": self.status.value,
             "created_at": self.created_at.isoformat(),
         }
+        if exclude_none:
+            result_dict = {
+                key: value for key, value in result_dict.items() if value is not None
+            }
+        return result_dict
 
 
 @dataclass(slots=True, frozen=True, kw_only=True)
@@ -227,15 +385,19 @@ class WMNResponse:
 
     status_code: int
     text: str
-    elapsed: float
+    elapsed: timedelta
 
-    def json(self) -> Any:
-        """Parse the response body as JSON and return the resulting object."""
+    def json(self) -> dict[str, Any] | list[Any] | str | int | float | bool | None:
+        """Parse the response body as JSON and return the resulting object.
+
+        Raises:
+            json.JSONDecodeError: If the response text is not valid JSON.
+        """
         return json.loads(self.text)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
-class WMNValidationModel:
+class WMNError:
     """Structured representation of a validation error."""
 
     path: str

@@ -14,7 +14,6 @@ Naminter is a Python package and command-line interface (CLI) tool for asynchron
 
 ## Table of Contents
 
-- [Features](#features)
 - [Installation](#installation)
   - [From PyPI](#from-pypi)
   - [From Source](#from-source)
@@ -26,21 +25,6 @@ Naminter is a Python package and command-line interface (CLI) tool for asynchron
 - [Command Line Options](#command-line-options)
 - [Contributing](#contributing)
 - [License](#license)
-
-## Features
-
-- **Broad Site Coverage:** Leverages the [WhatsMyName](https://github.com/WebBreacher/WhatsMyName) dataset for extensive username enumeration
-- **Browser Impersonation:** Simulate Chrome, Firefox, Safari, Edge for accurate detection
-- **Real-Time Console UI:** Live progress bar, colored output, and instant feedback
-- **Concurrent & Fast:** High-speed, concurrent checks with adjustable task limits
-- **Validation Modes:** Strict (ALL) or permissive (ANY) matching for detection criteria
-- **Category Filters:** Include or exclude sites by category
-- **Custom Site Lists:** Use your own or remote WhatsMyName-format lists and schemas
-- **Proxy & Network Options:** Full proxy support, SSL verification, and redirect control
-- **Site Validation Mode:** Validate detection methods for reliability
-- **Export Results:** Output to CSV, JSON, HTML, and PDF
-- **Response Handling:** Save/open HTTP responses for analysis
-- **Flexible Filtering:** Filter results by found, not found, errors, or unknown
 
 ## Installation
 
@@ -134,7 +118,7 @@ naminter --username alice_bob \
     --html report.html
 
 # Site validation with detailed output
-naminter --validate-sites \
+naminter --test \
     --show-details \
     --log-level DEBUG \
     --log-file debug.log
@@ -142,120 +126,55 @@ naminter --validate-sites \
 
 ### Using as a Python Package
 
-Naminter can be used programmatically in Python projects to enumerate usernames across various platforms. The Naminter class requires WhatsMyName (WMN) data to operate. You can either load this data from local files or fetch it from remote sources.
+Naminter can be used programmatically in Python projects to enumerate usernames across various platforms.
 
-#### Getting Started - Loading WMN Data
-
-Before using Naminter, you need to load the WhatsMyName dataset:
+#### Basic Example
 
 ```python
 import asyncio
-import json
-import aiohttp
-from naminter import Naminter
-
-async def load_wmn_data():
-    """Load WhatsMyName data from the official repository."""
-    async with aiohttp.ClientSession() as session:
-        # Load the main sites data
-        async with session.get("https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data.json") as response:
-            wmn_data = await response.json()
-        
-        # Optionally load the schema for validation
-        async with session.get("https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data-schema.json") as response:
-            wmn_schema = await response.json()
-    
-    return wmn_data, wmn_schema
-
-# Alternative: Load from local files
-def load_local_wmn_data():
-    """Load WhatsMyName data from local files."""
-    with open("wmn-data.json", "r") as f:
-        wmn_data = json.load(f)
-    
-    with open("wmn-data-schema.json", "r") as f:
-        wmn_schema = json.load(f)
-    
-    return wmn_data, wmn_schema
-```
-
-#### Basic Asynchronous Example
-
-```python
-import asyncio
-from naminter import Naminter
+from naminter import Naminter, CurlCFFISession, WMN_REMOTE_URL
 
 async def main():
-    # Load WMN data
-    wmn_data, wmn_schema = await load_wmn_data()
-    
-    # Initialize Naminter with the WMN data
-    async with Naminter(wmn_data, wmn_schema) as naminter:
-        results = await naminter.enumerate_usernames(["example_username"])
-        for result in results:
-            if result.status.value == "found":
-                print(f"✅ {result.username} found on {result.name}: {result.url}")
-            elif result.status.value == "not_found":
-                print(f"❌ {result.username} not found on {result.name}")
-            elif result.status.value == "error":
-                print(f"⚠️ Error enumerating {result.username} on {result.name}: {result.error}")
+    async with CurlCFFISession() as http_client:
+        wmn_data = (await http_client.get(WMN_REMOTE_URL)).json()
+
+        async with Naminter(http_client=http_client, wmn_data=wmn_data) as naminter:
+            async for result in naminter.enumerate_usernames(["example_username"]):
+                if result.status.value == "exists":
+                    print(f"✅ {result.username} found on {result.name}: {result.url}")
+                elif result.status.value == "missing":
+                    print(f"❌ {result.username} not found on {result.name}")
+                elif result.status.value == "error":
+                    print(f"⚠️ Error checking {result.username} on {result.name}: {result.error}")
 
 asyncio.run(main())
 ```
 
-#### Asynchronous Example with Generator
 
-For more efficient processing, use an asynchronous generator to handle results as they come in:
-
-```python
-import asyncio
-from naminter import Naminter
-
-async def main():
-    wmn_data, wmn_schema = await load_wmn_data()
-    
-    async with Naminter(wmn_data, wmn_schema) as naminter:
-        # Use as_generator=True for streaming results
-        results = await naminter.enumerate_usernames(["example_username"], as_generator=True)
-        async for result in results:
-            if result.status.value == "found":
-                print(f"✅ {result.username} found on {result.name}: {result.url}")
-            elif result.status.value == "not_found":
-                print(f"❌ {result.username} not found on {result.name}")
-
-asyncio.run(main())
-```
-
-#### Multiple Usernames and Advanced Configuration
+#### Advanced Configuration
 
 ```python
 import asyncio
-from naminter import Naminter
-from naminter.core.models import WMNMode
+from naminter import Naminter, CurlCFFISession, WMNMode, WMN_REMOTE_URL
 
 async def main():
-    wmn_data, wmn_schema = await load_wmn_data()
-    
-    # Advanced configuration with custom settings
-    async with Naminter(
-        wmn_data=wmn_data,
-        wmn_schema=wmn_schema,
-        max_tasks=100,
+    async with CurlCFFISession(
         timeout=15,
         impersonate="chrome",
-        verify_ssl=True,
-        proxy="http://proxy:8080"
-    ) as naminter:
-        usernames = ["user1", "user2", "user3"]
-        results = await naminter.enumerate_usernames(usernames, mode=WMNMode.ANY)
-        
-        for result in results:
-            if result.status.value == "found":
-                print(f"✅ Found: {result.username} on {result.name}")
-                print(f"   URL: {result.url}")
-                print(f"   Response time: {result.elapsed:.2f}s")
-            else:
-                print(f"❌ Not found: {result.username} on {result.name}")
+        verify=True,
+        proxies="http://proxy:8080"
+    ) as http_client:
+        wmn_data = (await http_client.get(WMN_REMOTE_URL)).json()
+
+        async with Naminter(
+            http_client=http_client,
+            wmn_data=wmn_data,
+            max_tasks=100
+        ) as naminter:
+            usernames = ["user1", "user2", "user3"]
+            async for result in naminter.enumerate_usernames(usernames, mode=WMNMode.ANY):
+                if result.status.value == "exists":
+                    print(f"✅ {result.username} on {result.name}: {result.url}")
 
 asyncio.run(main())
 ```
@@ -264,43 +183,45 @@ asyncio.run(main())
 
 ```python
 import asyncio
-from naminter import Naminter
+from naminter import Naminter, CurlCFFISession, WMN_REMOTE_URL
 
 async def main():
-    wmn_data, wmn_schema = await load_wmn_data()
-    
-    async with Naminter(wmn_data, wmn_schema) as naminter:
-        # Validate site detection methods using known usernames
-        validation_results = await naminter.validate_sites()
-        
-        for site_result in validation_results:
-            if site_result.error:
-                print(f"❌ {site_result.name}: {site_result.error}")
-            else:
-                found_count = sum(1 for r in site_result.results if r.status.value == "found")
-                total_count = len(site_result.results)
-                print(f"✅ {site_result.name}: {found_count}/{total_count} known accounts found")
+    async with CurlCFFISession() as http_client:
+        wmn_data = (await http_client.get(WMN_REMOTE_URL)).json()
+
+        async with Naminter(http_client=http_client, wmn_data=wmn_data) as naminter:
+            async for site_result in naminter.enumerate_test():
+                if site_result.error:
+                    print(f"❌ {site_result.name}: {site_result.error}")
+                else:
+                    found = sum(1 for r in site_result.results if r.status.value == "exists")
+                    total = len(site_result.results)
+                    print(f"✅ {site_result.name}: {found}/{total} known accounts found")
 
 asyncio.run(main())
 ```
 
-#### Getting WMN Information
+#### Getting WMN Summary
 
 ```python
 import asyncio
-from naminter import Naminter
+from naminter import Naminter, CurlCFFISession, WMN_REMOTE_URL, WMN_SCHEMA_URL
 
 async def main():
-    wmn_data, wmn_schema = await load_wmn_data()
-    
-    async with Naminter(wmn_data, wmn_schema) as naminter:
-        # Get information about the loaded WMN data
-        info = await naminter.get_wmn_summary()
-        print(f"Total sites: {info['sites_count']}")
-        print(f"Categories: {', '.join(info['categories'])}")
-        
-        # Summaries include sites_count, categories and categories_count
-        # Use this data to derive lists as needed.
+    async with CurlCFFISession() as http_client:
+        # Load data and (optionally) schema using public constants
+        wmn_data = (await http_client.get(WMN_REMOTE_URL)).json()
+        wmn_schema = (await http_client.get(WMN_SCHEMA_URL)).json()
+
+        async with Naminter(
+            http_client=http_client,
+            wmn_data=wmn_data,
+            wmn_schema=wmn_schema,
+        ) as naminter:
+            summary = naminter.get_wmn_summary()
+            print(f"Total sites: {summary.sites_count}")
+            print(f"Total categories: {summary.categories_count}")
+            print(f"Known accounts: {summary.known_count}")
 
 asyncio.run(main())
 ```
@@ -328,7 +249,7 @@ asyncio.run(main())
 ### Site Validation
 | Option                      | Description                                                |
 |-----------------------------|------------------------------------------------------------|
-| `--validate-sites`          | Validate site detection methods by checking known usernames |
+| `--test`                    | Validate site detection methods by checking known usernames |
 
 ### Category Filters
 | Option                      | Description                                                |
@@ -373,10 +294,11 @@ asyncio.run(main())
 | Option                      | Description                                                |
 |-----------------------------|------------------------------------------------------------|
 | `--filter-all`              | Include all results in console and exports                 |
-| `--filter-found`            | Show only found results in console and exports             |
-| `--filter-ambiguous`        | Show only ambiguous results in console and exports         |
+| `--filter-exists`            | Show only existing username results in console and exports |
+| `--filter-partial`          | Show only partial match results in console and exports     |
+| `--filter-conflicting`      | Show only conflicting results in console and exports        |
 | `--filter-unknown`          | Show only unknown results in console and exports           |
-| `--filter-not-found`        | Show only not found results in console and exports         |
+| `--filter-missing`          | Show only missing username results in console and exports |
 | `--filter-not-valid`        | Show only not valid results in console and exports         |
 | `--filter-errors`           | Show only error results in console and exports             |
 

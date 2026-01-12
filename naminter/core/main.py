@@ -1,16 +1,16 @@
 import asyncio
+from collections.abc import AsyncGenerator, Awaitable
 import logging
-from collections.abc import AsyncGenerator, Awaitable, Callable
-from functools import wraps
-from typing import Any, Literal, TypeVar, overload
+from typing import Any
 
 from naminter.core.constants import (
     ACCOUNT_PLACEHOLDER,
-    DEFAULT_UNKNOWN_VALUE,
+    DEFAULT_JSON_ENSURE_ASCII,
+    DEFAULT_JSON_INDENT,
     EMPTY_STRING,
+    HTTP_METHOD_GET,
+    HTTP_METHOD_POST,
     MAX_CONCURRENT_TASKS,
-    REQUIRED_KEYS_ENUMERATE,
-    REQUIRED_KEYS_SELF_ENUM,
     SITE_KEY_CATEGORY,
     SITE_KEY_E_CODE,
     SITE_KEY_E_STRING,
@@ -30,26 +30,28 @@ from naminter.core.constants import (
 from naminter.core.exceptions import (
     HttpError,
     HttpSessionError,
-    HttpTimeoutError,
+    WMNArgumentError,
     WMNDataError,
+    WMNEnumerationError,
     WMNSchemaError,
+    WMNUninitializedError,
+    WMNUnknownCategoriesError,
+    WMNUnknownSiteError,
     WMNValidationError,
 )
 from naminter.core.models import (
     WMNDataset,
+    WMNError,
     WMNMode,
-    WMNResult,
     WMNResponse,
+    WMNResult,
+    WMNSite,
     WMNSummary,
-    WMNValidationResult,
+    WMNTestResult,
 )
 from naminter.core.network import BaseSession
-from naminter.core.utils import (
-    get_missing_keys,
-    validate_dataset,
-)
-
-T = TypeVar("T")
+from naminter.core.utils import execute_tasks
+from naminter.core.validator import WMNValidator
 
 
 class Naminter:
@@ -62,148 +64,207 @@ class Naminter:
         wmn_schema: dict[str, Any] | None = None,
         max_tasks: int = MAX_CONCURRENT_TASKS,
     ) -> None:
-        """Initialize Naminter with configuration parameters."""
+        """Initialize Naminter with configuration parameters.
+
+        Raises:
+            WMNSchemaError: If the JSON schema is invalid.
+        """
         self._logger = logging.getLogger(__name__)
-        self._logger.addHandler(logging.NullHandler())
+        if not self._logger.handlers:
+            self._logger.addHandler(logging.NullHandler())
 
         self._wmn_data: WMNDataset | None = wmn_data
         self._wmn_schema: dict[str, Any] | None = wmn_schema
         self._semaphore = asyncio.Semaphore(max_tasks)
         self._http: BaseSession = http_client
 
-        self._session_open: bool = False
-        self._session_lock = asyncio.Lock()
-        self._dataset_ready: bool = False
-
-    async def _open_session(self) -> None:
-        """Open the HTTP session."""
-        if self._session_open:
-            return
-
-        async with self._session_lock:
-            if self._session_open:
-                return
+        self._validator: WMNValidator | None = None
+        if self._wmn_schema:
             try:
-                await self._http.open()
-                self._session_open = True
-                self._logger.info("HTTP session opened")
-            except HttpSessionError as e:
-                self._logger.error("Failed to open HTTP session: %s", e)
-                msg = f"HTTP session initialization failed: {e}"
-                raise WMNDataError(msg) from e
-
-    async def _close_session(self) -> None:
-        """Close the HTTP session if open."""
-        async with self._session_lock:
-            if not self._session_open:
-                return
-            try:
-                await self._http.close()
-            except asyncio.CancelledError:
-                self._logger.debug("HTTP client close cancelled")
+                self._validator = WMNValidator(self._wmn_schema)
+            except WMNSchemaError as e:
+                self._logger.exception("WMN schema error during initialization")
                 raise
-            except Exception as e:
-                self._logger.exception(
-                    "Unexpected error during HTTP client close: %s", e
-                )
-            finally:
-                self._session_open = False
 
-    async def _ensure_ready(self) -> None:
-        """Ensure HTTP session is open and dataset is loaded."""
-        if not self._session_open:
-            await self._open_session()
+    async def open(self) -> None:
+        """Initialize the HTTP session and validate the WMN dataset.
 
-        if self._dataset_ready:
-            return
+        Use this method for long-running services where you need explicit
+        lifecycle control. For scripts and CLI usage, prefer the context
+        manager pattern: `async with Naminter(...) as naminter:`.
 
+        Example:
+            ```python
+            # Long-running service (FastAPI, etc.)
+            naminter = Naminter(http_client, wmn_data)
+            await naminter.open()  # Call once at startup
+
+            # ... handle many requests ...
+
+            await naminter.close()  # Call once at shutdown
+            ```
+
+        Raises:
+            HttpSessionError: If HTTP session initialization fails.
+            WMNUninitializedError: If WMN data is not provided.
+            WMNDataError: If WMN data loading fails.
+            WMNValidationError: If dataset validation fails.
+        """
+        try:
+            await self._http.open()
+            self._logger.info("HTTP session opened")
+        except HttpSessionError:
+            self._logger.exception("Failed to open HTTP session")
+            raise
+
+        try:
+            self._validate_dataset()
+        except Exception:
+            await self.close()
+            raise
+
+    def _validate_dataset(self) -> None:
+        """Validate WMN data and schema after HTTP session is opened.
+
+        Raises:
+            WMNUninitializedError: If WMN data is not provided.
+            WMNDataError: If WMN data loading fails.
+            WMNValidationError: If dataset validation fails.
+        """
         if not self._wmn_data:
             msg = "WMN data must be provided to Naminter constructor"
-            raise WMNDataError(msg)
+            raise WMNUninitializedError(msg)
 
-        async with self._session_lock:
-            if self._dataset_ready:
-                return
+        validation_errors: list[WMNError] = []
+        try:
+            if self._validator:
+                validation_errors = self._validator.validate(self._wmn_data)
+        except (TypeError, ValueError, KeyError, AttributeError) as e:
+            self._logger.exception("Unexpected error loading WMN data")
+            msg = f"Unexpected error loading WMN data: {e}"
+            raise WMNDataError(msg) from e
 
-            try:
-                if self._wmn_schema:
-                    errors = validate_dataset(self._wmn_data, self._wmn_schema)
-                    if errors:
-                        msg = "WMN dataset validation failed"
-                        raise WMNValidationError(msg, errors=errors)
+        if validation_errors:
+            msg = "WMN dataset validation failed"
+            raise WMNValidationError(msg, errors=validation_errors)
 
-                self._dataset_ready = True
-                self._logger.info(
-                    "Dataset loaded: %d sites",
-                    len(self._wmn_data.get(WMN_KEY_SITES, [])),
-                )
-            except WMNSchemaError as e:
-                msg = f"WMN schema error: {e}"
-                raise WMNDataError(msg) from e
-            except WMNValidationError:
-                raise
-            except Exception as e:
-                msg = f"Unexpected error loading WMN data: {e}"
-                raise WMNDataError(msg) from e
+        sites = self._wmn_data.get(WMN_KEY_SITES, [])
+        site_errors: list[WMNError] = []
+        if self._validator:
+            site_errors = self._validator.validate_sites(sites)
 
-    @staticmethod
-    def _ensure_initialized(
-        method: Callable[..., Any],
-    ) -> Callable[..., Any]:
-        """Decorator to ensure the instance is ready before calling a method."""
+        if site_errors:
+            msg = f"Site validation failed for {len(site_errors)} site(s)"
+            raise WMNValidationError(msg, errors=site_errors)
 
-        @wraps(method)
-        async def wrapper(self: "Naminter", *args: Any, **kwargs: Any) -> Any:
-            await self._ensure_ready()
-            return await method(self, *args, **kwargs)
+        self._logger.info("Dataset loaded: %d sites", len(sites))
 
-        return wrapper
+    async def close(self) -> None:
+        """Close the HTTP session and release resources.
+
+        Use this method for long-running services to clean up at shutdown.
+        For scripts and CLI usage, prefer the context manager pattern.
+
+        Handles errors gracefully during cleanup. CancelledError is propagated
+        to allow proper cancellation handling.
+        """
+        try:
+            await self._http.close()
+        except asyncio.CancelledError:
+            self._logger.debug("HTTP client close cancelled")
+            raise
+        except (HttpSessionError, OSError, RuntimeError):
+            self._logger.exception(
+                "Unexpected error during HTTP client close",
+            )
 
     async def __aenter__(self) -> "Naminter":
-        await self._ensure_ready()
+        """Async context manager entry."""
+        await self.open()
         return self
 
     async def __aexit__(
-        self, exc_type: type | None, exc_val: BaseException | None, exc_tb: Any | None
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: object,
     ) -> None:
         """Async context manager exit."""
-        await self._close_session()
+        await self.close()
 
     def _filter_sites(
         self,
         site_names: list[str] | None,
         include_categories: list[str] | None = None,
         exclude_categories: list[str] | None = None,
-    ) -> list[dict[str, Any]]:
-        """Filter sites by names and categories for the current WMN dataset."""
-        assert self._wmn_data is not None
-        sites: list[dict[str, Any]] = self._wmn_data.get(WMN_KEY_SITES, [])
+    ) -> list[WMNSite]:
+        """Filter sites by names and categories for the current WMN dataset.
 
-        if not any((site_names, include_categories, exclude_categories)):
+        Args:
+            site_names: Optional list of site names to filter by.
+            include_categories: Optional list of categories to include.
+            exclude_categories: Optional list of categories to exclude.
+
+        Returns:
+            Filtered list of site dictionaries.
+
+        Raises:
+            WMNUninitializedError: If WMN data is not initialized.
+            WMNUnknownSiteError: If unknown site names are provided.
+            WMNUnknownCategoriesError: If unknown categories are provided.
+        """
+        if self._wmn_data is None:
+            msg = "WMN data not initialized"
+            raise WMNUninitializedError(msg)
+
+        sites: list[WMNSite] = self._wmn_data.get(WMN_KEY_SITES, [])
+
+        if not (site_names or include_categories or exclude_categories):
             return sites
 
-        filtered_names: frozenset[str] = frozenset()
+        filtered_names: frozenset[str] | None = None
         if site_names:
             filtered_names = frozenset(site_names)
-            available_names: frozenset[str] = frozenset({
-                name for site in sites if (name := site.get(SITE_KEY_NAME)) is not None
-            })
-            missing_names: frozenset[str] = filtered_names - available_names
-            if missing_names:
+            available_names = frozenset(
+                site.get(SITE_KEY_NAME)
+                for site in sites
+                if site.get(SITE_KEY_NAME) is not None
+            )
+            if missing_names := filtered_names - available_names:
                 msg = f"Unknown site names: {sorted(missing_names)}"
-                raise WMNDataError(msg)
+                raise WMNUnknownSiteError(msg, site_names=sorted(missing_names))
 
-        include_set: frozenset[str] = (
+        include_set = (
             frozenset(include_categories) if include_categories else frozenset()
         )
-        exclude_set: frozenset[str] = (
+        exclude_set = (
             frozenset(exclude_categories) if exclude_categories else frozenset()
         )
+
+        if include_set and include_set.issubset(exclude_set):
+            self._logger.debug(
+                "All included categories are excluded, returning empty list",
+            )
+            return []
+
+        if include_set or exclude_set:
+            available_categories = frozenset(
+                category
+                for site in sites
+                if (category := site.get(SITE_KEY_CATEGORY)) is not None
+            )
+            requested_categories = include_set | exclude_set
+            if unknown_categories := requested_categories - available_categories:
+                msg = f"Unknown categories: {sorted(unknown_categories)}"
+                raise WMNUnknownCategoriesError(
+                    msg,
+                    categories=sorted(unknown_categories),
+                )
 
         filtered_sites = [
             site
             for site in sites
-            if (not filtered_names or site.get(SITE_KEY_NAME) in filtered_names)
+            if (filtered_names is None or site.get(SITE_KEY_NAME) in filtered_names)
             and (not include_set or site.get(SITE_KEY_CATEGORY) in include_set)
             and (not exclude_set or site.get(SITE_KEY_CATEGORY) not in exclude_set)
         ]
@@ -215,8 +276,120 @@ class Naminter:
         )
         return filtered_sites
 
-    @_ensure_initialized
-    async def get_wmn_summary(
+    def _prepare_request(
+        self,
+        site: WMNSite,
+        username: str,
+    ) -> tuple[str, str, dict[str, str], str | None]:
+        """Prepare all request data for site enumeration.
+
+        Args:
+            site: Site configuration.
+            username: Username to substitute.
+
+        Returns:
+            Tuple of (uri_check, uri_pretty, headers, post_body).
+
+        Raises:
+            WMNEnumerationError: If strip_bad_char configuration is invalid.
+        """
+        clean_username = self._prepare_username(username, site)
+
+        uri_check_template = site[SITE_KEY_URI_CHECK]
+        uri_check = uri_check_template.replace(ACCOUNT_PLACEHOLDER, clean_username)
+
+        uri_pretty_template = site.get(SITE_KEY_URI_PRETTY, uri_check_template)
+        uri_pretty = uri_pretty_template.replace(ACCOUNT_PLACEHOLDER, clean_username)
+
+        headers = site.get(SITE_KEY_HEADERS) or {}
+
+        post_body_template = site.get(SITE_KEY_POST_BODY)
+        post_body = (
+            post_body_template.replace(ACCOUNT_PLACEHOLDER, clean_username)
+            if post_body_template
+            else None
+        )
+
+        return uri_check, uri_pretty, headers, post_body
+
+    def _prepare_username(
+        self,
+        username: str,
+        site: WMNSite,
+    ) -> str:
+        """Prepare username by stripping bad characters.
+
+        Args:
+            username: Raw username to process.
+            site: Site configuration containing strip_bad_char.
+
+        Returns:
+            Cleaned username.
+
+        Raises:
+            WMNEnumerationError: If strip_bad_char configuration is invalid.
+        """
+        strip_bad_char = site.get(SITE_KEY_STRIP_BAD_CHAR, EMPTY_STRING)
+        if not strip_bad_char:
+            return username
+
+        try:
+            return username.translate(
+                str.maketrans(dict.fromkeys(strip_bad_char)),
+            )
+        except (ValueError, TypeError) as e:
+            self._logger.warning(
+                "Invalid strip_bad_char for site: %s - %s",
+                site,
+                e,
+            )
+            msg = f"Invalid strip_bad_char configuration: {e}"
+            raise WMNEnumerationError(msg) from e
+
+    async def _perform_request(
+        self,
+        uri_check: str,
+        headers: dict[str, str],
+        post_body: str | None,
+        site: WMNSite,
+    ) -> WMNResponse:
+        """Perform HTTP request for site enumeration.
+
+        Args:
+            uri_check: URL to check.
+            headers: HTTP headers to send.
+            post_body: Optional POST body data.
+            site: Site configuration for logging.
+
+        Returns:
+            HTTP response object.
+
+        Raises:
+            asyncio.CancelledError: If the request is cancelled.
+            HttpError: If an HTTP error occurs.
+        """
+        async with self._semaphore:
+            method = HTTP_METHOD_POST if post_body else HTTP_METHOD_GET
+            response = await self._http.request(
+                method=method,
+                url=uri_check,
+                headers=headers,
+                data=post_body,
+            )
+
+            self._logger.debug(
+                "%s %s -> %d (%.2fs) | headers=%s | data=%s | site=%s",
+                method,
+                uri_check,
+                response.status_code,
+                response.elapsed,
+                headers,
+                post_body,
+                site,
+            )
+            return response
+
+    def get_wmn_summary(
         self,
         site_names: list[str] | None = None,
         include_categories: list[str] | None = None,
@@ -242,23 +415,24 @@ class Naminter:
                 categories, and known usernames count.
 
         Raises:
-            WMNDataError: If site_names contains unknown site names.
+            WMNUnknownSiteError: If site_names contains unknown site names.
+            WMNUnknownCategoriesError: If include_categories or exclude_categories
+                contains unknown categories.
 
         Example:
             ```python
             async with Naminter(wmn_data, wmn_schema) as naminter:
                 # Get summary of all sites
-                summary = await naminter.get_wmn_summary()
+                summary = naminter.get_wmn_summary()
                 print(f"Total sites: {summary.sites_count}")
 
                 # Get summary for specific categories
-                summary = await naminter.get_wmn_summary(
-                    include_categories=["social", "coding"]
+                summary = naminter.get_wmn_summary(
+                    include_categories=["social", "coding"],
                 )
                 print(f"Social/coding sites: {summary.sites_count}")
             ```
         """
-        assert self._wmn_data is not None
         sites = self._filter_sites(
             site_names,
             include_categories=include_categories,
@@ -266,38 +440,39 @@ class Naminter:
         )
 
         category_list = [
-            site.get(SITE_KEY_CATEGORY) for site in sites if site.get(SITE_KEY_CATEGORY)
+            category
+            for site in sites
+            if (category := site.get(SITE_KEY_CATEGORY)) is not None
         ]
         site_name_list = [
-            site.get(SITE_KEY_NAME) for site in sites if site.get(SITE_KEY_NAME)
+            name for site in sites if (name := site.get(SITE_KEY_NAME)) is not None
         ]
         known_count = sum(
-            len(site.get(SITE_KEY_KNOWN, []))
+            len(known)
             for site in sites
-            if isinstance(site.get(SITE_KEY_KNOWN), list)
+            if isinstance((known := site.get(SITE_KEY_KNOWN)), list)
         )
 
-        wmn_summary = WMNSummary(
+        summary = WMNSummary(
             license=tuple(self._wmn_data.get(WMN_KEY_LICENSE, [])),
             authors=tuple(self._wmn_data.get(WMN_KEY_AUTHORS, [])),
-            site_names=tuple(str(name) for name in site_name_list),
+            site_names=tuple(site_name_list),
             sites_count=len(sites),
-            categories=tuple(str(cat) for cat in category_list),
+            categories=tuple(category_list),
             categories_count=len(set(category_list)),
             known_count=known_count,
         )
 
         self._logger.debug(
             "WMN summary computed (sites=%d, categories=%d)",
-            wmn_summary.sites_count,
-            wmn_summary.categories_count,
+            summary.sites_count,
+            summary.categories_count,
         )
-        return wmn_summary
+        return summary
 
-    @_ensure_initialized
     async def enumerate_site(
         self,
-        site: dict[str, Any],
+        site: WMNSite,
         username: str,
         mode: WMNMode = WMNMode.ALL,
     ) -> WMNResult:
@@ -312,20 +487,17 @@ class Naminter:
         Args:
             site:
                 A single site configuration dictionary from the WMN dataset. This dict
-                must contain, at minimum, the following keys:
-                - "name": site name
-                - "cat": site category
-                - "uri_check": URL template with "{account}" placeholder
-                - "e_code": expected HTTP status for a "found" account
-                - "e_string": expected string in body for a "found" account
-                - "m_code": expected HTTP status for a "missing" account
-                - "m_string": expected string in body for a "missing" account
-                Optional keys include:
-                - "headers": dict of HTTP headers to send with the request.
-                - "post_body": POST body template containing "{account}".
-                - "strip_bad_char": characters to strip from the username
-                  before substitution in the URL/body.
-                - "uri_pretty": an optional "pretty" URL template for reporting.
+                must contain, at minimum, the following keys: "name" (site name),
+                "cat" (site category), "uri_check" (URL template with "{account}"
+                placeholder), "e_code" (expected HTTP status for an existing account),
+                "e_string" (expected string in body for an existing account),
+                "m_code" (expected HTTP status for a missing account), and
+                "m_string" (expected string in body for a "missing" account).
+                Optional keys include "headers" (dict of HTTP headers to send with
+                the request), "post_body" (POST body template containing "{account}"),
+                "strip_bad_char" (characters to strip from the username before
+                substitution in the URL/body), and "uri_pretty" (an optional "pretty"
+                URL template for reporting).
             username:
                 The raw username to test on this site. It is used to build the
                 request URL and optional POST body. If the site defines
@@ -333,33 +505,25 @@ class Naminter:
                 username before substitution.
             mode:
                 Detection mode that controls how the "expected" (E) and "missing" (M)
-                criteria are interpreted when classifying the HTTP response:
-                - WMNMode.ALL: All configured conditions for a state must match
-                  (strict AND logic).
-                - WMNMode.ANY: Any matching condition is sufficient
-                  (looser OR logic).
+                criteria are interpreted when classifying the HTTP response.
+                WMNMode.ALL requires all configured conditions for a state to match
+                (strict AND logic), while WMNMode.ANY allows any matching condition
+                to be sufficient (looser OR logic).
 
         Returns:
             WMNResult:
-                A single WMNResult instance that encapsulates:
-                - name: site name (from "name"),
-                - category: site category (from "cat"),
-                - username: the username that was tested,
-                - url: the final URL used for reporting (may be "uri_pretty"),
-                - status: high-level classification, e.g. FOUND, NOT_FOUND,
-                  AMBIGUOUS, UNKNOWN, ERROR, or NOT_VALID,
-                - response_code / response_text / elapsed (if the HTTP request
-                  completed successfully),
-                - error message (if an error occurred).
+                A single WMNResult instance that encapsulates the site name (from
+                "name"), category (from "cat"), the username that was tested, the
+                final URL used for reporting (may be "uri_pretty"), a high-level
+                status classification (e.g. EXISTS, PARTIAL, CONFLICTING, MISSING,
+                UNKNOWN, ERROR, or NOT_VALID), status_code, text, and elapsed time
+                (if the HTTP request completed successfully), and an error message
+                (if an error occurred).
 
         Raises:
             asyncio.CancelledError:
                 Propagated if the caller cancels the task while the HTTP request
                 is in progress.
-            WMNDataError:
-                Not raised directly from this method, but may be raised earlier
-                when initializing the Naminter instance or when validating the
-                underlying dataset.
 
         Example:
             ```python
@@ -378,153 +542,66 @@ class Naminter:
                 print(result.name, result.username, result.status, result.url)
             ```
         """
-        missing_keys = get_missing_keys(site, REQUIRED_KEYS_ENUMERATE)
-        if missing_keys:
-            site_name = site.get(SITE_KEY_NAME, DEFAULT_UNKNOWN_VALUE)
+        try:
+            uri_check, uri_pretty, headers, post_body = self._prepare_request(
+                site,
+                username,
+            )
+        except WMNEnumerationError as e:
+            return WMNResult.from_error(
+                username=username,
+                message=e.message,
+                site=site,
+            )
+
+        try:
+            response = await self._perform_request(uri_check, headers, post_body, site)
+        except asyncio.CancelledError:
+            self._logger.debug("Request cancelled for site: %s", site)
+            raise
+        except HttpError as e:
+            error_type = type(e).__name__
             self._logger.warning(
-                "Site '%s' is missing required keys: %s",
-                site_name,
-                missing_keys,
+                "%s for site: %s - %s",
+                error_type,
+                site,
+                e,
             )
             return WMNResult.from_error(
-                name=site_name,
-                category=site.get(SITE_KEY_CATEGORY, DEFAULT_UNKNOWN_VALUE),
                 username=username,
-                message=f"Site entry missing required keys: {missing_keys}",
-            )
-
-        name = site[SITE_KEY_NAME]
-        category = site[SITE_KEY_CATEGORY]
-        strip_bad_char = site.get(SITE_KEY_STRIP_BAD_CHAR, EMPTY_STRING)
-        if strip_bad_char:
-            clean_username = username.translate(
-                str.maketrans(dict.fromkeys(strip_bad_char))
-            )
-        else:
-            clean_username = username
-
-        uri_check_template = site[SITE_KEY_URI_CHECK]
-        uri_check = uri_check_template.replace(ACCOUNT_PLACEHOLDER, clean_username)
-        uri_pretty = site.get(SITE_KEY_URI_PRETTY, uri_check_template).replace(
-            ACCOUNT_PLACEHOLDER, clean_username
-        )
-
-        headers = site.get(SITE_KEY_HEADERS, {})
-        post_body = site.get(SITE_KEY_POST_BODY)
-        if post_body:
-            post_body = post_body.replace(ACCOUNT_PLACEHOLDER, clean_username)
-            self._logger.debug("Checking %s with POST request", uri_check)
-        else:
-            self._logger.debug("Checking %s with GET request", uri_check)
-
-        result: WMNResult | None = None
-        response: WMNResponse | None = None
-        try:
-            async with self._semaphore:
-                if post_body:
-                    response = await self._http.post(
-                        uri_check, headers=headers, data=post_body
-                    )
-                else:
-                    response = await self._http.get(uri_check, headers=headers)
-
-                self._logger.debug(
-                    "Response from %s: status=%d, elapsed=%.2fs",
-                    name,
-                    response.status_code,
-                    response.elapsed,
-                )
-        except asyncio.CancelledError:
-            self._logger.debug("Request cancelled")
-            raise
-        except HttpTimeoutError as e:
-            self._logger.warning("Request to '%s' timed out: %s", name, e)
-            result = WMNResult.from_error(
-                name=name,
-                category=category,
-                username=username,
+                message=f"{error_type}: {e}",
+                site=site,
                 url=uri_pretty,
-                message=f"Request timeout: {e}",
             )
-        except HttpSessionError as e:
-            self._logger.warning("Session error for '%s': %s", name, e)
-            result = WMNResult.from_error(
-                name=name,
-                category=category,
-                username=username,
-                url=uri_pretty,
-                message=f"Session error: {e}",
+        except (OSError, RuntimeError, ValueError, TypeError) as e:
+            self._logger.exception(
+                "Unexpected error during enumeration for site: %s",
+                site,
             )
-        except HttpError as e:
-            self._logger.warning("Network error for '%s': %s", name, e)
-            result = WMNResult.from_error(
-                name=name,
-                category=category,
+            return WMNResult.from_error(
                 username=username,
-                url=uri_pretty,
-                message=f"Network error: {e}",
-            )
-        except Exception as e:
-            self._logger.exception("Unexpected error during request for '%s'", name)
-            result = WMNResult.from_error(
-                name=name,
-                category=category,
-                username=username,
-                url=uri_pretty,
                 message=f"Unexpected error: {e}",
+                site=site,
+                url=uri_pretty,
             )
-
-        if result is not None:
-            return result
 
         result = WMNResult.from_response(
-            name=name,
-            category=category,
             username=username,
             url=uri_pretty,
-            response_code=response.status_code,
-            response_text=response.text,
-            elapsed=response.elapsed,
+            response=response,
+            site=site,
             mode=mode,
-            e_code=site[SITE_KEY_E_CODE],
-            e_string=site[SITE_KEY_E_STRING],
-            m_code=site[SITE_KEY_M_CODE],
-            m_string=site[SITE_KEY_M_STRING],
         )
 
         self._logger.debug(
-            "Check result for '%s': %s (HTTP %d)",
-            name,
+            "Check result for site: %s (HTTP %d) - %s",
             result.status.name,
             response.status_code,
+            site,
         )
 
         return result
 
-    @staticmethod
-    async def _execute_tasks(
-        coroutines: list[Awaitable[T]],
-        as_generator: bool,
-    ) -> list[T] | AsyncGenerator[T, None]:
-        """Execute tasks and return results as list or generator."""
-        if as_generator:
-
-            async def _generator() -> AsyncGenerator[T, None]:
-                tasks = [asyncio.create_task(coroutine) for coroutine in coroutines]
-                try:
-                    for task in asyncio.as_completed(tasks):
-                        yield await task
-                finally:
-                    for task in tasks:
-                        if not task.done():
-                            task.cancel()
-                    if tasks:
-                        await asyncio.gather(*tasks, return_exceptions=True)
-
-            return _generator()
-        return list(await asyncio.gather(*coroutines))
-
-    @overload
     async def enumerate_usernames(
         self,
         usernames: list[str],
@@ -532,42 +609,15 @@ class Naminter:
         include_categories: list[str] | None = None,
         exclude_categories: list[str] | None = None,
         mode: WMNMode = WMNMode.ALL,
-        as_generator: Literal[True] = ...,
-    ) -> AsyncGenerator[WMNResult, None]: ...
-
-    @overload
-    async def enumerate_usernames(
-        self,
-        usernames: list[str],
-        site_names: list[str] | None = None,
-        include_categories: list[str] | None = None,
-        exclude_categories: list[str] | None = None,
-        mode: WMNMode = WMNMode.ALL,
-        as_generator: Literal[False] = ...,
-    ) -> list[WMNResult]: ...
-
-    @_ensure_initialized
-    async def enumerate_usernames(
-        self,
-        usernames: list[str],
-        site_names: list[str] | None = None,
-        include_categories: list[str] | None = None,
-        exclude_categories: list[str] | None = None,
-        mode: WMNMode = WMNMode.ALL,
-        as_generator: bool = False,
-    ) -> list[WMNResult] | AsyncGenerator[WMNResult, None]:
+    ) -> AsyncGenerator[WMNResult, None]:
         """Enumerate one or multiple usernames across one or multiple sites.
 
-        This is the high-level method for running bulk username checks. It takes:
-        - one list of usernames, and
-        - a selection of sites (by name and/or category filters),
+        This is the high-level method for running bulk username checks. It takes one
+        list of usernames and a selection of sites (by name and/or category filters),
         then runs enumerate_site for every (site, username) pair.
 
-        The method can operate in two modes:
-        - "batch" mode (as_generator=False): returns a list of all WMNResult objects
-          once all checks are complete.
-        - "streaming" mode (as_generator=True): returns an async generator that yields
-          WMNResult objects one by one as they finish, without waiting for all tasks.
+        The method returns an async generator that yields WMNResult objects one by one
+        as they finish, without waiting for all tasks to complete.
 
         Args:
             usernames:
@@ -588,40 +638,37 @@ class Naminter:
                 skipped. This filter is also applied in addition to site_names and
                 include_categories.
             mode:
-                Detection mode forwarded to enumerate_site for each check:
-                - WMNMode.ALL: strict evaluation (all "found" indicators must match).
-                - WMNMode.ANY: relaxed evaluation (any "found" indicator can match).
-            as_generator:
-                Controls the shape of the returned value:
-                - If False (default), all checks are scheduled, awaited, and a full
-                  list[WMNResult] is returned when everything is done.
-                - If True, an AsyncGenerator[WMNResult, None] is returned instead.
-                  The caller can then `async for` over individual WMNResult objects
-                  as they become available.
+                Detection mode forwarded to enumerate_site for each check.
+                WMNMode.ALL uses strict evaluation where all "exists" indicators must
+                match, while WMNMode.ANY uses relaxed evaluation where any "exists"
+                indicator can match.
 
         Returns:
-            Union[list[WMNResult], AsyncGenerator[WMNResult, None]]:
-                - If as_generator is False:
-                    A flat list of WMNResult objects, one per (site, username) pair.
-                    The list order is not guaranteed to match submission order.
-                - If as_generator is True:
-                    An async generator that yields WMNResult objects one at a time
-                    as tasks complete. This allows streaming processing of results.
+            AsyncGenerator[WMNResult, None]:
+                An async generator that yields WMNResult objects one at a time
+                as tasks complete. This allows streaming processing of results.
+                The order is not guaranteed to match submission order.
 
         Raises:
-            WMNDataError:
-                If any requested site name in site_names does not exist in the
-                loaded WMN dataset. This validation is performed during site filtering
-                before any network requests are made.
-            WMNDataError / WMNValidationError:
-                May be raised earlier when preparing the dataset (via _ensure_ready),
-                before enumeration starts.
+            WMNUnknownSiteError: If any requested site name in site_names does not
+                exist in the loaded WMN dataset.
+            WMNUnknownCategoriesError: If include_categories or exclude_categories
+                contains unknown categories.
+            WMNArgumentError: If usernames list is empty.
         """
+        if not usernames:
+            msg = "At least one username must be provided"
+            raise WMNArgumentError(msg)
+
         sites = self._filter_sites(
             site_names,
             include_categories=include_categories,
             exclude_categories=exclude_categories,
         )
+
+        if not sites:
+            self._logger.info("No sites match the given filters, nothing to enumerate")
+            return
 
         self._logger.info(
             "Starting enumeration for %d username(s) on %d site(s)",
@@ -629,116 +676,54 @@ class Naminter:
             len(sites),
         )
 
-        coroutines = [
+        coroutines: list[Awaitable[WMNResult]] = [
             self.enumerate_site(site, username, mode)
             for site in sites
             for username in usernames
         ]
 
-        return await self._execute_tasks(coroutines, as_generator)
+        try:
+            async for result in execute_tasks(coroutines):
+                yield result
+        except asyncio.CancelledError:
+            self._logger.debug("Enumeration cancelled")
+            raise
 
-    @overload
-    async def validate_sites(
+    async def enumerate_test(
         self,
         site_names: list[str] | None = None,
         include_categories: list[str] | None = None,
         exclude_categories: list[str] | None = None,
         mode: WMNMode = WMNMode.ALL,
-        as_generator: Literal[True] = ...,
-    ) -> AsyncGenerator[WMNValidationResult, None]: ...
+    ) -> AsyncGenerator[WMNTestResult, None]:
+        """Test site detection rules using known usernames from the dataset.
 
-    @overload
-    async def validate_sites(
-        self,
-        site_names: list[str] | None = None,
-        include_categories: list[str] | None = None,
-        exclude_categories: list[str] | None = None,
-        mode: WMNMode = WMNMode.ALL,
-        as_generator: Literal[False] = ...,
-    ) -> list[WMNValidationResult]: ...
-
-    @_ensure_initialized
-    async def validate_sites(
-        self,
-        site_names: list[str] | None = None,
-        include_categories: list[str] | None = None,
-        exclude_categories: list[str] | None = None,
-        mode: WMNMode = WMNMode.ALL,
-        as_generator: bool = False,
-    ) -> list[WMNValidationResult] | AsyncGenerator[WMNValidationResult, None]:
-        """Validate site detection rules using known usernames from the dataset.
-
-        This method is intended for maintainers and for automated health checks of
-        the WMN dataset. Instead of testing arbitrary usernames, it:
-        - Selects a subset of sites (optionally filtered by site_names and
-          categories).
-        - For each selected site, reads its list of "known good" usernames
-          from the "known" field.
-        - For each (site, known_username) pair, calls enumerate_site.
-        - Aggregates all WMNResult objects into a single WMNValidationResult per site.
-
-        This allows you to confirm that:
-        - The configured detection rules ("e_code", "e_string", "m_code", "m_string")
-          still correctly identify accounts, and
-        - The site entries themselves are structurally valid and complete.
+        This method is intended for maintainers and automated health checks of
+        the WMN dataset. It selects sites (optionally filtered by names and
+        categories), tests each site using its "known" usernames, and yields
+        a WMNTestResult per site.
 
         Args:
             site_names:
-                Optional list of site names to validate. If None, all sites from the
-                dataset are considered (subject to category filters). If provided,
-                all names must exist in the dataset; unknown names lead to a
-                WMNDataError raised during site filtering.
+                Optional list of site names to test. If None, all sites are
+                tested (subject to category filters).
             include_categories:
-                Optional list of categories (values of the "cat" field) to include
-                during validation. Only sites whose category is in this list are
-                validated. This is combined with site_names if both are provided.
+                Optional list of categories to include. Only sites in these
+                categories are tested.
             exclude_categories:
-                Optional list of categories (values of the "cat" field) to exclude
-                from validation. Any site whose category is in this list is skipped.
-                This exclusion is applied after site_names and include_categories.
+                Optional list of categories to exclude from testing.
             mode:
-                Detection mode passed down to enumerate_site for each known username:
-                - WMNMode.ALL: strict evaluation (recommended for validation).
-                - WMNMode.ANY: relaxed evaluation (useful for exploratory checks).
-            as_generator:
-                Controls the return type:
-                - If False (default), returns a list[WMNValidationResult] after all
-                  sites have been validated.
-                - If True, returns an AsyncGenerator[WMNValidationResult, None] that
-                  yields one WMNValidationResult per site as soon as that site's
-                  validation has finished.
+                Detection mode for each test. WMNMode.ALL uses strict evaluation,
+                WMNMode.ANY uses relaxed evaluation.
 
-        Returns:
-            Union[list[WMNValidationResult], AsyncGenerator[WMNValidationResult, None]]:
-                - If as_generator is False:
-                    A list where each item is a WMNValidationResult describing one
-                    site and the WMNResult objects for all of its known usernames.
-                - If as_generator is True:
-                    An async generator that yields WMNValidationResult objects for
-                    each validated site in completion order.
-
-            Each WMNValidationResult includes:
-                - name: site name,
-                - category: site category (the value of the "cat" field),
-                - results: list[WMNResult] for each known username (may be empty),
-                - status: aggregate status derived from underlying WMNResult values
-                  (e.g. ERROR if any check failed),
-                - error: textual description if validation could not be performed
-                  for that site (e.g. missing required keys or unexpected error).
+        Yields:
+            WMNTestResult for each site in completion order, containing the
+            site name, category, list of WMNResult objects, aggregate status,
+            and error message if testing failed.
 
         Raises:
-            WMNDataError:
-                If any of the requested site_names does not exist in the dataset.
-            WMNDataError / WMNValidationError:
-                May be raised earlier from _ensure_ready if the dataset or schema
-                is invalid.
-
-        Site-level error handling:
-            - If a site is missing required keys needed for self-validation
-              (as defined by REQUIRED_KEYS_SELF_ENUM in code), a WMNValidationResult
-              is returned with `error` populated and `results` left empty.
-            - If an unexpected exception occurs when validating a site, it is caught
-              and converted into a WMNValidationResult with `error` set accordingly.
+            WMNUnknownSiteError: If site_names contains unknown sites.
+            WMNUnknownCategoriesError: If categories are unknown.
         """
         sites = self._filter_sites(
             site_names,
@@ -746,51 +731,42 @@ class Naminter:
             exclude_categories=exclude_categories,
         )
 
+        if not sites:
+            self._logger.info("No sites match the given filters, nothing to test")
+            return
+
         self._logger.info(
-            "Starting validation for %d site(s) (mode=%s)",
+            "Starting test for %d site(s) (mode=%s)",
             len(sites),
             mode,
         )
 
-        async def _enumerate_known(site: dict[str, Any]) -> WMNValidationResult:
-            """Helper function to validate a site with all its known users."""
-            site_name = site.get(SITE_KEY_NAME, DEFAULT_UNKNOWN_VALUE)
-            site_category = site.get(SITE_KEY_CATEGORY, DEFAULT_UNKNOWN_VALUE)
-
-            missing_keys = get_missing_keys(site, REQUIRED_KEYS_SELF_ENUM)
-            if missing_keys:
-                self._logger.warning(
-                    "Site '%s' is missing required keys for validation: %s",
-                    site_name,
-                    missing_keys,
-                )
-                return WMNValidationResult(
-                    name=site_name,
-                    category=site_category,
-                    error=f"Site data missing required keys: {missing_keys}",
-                )
-
+        async def test_site(site: WMNSite) -> WMNTestResult:
+            """Test a single site using its known usernames."""
             known = site[SITE_KEY_KNOWN]
             self._logger.debug(
-                "Validating '%s' with %d known user(s)",
-                site_name,
+                "Testing site with %d known user(s): %s",
                 len(known),
+                site,
             )
 
+            coroutines: list[Awaitable[WMNResult]] = [
+                self.enumerate_site(site, username, mode) for username in known
+            ]
             try:
-                results = await asyncio.gather(
-                    *(self.enumerate_site(site, username, mode) for username in known)
-                )
-                return WMNValidationResult(
-                    name=site_name, category=site_category, results=results
-                )
-            except Exception as e:
-                self._logger.exception("Validation failed for site='%s'", site_name)
-                return WMNValidationResult(
-                    name=site_name,
-                    category=site_category,
-                    error=f"Unexpected error during site validation: {e}",
-                )
+                results: list[WMNResult] = [
+                    result async for result in execute_tasks(coroutines)
+                ]
+            except asyncio.CancelledError:
+                self._logger.debug("Test cancelled for site: %s", site)
+                raise
+            return WMNTestResult.from_site(site, results=results)
 
-        coroutines = [_enumerate_known(site) for site in sites]
-        return await self._execute_tasks(coroutines, as_generator)
+        coroutines: list[Awaitable[WMNTestResult]] = [test_site(site) for site in sites]
+
+        try:
+            async for result in execute_tasks(coroutines):
+                yield result
+        except asyncio.CancelledError:
+            self._logger.debug("Test enumeration cancelled")
+            raise

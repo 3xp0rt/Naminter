@@ -1,4 +1,4 @@
-from typing import Final
+from typing import Final, Literal
 
 # Remote Data Source Configuration
 WMN_REMOTE_URL: Final[str] = (
@@ -54,27 +54,13 @@ SITE_KEY_M_STRING: Final[str] = "m_string"
 SITE_KEY_M_CODE: Final[str] = "m_code"
 SITE_KEY_KNOWN: Final[str] = "known"
 
-# Validation Requirements
-REQUIRED_KEYS_ENUMERATE: Final[tuple[str, ...]] = (
-    SITE_KEY_NAME,
-    SITE_KEY_URI_CHECK,
-    SITE_KEY_E_CODE,
-    SITE_KEY_E_STRING,
-    SITE_KEY_M_STRING,
-    SITE_KEY_M_CODE,
-    SITE_KEY_CATEGORY,
-)
-
-REQUIRED_KEYS_SELF_ENUM: Final[tuple[str, ...]] = (
-    SITE_KEY_NAME,
-    SITE_KEY_CATEGORY,
-    SITE_KEY_KNOWN,
-)
-
 # JSON Configuration
 DEFAULT_JSON_INDENT: Final[int] = 2
-DEFAULT_JSON_ENCODING: Final[str] = "utf-8"
 DEFAULT_JSON_ENSURE_ASCII: Final[bool] = False
+
+# JSON Schema Keys
+SCHEMA_KEY_PROPERTIES: Final[str] = "properties"
+SCHEMA_KEY_ITEMS: Final[str] = "items"
 
 # File Operations
 DEFAULT_FILE_ENCODING: Final[str] = "utf-8"
@@ -82,3 +68,14 @@ DEFAULT_FILE_ENCODING: Final[str] = "utf-8"
 # Default Values and String Processing
 DEFAULT_UNKNOWN_VALUE: Final[str] = "unknown"
 EMPTY_STRING: Final[str] = ""
+
+# Character constants
+ASCII_CONTROL_CHAR_THRESHOLD: Final[int] = 32
+
+# HTTP Status codes
+HTTP_STATUS_OK: Final[int] = 200
+
+# HTTP Methods
+HTTP_METHOD_GET: Final[str] = "GET"
+HTTP_METHOD_POST: Final[str] = "POST"
+HttpMethod = Literal["GET", "POST"]
