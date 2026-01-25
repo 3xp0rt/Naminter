@@ -116,20 +116,25 @@ class WMNSchemaError(WMNDataError):
 
 
 class WMNValidationError(WMNDataError):
-    """Raised when WMN dataset does not conform to the provided JSON Schema.
+    """Raised when WMN dataset validation fails.
 
     Attributes:
-        errors: Structured list of validation errors to display/inspect.
+        schema_errors: List of JSON schema validation errors.
+        dataset_errors: List of custom dataset validation errors
+            (license, authors, categories, duplicates, and site configurations).
     """
 
     def __init__(
         self,
         message: str,
-        errors: list[Any] | None = None,
+        schema_errors: list[Any] | None = None,
+        dataset_errors: list[Any] | None = None,
         cause: Exception | None = None,
     ) -> None:
         super().__init__(message, cause)
-        self.errors: list[Any] = errors or []
+        self.schema_errors: list[Any] = schema_errors or []
+        self.dataset_errors: list[Any] = dataset_errors or []
+
 
 
 class WMNArgumentError(WMNDataError):

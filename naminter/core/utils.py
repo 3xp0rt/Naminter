@@ -1,22 +1,8 @@
 import asyncio
 from collections.abc import AsyncGenerator, Awaitable, Sequence
-from typing import Any, TypeVar
+from typing import TypeVar
 
 T = TypeVar("T")
-
-
-def get_missing_keys(data: dict[str, Any], keys: Sequence[str]) -> list[str]:
-    """Return a list of required keys missing from a dictionary.
-
-    Args:
-        data: Dictionary to check for missing keys.
-        keys: Sequence of keys that should be present.
-
-    Returns:
-        List of keys that are missing from the dictionary. Empty list if
-        all keys are present.
-    """
-    return [key for key in keys if key not in data]
 
 
 async def execute_tasks(

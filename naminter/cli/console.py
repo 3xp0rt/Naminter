@@ -53,7 +53,7 @@ def _get_status_symbol(status: WMNStatus) -> str:
     Returns:
         Symbol character for the status.
     """
-    return STATUS_SYMBOLS.get(status.value, "?")
+    return STATUS_SYMBOLS.get(status, "?")
 
 
 def _get_status_style(status: WMNStatus) -> Style:
@@ -65,7 +65,7 @@ def _get_status_style(status: WMNStatus) -> Style:
     Returns:
         Rich Style object with appropriate color and formatting.
     """
-    style_str = STATUS_STYLES.get(status.value, "white")
+    style_str = STATUS_STYLES.get(status, "white")
     return Style.parse(style_str)
 
 
@@ -277,16 +277,24 @@ def display_success(message: str) -> None:
     _display_message(message, THEME.success, "+", "SUCCESS")
 
 
-def display_validation_errors(errors: list[Any]) -> None:
+def display_errors(errors: list[Any], title: str | None = None) -> None:
     """Display validation errors in a formatted tree structure.
 
     Args:
         errors: List of validation errors to display.
+        title: Optional title to display above the errors.
     """
     if not errors:
         return
 
-    root_label = Text()
+    if title:
+        root_label = Text()
+        root_label.append(f"{title} ", style=THEME.error)
+        root_label.append(f"({len(errors)})", style=THEME.muted)
+    else:
+        root_label = Text()
+    console.print()
+    
     tree = Tree(root_label, guide_style=THEME.muted, expanded=True)
 
     for error in errors:

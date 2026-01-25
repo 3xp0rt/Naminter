@@ -27,11 +27,11 @@ LOGGING_FORMAT: Final[str] = "%(asctime)s - %(name)s - %(levelname)s - %(message
 ACCOUNT_PLACEHOLDER: Final[str] = "{account}"
 
 # WMN Dataset Structure Keys
-WMN_KEY_SITES: Final[str] = "sites"
-WMN_KEY_CATEGORIES: Final[str] = "categories"
-WMN_KEY_AUTHORS: Final[str] = "authors"
-WMN_KEY_LICENSE: Final[str] = "license"
-WMN_KEY_NAME: Final[str] = "name"
+WMN_KEY_SITES: Final[Literal["sites"]] = "sites"
+WMN_KEY_CATEGORIES: Final[Literal["categories"]] = "categories"
+WMN_KEY_AUTHORS: Final[Literal["authors"]] = "authors"
+WMN_KEY_LICENSE: Final[Literal["license"]] = "license"
+WMN_KEY_NAME: Final[Literal["name"]] = "name"
 
 WMN_LIST_FIELDS: Final[tuple[str, ...]] = (
     WMN_KEY_SITES,
@@ -41,18 +41,18 @@ WMN_LIST_FIELDS: Final[tuple[str, ...]] = (
 )
 
 # Site Object Structure Keys
-SITE_KEY_NAME: Final[str] = "name"
-SITE_KEY_CATEGORY: Final[str] = "cat"
-SITE_KEY_URI_CHECK: Final[str] = "uri_check"
-SITE_KEY_URI_PRETTY: Final[str] = "uri_pretty"
-SITE_KEY_HEADERS: Final[str] = "headers"
-SITE_KEY_POST_BODY: Final[str] = "post_body"
-SITE_KEY_STRIP_BAD_CHAR: Final[str] = "strip_bad_char"
-SITE_KEY_E_CODE: Final[str] = "e_code"
-SITE_KEY_E_STRING: Final[str] = "e_string"
-SITE_KEY_M_STRING: Final[str] = "m_string"
-SITE_KEY_M_CODE: Final[str] = "m_code"
-SITE_KEY_KNOWN: Final[str] = "known"
+SITE_KEY_NAME: Final[Literal["name"]] = "name"
+SITE_KEY_CATEGORY: Final[Literal["cat"]] = "cat"
+SITE_KEY_URI_CHECK: Final[Literal["uri_check"]] = "uri_check"
+SITE_KEY_URI_PRETTY: Final[Literal["uri_pretty"]] = "uri_pretty"
+SITE_KEY_HEADERS: Final[Literal["headers"]] = "headers"
+SITE_KEY_POST_BODY: Final[Literal["post_body"]] = "post_body"
+SITE_KEY_STRIP_BAD_CHAR: Final[Literal["strip_bad_char"]] = "strip_bad_char"
+SITE_KEY_E_CODE: Final[Literal["e_code"]] = "e_code"
+SITE_KEY_E_STRING: Final[Literal["e_string"]] = "e_string"
+SITE_KEY_M_STRING: Final[Literal["m_string"]] = "m_string"
+SITE_KEY_M_CODE: Final[Literal["m_code"]] = "m_code"
+SITE_KEY_KNOWN: Final[Literal["known"]] = "known"
 
 # JSON Configuration
 DEFAULT_JSON_INDENT: Final[int] = 2
@@ -69,13 +69,11 @@ DEFAULT_FILE_ENCODING: Final[str] = "utf-8"
 DEFAULT_UNKNOWN_VALUE: Final[str] = "unknown"
 EMPTY_STRING: Final[str] = ""
 
-# Character constants
-ASCII_CONTROL_CHAR_THRESHOLD: Final[int] = 32
-
-# HTTP Status codes
-HTTP_STATUS_OK: Final[int] = 200
-
 # HTTP Methods
-HTTP_METHOD_GET: Final[str] = "GET"
-HTTP_METHOD_POST: Final[str] = "POST"
 HttpMethod = Literal["GET", "POST"]
+HTTP_METHOD_GET: Final[HttpMethod] = "GET"
+HTTP_METHOD_POST: Final[HttpMethod] = "POST"
+
+# HTTP Status Code Ranges
+HTTP_STATUS_CODE_MIN: Final[int] = 100
+HTTP_STATUS_CODE_MAX: Final[int] = 599

@@ -1,5 +1,7 @@
 from typing import Final
 
+from naminter.core.models import WMNStatus
+
 # Constants for file operations
 RESPONSE_FILE_DATE_FORMAT: Final[str] = "%Y%m%d_%H%M%S"
 RESPONSE_FILE_EXTENSION: Final[str] = ".html"
@@ -19,30 +21,29 @@ EXIT_CODE_INTERRUPTED: Final[int] = 130
 MAX_FILENAME_LENGTH: Final[int] = 200
 
 # Status Display Configuration (for CLI/UI)
-# Symbol keys match WMNStatus enum values
-STATUS_SYMBOLS: Final[dict[str, str]] = {
-    "exists": "+",
-    "partial": "~",
-    "conflicting": "*",
-    "unknown": "?",
-    "missing": "-",
-    "not_valid": "X",
-    "error": "!",
+# Symbol keys use WMNStatus enum members
+STATUS_SYMBOLS: Final[dict[WMNStatus, str]] = {
+    WMNStatus.EXISTS: "+",
+    WMNStatus.PARTIAL_EXISTS: "~",
+    WMNStatus.PARTIAL_MISSING: "~",
+    WMNStatus.CONFLICTING: "*",
+    WMNStatus.UNKNOWN: "?",
+    WMNStatus.MISSING: "-",
+    WMNStatus.NOT_VALID: "X",
+    WMNStatus.ERROR: "!",
 }
 
-# Style keys match WMNStatus enum values
-STATUS_STYLES: Final[dict[str, str]] = {
-    "exists": "bright_green bold",
-    "partial": "bright_yellow",
-    "conflicting": "bright_yellow bold",
-    "unknown": "bright_yellow",
-    "missing": "bright_red",
-    "not_valid": "bright_red",
-    "error": "bright_red bold",
+# Style keys use WMNStatus enum members
+STATUS_STYLES: Final[dict[WMNStatus, str]] = {
+    WMNStatus.EXISTS: "bright_green bold",
+    WMNStatus.PARTIAL_EXISTS: "bright_yellow",
+    WMNStatus.PARTIAL_MISSING: "bright_yellow",
+    WMNStatus.CONFLICTING: "bright_yellow bold",
+    WMNStatus.UNKNOWN: "bright_yellow",
+    WMNStatus.MISSING: "bright_red",
+    WMNStatus.NOT_VALID: "bright_red",
+    WMNStatus.ERROR: "bright_red bold",
 }
 
 # Export field ordering
 HTML_FIELDS_ORDER: Final[list[str]] = ["name", "url", "elapsed"]
-
-# Option parsing
-OPTION_AUTO_VALUE: Final[str] = "__AUTO__"

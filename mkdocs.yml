@@ -132,3 +132,8 @@ plugins:
 # extra_javascript:
 #   - javascripts/extra.js
 
+# Watch additional directories for live reload
+watch:
+  - docs
+  - naminter
+

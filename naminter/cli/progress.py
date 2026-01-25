@@ -1,3 +1,4 @@
+from collections import defaultdict
 import time
 from types import TracebackType
 
@@ -36,7 +37,7 @@ class ProgressBar:
         self.total_sites: int = 0
         self.results_count: int = 0
         self.start_time: float | None = None
-        self.status_counts: dict[WMNStatus, int] = dict.fromkeys(WMNStatus, 0)
+        self.status_counts: dict[WMNStatus, int] = defaultdict(int)
 
     def add_result(self, result: WMNResult) -> None:
         """Update counters with a new result and refresh progress display."""
@@ -52,7 +53,8 @@ class ProgressBar:
         elapsed = time.time() - self.start_time if self.start_time else 0.0
 
         exists = self.status_counts[WMNStatus.EXISTS]
-        partial = self.status_counts[WMNStatus.PARTIAL]
+        partial_exists = self.status_counts[WMNStatus.PARTIAL_EXISTS]
+        partial_missing = self.status_counts[WMNStatus.PARTIAL_MISSING]
         conflicting = self.status_counts[WMNStatus.CONFLICTING]
         unknown = self.status_counts[WMNStatus.UNKNOWN]
         missing = self.status_counts[WMNStatus.MISSING]
@@ -64,29 +66,33 @@ class ProgressBar:
 
         sections = [
             f"[{THEME.primary}]{rate:.1f} req/s[/]",
-            f"[{THEME.success}]{STATUS_SYMBOLS['exists']} {exists}[/]",
-            f"[{THEME.error}]{STATUS_SYMBOLS['missing']} {missing}[/]",
+            f"[{THEME.success}]{STATUS_SYMBOLS[WMNStatus.EXISTS]} {exists}[/]",
+            f"[{THEME.error}]{STATUS_SYMBOLS[WMNStatus.MISSING]} {missing}[/]",
         ]
 
         if unknown > 0:
             sections.append(
-                f"[{THEME.warning}]{STATUS_SYMBOLS['unknown']} {unknown}[/]",
+                f"[{THEME.warning}]{STATUS_SYMBOLS[WMNStatus.UNKNOWN]} {unknown}[/]",
             )
-        if partial > 0:
+        if partial_exists > 0:
             sections.append(
-                f"[{THEME.warning}]{STATUS_SYMBOLS['partial']} {partial}[/]",
+                f"[{THEME.warning}]{STATUS_SYMBOLS[WMNStatus.PARTIAL_EXISTS]} ~E {partial_exists}[/]",
+            )
+        if partial_missing > 0:
+            sections.append(
+                f"[{THEME.warning}]{STATUS_SYMBOLS[WMNStatus.PARTIAL_MISSING]} ~M {partial_missing}[/]",
             )
         if conflicting > 0:
             sections.append(
-                f"[{THEME.warning}]{STATUS_SYMBOLS['conflicting']} {conflicting}[/]",
+                f"[{THEME.warning}]{STATUS_SYMBOLS[WMNStatus.CONFLICTING]} {conflicting}[/]",
             )
         if errors > 0:
             sections.append(
-                f"[{THEME.error}]{STATUS_SYMBOLS['error']} {errors}[/]",
+                f"[{THEME.error}]{STATUS_SYMBOLS[WMNStatus.ERROR]} {errors}[/]",
             )
         if not_valid > 0:
             sections.append(
-                f"[{THEME.warning}]{STATUS_SYMBOLS['not_valid']} {not_valid}[/]",
+                f"[{THEME.warning}]{STATUS_SYMBOLS[WMNStatus.NOT_VALID]} {not_valid}[/]",
             )
 
         sections.append(f"[{THEME.primary}]{self.results_count}/{self.total_sites}[/]")

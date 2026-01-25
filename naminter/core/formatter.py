@@ -1,16 +1,15 @@
 from collections.abc import Mapping, Sequence
-import json
-from typing import Any
+import orjson
+from typing import Any, cast
 
 from naminter.core.constants import (
-    DEFAULT_JSON_ENSURE_ASCII,
-    DEFAULT_JSON_INDENT,
     SCHEMA_KEY_ITEMS,
     SCHEMA_KEY_PROPERTIES,
     SITE_KEY_HEADERS,
     SITE_KEY_NAME,
     WMN_KEY_AUTHORS,
     WMN_KEY_CATEGORIES,
+    WMN_KEY_LICENSE,
     WMN_KEY_SITES,
 )
 from naminter.core.exceptions import WMNFormatError, WMNSchemaError
@@ -46,7 +45,8 @@ class WMNFormatter:
                     f"got {type(site).__name__} at index {i}"
                 )
                 raise WMNFormatError(msg)
-            site_dicts.append(dict(site))
+            site_cast: Mapping[str, Any] = cast("Mapping[str, Any]", site)
+            site_dicts.append(dict(site_cast))
 
         return sorted(
             site_dicts,
@@ -68,9 +68,10 @@ class WMNFormatter:
                     f"got {type(headers).__name__}"
                 )
                 raise WMNFormatError(msg)
+            headers_cast: dict[str, Any] = cast("dict[str, Any]", headers)
             result[SITE_KEY_HEADERS] = dict(
                 sorted(
-                    headers.items(),
+                    headers_cast.items(),
                     key=lambda item: str(item[0]).casefold(),
                 ),
             )
@@ -97,12 +98,8 @@ class WMNFormatter:
     def _dumps(obj: object, *, what: str) -> str:
         """Serialize object to JSON string with consistent error handling."""
         try:
-            return json.dumps(
-                obj,
-                indent=DEFAULT_JSON_INDENT,
-                ensure_ascii=DEFAULT_JSON_ENSURE_ASCII,
-            )
-        except (TypeError, ValueError, RecursionError) as error:
+            return orjson.dumps(obj, option=orjson.OPT_INDENT_2).decode("utf-8")
+        except (TypeError, ValueError, RecursionError, orjson.JSONEncodeError) as error:
             msg = f"{what} is not JSON-serializable: {error}"
             raise WMNFormatError(msg) from error
 
@@ -126,16 +123,17 @@ class WMNFormatter:
         formatted_categories = self._format_string_array(data, WMN_KEY_CATEGORIES)
         formatted_sites = self._format_sites(data)
 
-        excluded_keys = {WMN_KEY_AUTHORS, WMN_KEY_CATEGORIES, WMN_KEY_SITES}
-        other_keys = {
-            key: value for key, value in data.items() if key not in excluded_keys
-        }
+        allowed_keys = {WMN_KEY_AUTHORS, WMN_KEY_CATEGORIES, WMN_KEY_SITES, WMN_KEY_LICENSE}
+        unknown_keys = set(data.keys()) - allowed_keys
+        if unknown_keys:
+            msg = f"Unknown keys found in dataset: {sorted(unknown_keys)}"
+            raise WMNFormatError(msg)
 
-        formatted_data = {
+        formatted_data: dict[str, Any] = {
+            WMN_KEY_LICENSE: data[WMN_KEY_LICENSE],
             WMN_KEY_AUTHORS: formatted_authors,
             WMN_KEY_CATEGORIES: formatted_categories,
             WMN_KEY_SITES: formatted_sites,
-            **other_keys,
         }
         return self._dumps(formatted_data, what="Data")
 
@@ -169,7 +167,8 @@ class WMNFormatter:
             )
             raise WMNSchemaError(msg)
 
-        self._site_key_order = list(site_schema.keys())
+        site_schema_cast: dict[str, Any] = cast("dict[str, Any]", site_schema)
+        self._site_key_order = list(site_schema_cast.keys())
         self._site_key_order_set = set(self._site_key_order)
         return self._site_key_order
 
@@ -185,14 +184,17 @@ class WMNFormatter:
         if not array_data:
             msg = f"'{key}' must be a non-empty list"
             raise WMNFormatError(msg)
-        for item in array_data:
+
+        array_data_list: list[Any] = cast("list[Any]", array_data)
+        for item in array_data_list:
             if not isinstance(item, str):
                 msg = f"'{key}' must contain only strings, got {type(item).__name__}"
                 raise WMNFormatError(msg)
             if not item.strip():
                 msg = f"'{key}' must contain non-empty strings"
                 raise WMNFormatError(msg)
-        return self._sort_array_alphabetically(array_data)
+        array_data_cast: list[str] = cast("list[str]", array_data)
+        return self._sort_array_alphabetically(array_data_cast)
 
     def _format_site(
         self,
@@ -210,6 +212,7 @@ class WMNFormatter:
             msg = f"'{WMN_KEY_SITES}' must be a list, got {type(sites).__name__}"
             raise WMNFormatError(msg)
 
-        sorted_sites = self._sort_sites_by_name(sites)
+        sites_cast: Sequence[Any] = cast("Sequence[Any]", sites)
+        sorted_sites = self._sort_sites_by_name(sites_cast)
         key_order = self._get_site_key_order()
         return [self._format_site(site_data, key_order) for site_data in sorted_sites]

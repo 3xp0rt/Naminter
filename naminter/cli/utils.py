@@ -1,15 +1,15 @@
 import asyncio
-import json
+import orjson
 from pathlib import Path
 from typing import Any
 import webbrowser
 
 import aiofiles
+from pathvalidate import sanitize_filename
 
 from naminter.cli.constants import (
     DEFAULT_UNNAMED_VALUE,
     MAX_FILENAME_LENGTH,
-    OPTION_AUTO_VALUE,
     RESPONSE_FILE_DATE_FORMAT,
     RESPONSE_FILE_EXTENSION,
 )
@@ -19,75 +19,13 @@ from naminter.cli.exceptions import (
     NetworkError,
     ValidationError,
 )
-from naminter.core.constants import (
-    ASCII_CONTROL_CHAR_THRESHOLD,
-    DEFAULT_FILE_ENCODING,
-    EMPTY_STRING,
-    HTTP_STATUS_OK,
-)
+from naminter.core.constants import DEFAULT_FILE_ENCODING
 from naminter.core.exceptions import HttpError
 from naminter.core.models import WMNResult
 from naminter.core.network import BaseSession
 
 
-# Option parsing utilities
-def parse_option_path(option_value: str | None) -> str | None:
-    """Parse export/response option value, returning None for auto or unset.
-
-    Args:
-        option_value: The option value to parse. Can be None, OPTION_AUTO_VALUE, or
-            a path string.
-
-    Returns:
-        None if the option is unset or set to auto mode, otherwise the path string.
-    """
-    if option_value in {None, OPTION_AUTO_VALUE}:
-        return None
-    return option_value
-
-
 # Filename utilities
-def sanitize_filename(filename: str) -> str | None:
-    """Sanitize filename for cross-platform compatibility.
-
-    Removes or replaces invalid characters that are not allowed in filenames
-    on various operating systems (Windows, macOS, Linux).
-
-    Args:
-        filename: The filename to sanitize.
-
-    Returns:
-        A sanitized filename safe for all platforms, or None if invalid.
-
-    Raises:
-        ValidationError: If filename cannot be converted to string.
-    """
-    if not filename:
-        return None
-
-    try:
-        filename_str = str(filename).strip()
-    except (TypeError, ValueError) as e:
-        msg = f"Failed to convert filename to string: {e}"
-        raise ValidationError(msg) from e
-
-    if not filename_str:
-        return None
-
-    invalid_chars = '<>:"|?*\\/\0'
-    translation_table = str.maketrans(invalid_chars, "_" * len(invalid_chars))
-    sanitized = EMPTY_STRING.join(
-        "_" if ord(c) < ASCII_CONTROL_CHAR_THRESHOLD else c
-        for c in filename_str.translate(translation_table)
-    )
-    sanitized = sanitized.strip(" .")
-
-    if len(sanitized) > MAX_FILENAME_LENGTH:
-        sanitized = sanitized[:MAX_FILENAME_LENGTH].rstrip(" .")
-
-    return sanitized or None
-
-
 def get_response_filename(result: WMNResult) -> str:
     """Generate a sanitized filename for saving response data.
 
@@ -101,8 +39,18 @@ def get_response_filename(result: WMNResult) -> str:
         ValidationError: If WMNResult is missing required attributes.
     """
     try:
-        safe_site_name = sanitize_filename(result.name) or DEFAULT_UNNAMED_VALUE
-        safe_username = sanitize_filename(result.username) or DEFAULT_UNNAMED_VALUE
+        safe_site_name = (
+            sanitize_filename(
+                str(result.name or "").strip(), max_len=MAX_FILENAME_LENGTH
+            )
+            or DEFAULT_UNNAMED_VALUE
+        )
+        safe_username = (
+            sanitize_filename(
+                str(result.username or "").strip(), max_len=MAX_FILENAME_LENGTH
+            )
+            or DEFAULT_UNNAMED_VALUE
+        )
         status_str = result.status.value
         created_at_str = result.created_at.strftime(RESPONSE_FILE_DATE_FORMAT)
         status_code = result.status_code
@@ -113,7 +61,10 @@ def get_response_filename(result: WMNResult) -> str:
     base_name = (
         f"{status_str}_{status_code}_{safe_site_name}_{safe_username}_{created_at_str}"
     )
-    safe_base_name = sanitize_filename(base_name) or DEFAULT_UNNAMED_VALUE
+    safe_base_name = (
+        sanitize_filename(base_name, max_len=MAX_FILENAME_LENGTH)
+        or DEFAULT_UNNAMED_VALUE
+    )
     return f"{safe_base_name}{RESPONSE_FILE_EXTENSION}"
 
 
@@ -175,13 +126,10 @@ async def read_json(path: str | Path) -> dict[str, Any]:
     """
     content = await read_file(path)
     try:
-        return json.loads(content)
-    except json.JSONDecodeError as e:
+        return orjson.loads(content)
+    except orjson.JSONDecodeError as e:
         path_obj = Path(path)
-        msg = (
-            f"Invalid JSON in file {path_obj} at line {e.lineno}, "
-            f"column {e.colno}: {e.msg}"
-        )
+        msg = f"Invalid JSON in file {path_obj} at position {e.pos}: {e.msg}"
         raise FileError(msg) from e
 
 
@@ -204,6 +152,9 @@ async def write_file(file_path: str | Path, data: str | bytes) -> None:
 
     try:
         path_obj.parent.mkdir(parents=True, exist_ok=True)
+    except FileExistsError as e:
+        msg = f"Cannot create directory, file exists at path: {path_obj.parent}"
+        raise FileError(msg) from e
     except PermissionError as e:
         msg = f"Permission denied creating directory for {path_obj}"
         raise FileError(msg) from e
@@ -212,10 +163,12 @@ async def write_file(file_path: str | Path, data: str | bytes) -> None:
         raise FileError(msg) from e
 
     try:
-        mode = "wb" if isinstance(data, bytes) else "w"
-        encoding = None if isinstance(data, bytes) else DEFAULT_FILE_ENCODING
-        async with aiofiles.open(path_obj, mode=mode, encoding=encoding) as f:
-            await f.write(data)
+        if isinstance(data, bytes):
+            async with aiofiles.open(path_obj, mode="wb") as f:
+                await f.write(data)
+        else:
+            async with aiofiles.open(path_obj, mode="w", encoding=DEFAULT_FILE_ENCODING) as f:
+                await f.write(data)
     except PermissionError as e:
         msg = f"Permission denied writing to {path_obj}"
         raise FileError(msg) from e
@@ -228,7 +181,7 @@ async def write_file(file_path: str | Path, data: str | bytes) -> None:
 
 
 # Network operations
-async def fetch_json(http_client: BaseSession, url: str) -> dict[str, Any]:
+async def fetch_json(http_client: BaseSession, url: str) -> dict[str, Any] | list[Any]:
     """Fetch and parse JSON from a URL.
 
     Args:
@@ -236,7 +189,7 @@ async def fetch_json(http_client: BaseSession, url: str) -> dict[str, Any]:
         url: URL to fetch JSON from.
 
     Returns:
-        Parsed JSON data as dictionary.
+        Parsed JSON data as dictionary or list.
 
     Raises:
         ValidationError: If http_client or url is missing or invalid.
@@ -253,45 +206,47 @@ async def fetch_json(http_client: BaseSession, url: str) -> dict[str, Any]:
         msg = f"Network error fetching {url_stripped}: {e}"
         raise NetworkError(msg) from e
 
-    if response.status_code != HTTP_STATUS_OK:
-        msg = f"Failed to fetch from {url_stripped}: HTTP {response.status_code}"
-        raise NetworkError(msg)
-
     if not response.text or not response.text.strip():
         msg = f"Empty response from {url_stripped}"
         raise NetworkError(msg)
 
     try:
-        return response.json()
-    except (ValueError, json.JSONDecodeError) as e:
+        result = response.json()
+        if not isinstance(result, (dict, list)):
+            msg = f"Unexpected JSON type from {url_stripped}: expected dict or list"
+            raise NetworkError(msg)
+        return result
+    except (ValueError, orjson.JSONDecodeError) as e:
         msg = f"Failed to parse JSON from {url_stripped}: {e}"
         raise NetworkError(msg) from e
 
 
 # Browser operations
-async def open_url(url: str) -> None:
+async def open_url(url: str | Path) -> None:
     """Open a URL in the browser with error handling.
 
     Args:
-        url: URL to open in the default browser.
+        url: URL string or Path to open in the default browser. Paths are converted
+            to file URIs automatically.
 
     Raises:
         ValidationError: If url is missing or invalid.
         BrowserError: For any issue with the browser operation.
     """
-    url_stripped = url.strip() if url else ""
-    if not url_stripped:
+    if isinstance(url, Path):
+        url_str = url.resolve().as_uri()
+    else:
+        url_str = url.strip() if url else ""
+
+    if not url_str:
         msg = "URL is required and cannot be empty"
         raise ValidationError(msg)
 
     try:
-        await asyncio.to_thread(webbrowser.open, url_stripped)
+        await asyncio.to_thread(webbrowser.open, url_str)
     except webbrowser.Error as e:
-        msg = f"Browser error opening {url_stripped}: {e}"
+        msg = f"Browser error opening {url_str}: {e}"
         raise BrowserError(msg) from e
     except OSError as e:
-        msg = f"OS error opening browser for {url_stripped}: {e}"
-        raise BrowserError(msg) from e
-    except Exception as e:
-        msg = f"Unexpected error opening browser for {url_stripped}: {e}"
+        msg = f"OS error opening browser for {url_str}: {e}"
         raise BrowserError(msg) from e

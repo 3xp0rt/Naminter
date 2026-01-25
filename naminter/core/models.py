@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum, auto
-import json
+import orjson
 from typing import Any, NotRequired, TypedDict
 
 from naminter.core.constants import (
@@ -26,13 +26,14 @@ class WMNMode(StrEnum):
 class WMNStatus(StrEnum):
     """Status of username search results."""
 
-    ERROR = auto()
-    NOT_VALID = auto()
-    CONFLICTING = auto()
-    PARTIAL = auto()
     EXISTS = auto()
     MISSING = auto()
+    PARTIAL_EXISTS = auto()
+    PARTIAL_MISSING = auto()
+    CONFLICTING = auto()
     UNKNOWN = auto()
+    NOT_VALID = auto()
+    ERROR = auto()
 
 
 class WMNSite(TypedDict):
@@ -142,34 +143,13 @@ class WMNResult:
             WMNResult with ERROR status.
         """
         return cls(
-            name=site.get("name", "unknown"),
-            category=site.get("cat", "unknown"),
+            name=site.get("name", DEFAULT_UNKNOWN_VALUE),
+            category=site.get("cat", DEFAULT_UNKNOWN_VALUE),
             username=username,
             url=url,
             status=WMNStatus.ERROR,
             error=message,
         )
-
-    @staticmethod
-    def _matches_any(
-        status_code: int,
-        text: str,
-        check_code: int,
-        check_string: str,
-    ) -> bool:
-        """Check if response matches criteria using OR logic (any match is
-        sufficient)."""
-        return status_code == check_code or check_string in text
-
-    @staticmethod
-    def _matches_all(
-        status_code: int,
-        text: str,
-        check_code: int,
-        check_string: str,
-    ) -> bool:
-        """Check if response matches criteria using AND logic (all must match)."""
-        return status_code == check_code and check_string in text
 
     @staticmethod
     def _determine_status(
@@ -183,19 +163,22 @@ class WMNResult:
 
         Priority order:
         1. CONFLICTING - if both exists and missing conditions are True
-        2. PARTIAL - if partial match detected (only code OR only text matched)
-        3. EXISTS - if only exists condition is True
-        4. MISSING - if only missing condition is True
-        5. UNKNOWN - if neither condition is True
+        2. EXISTS - if exists condition is True
+        3. MISSING - if missing condition is True
+        4. PARTIAL_EXISTS - if only code OR text matched for exists
+        5. PARTIAL_MISSING - if only code OR text matched for missing
+        6. UNKNOWN - if no condition matched
         """
         if condition_exists and condition_missing:
             return WMNStatus.CONFLICTING
-        if partial_exists or partial_missing:
-            return WMNStatus.PARTIAL
         if condition_exists:
             return WMNStatus.EXISTS
         if condition_missing:
             return WMNStatus.MISSING
+        if partial_exists:
+            return WMNStatus.PARTIAL_EXISTS
+        if partial_missing:
+            return WMNStatus.PARTIAL_MISSING
         return WMNStatus.UNKNOWN
 
     @classmethod
@@ -207,6 +190,7 @@ class WMNResult:
         response: WMNResponse,
         site: WMNSite,
         mode: WMNMode,
+        exclude_text: bool = False,
     ) -> WMNResult:
         """Create WMNResult from HTTP response by evaluating detection criteria.
 
@@ -216,6 +200,7 @@ class WMNResult:
             response: HTTP response object.
             site: Site configuration dictionary with detection criteria.
             mode: Detection mode (ANY or ALL).
+            exclude_text: When True, omit response text from the result.
 
         Returns:
             WMNResult with determined status.
@@ -254,7 +239,7 @@ class WMNResult:
             status=status,
             status_code=response.status_code,
             elapsed=response.elapsed,
-            text=response.text,
+            text=None if exclude_text else response.text,
         )
 
     def to_dict(
@@ -330,8 +315,9 @@ class WMNTestResult:
         2. UNKNOWN - if no results exist
         3. Return the single status if all results have the same status
         4. CONFLICTING - if both EXISTS and MISSING are present
-        5. PARTIAL - for other mixed statuses
-            (e.g., EXISTS + UNKNOWN, PARTIAL + MISSING)
+        5. PARTIAL_EXISTS - if PARTIAL_EXISTS is present in mixed statuses
+        6. PARTIAL_MISSING - if PARTIAL_MISSING is present in mixed statuses
+        7. UNKNOWN - for other mixed statuses
         """
         if self.error:
             return WMNStatus.ERROR
@@ -350,7 +336,13 @@ class WMNTestResult:
         if WMNStatus.EXISTS in statuses and WMNStatus.MISSING in statuses:
             return WMNStatus.CONFLICTING
 
-        return WMNStatus.PARTIAL
+        if WMNStatus.PARTIAL_EXISTS in statuses:
+            return WMNStatus.PARTIAL_EXISTS
+
+        if WMNStatus.PARTIAL_MISSING in statuses:
+            return WMNStatus.PARTIAL_MISSING
+
+        return WMNStatus.UNKNOWN
 
     def to_dict(
         self,
@@ -386,14 +378,15 @@ class WMNResponse:
     status_code: int
     text: str
     elapsed: timedelta
+    headers: dict[str, str] | None = None
 
     def json(self) -> dict[str, Any] | list[Any] | str | int | float | bool | None:
         """Parse the response body as JSON and return the resulting object.
 
         Raises:
-            json.JSONDecodeError: If the response text is not valid JSON.
+            orjson.JSONDecodeError: If the response text is not valid JSON.
         """
-        return json.loads(self.text)
+        return orjson.loads(self.text)
 
 
 @dataclass(frozen=True, slots=True, kw_only=True)
@@ -403,3 +396,17 @@ class WMNError:
     path: str
     data: str | None
     message: str
+
+
+__all__ = [
+    "WMN_REQUIRED_KEYS",
+    "WMNDataset",
+    "WMNError",
+    "WMNMode",
+    "WMNResponse",
+    "WMNResult",
+    "WMNSite",
+    "WMNStatus",
+    "WMNSummary",
+    "WMNTestResult",
+]

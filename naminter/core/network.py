@@ -4,7 +4,7 @@ import logging
 from typing import Any, Protocol, cast, runtime_checkable
 
 from curl_cffi import BrowserTypeLiteral, ExtraFingerprints
-from curl_cffi.requests import AsyncSession, ProxySpec
+from curl_cffi.requests import AsyncSession, ProxySpec, Response
 from curl_cffi.requests.exceptions import (
     CertificateVerifyError as CurlCertificateVerifyError,
 )
@@ -237,9 +237,6 @@ class CurlCFFISession:
         Raises:
             HttpSessionError: If session initialization fails.
         """
-        if self._session is not None:
-            return
-
         async with self._lock:
             if self._session is not None:
                 return
@@ -278,17 +275,21 @@ class CurlCFFISession:
 
         Handles errors gracefully during cleanup and does not raise exceptions.
         Catches session closure errors and logs them without propagating.
+        CancelledError is re-raised to allow proper cancellation handling.
         """
-        if self._session is None:
-            return
-        try:
-            await self._session.close()
-        except CurlSessionClosed:
-            self._logger.debug("HTTP session was already closed")
-        except (OSError, RuntimeError, AttributeError) as e:
-            self._logger.warning("Unexpected error closing HTTP session: %s", e)
-        finally:
-            self._session = None
+        async with self._lock:
+            if self._session is None:
+                return
+            try:
+                await self._session.close()
+            except asyncio.CancelledError:
+                raise
+            except CurlSessionClosed:
+                self._logger.debug("HTTP session was already closed")
+            except (OSError, RuntimeError, AttributeError) as e:
+                self._logger.warning("Unexpected error closing HTTP session: %s", e)
+            finally:
+                self._session = None
 
     async def get(
         self,
@@ -333,8 +334,12 @@ class CurlCFFISession:
             msg = "HTTP session not initialized."
             raise HttpSessionError(msg)
 
-        method_upper = method.upper()
-        if method_upper not in {HTTP_METHOD_GET, HTTP_METHOD_POST}:
+        method_upper: HttpMethod
+        if method.upper() == HTTP_METHOD_GET:
+            method_upper = HTTP_METHOD_GET
+        elif method.upper() == HTTP_METHOD_POST:
+            method_upper = HTTP_METHOD_POST
+        else:
             msg = (
                 f"Unsupported HTTP method: {method!r}. "
                 f"Only {HTTP_METHOD_GET} and {HTTP_METHOD_POST} are supported."
@@ -343,20 +348,24 @@ class CurlCFFISession:
 
         headers_dict: dict[str, str] | None = None
         if headers is not None:
-            headers_dict = dict(headers) if not isinstance(headers, dict) else headers
+            headers_dict = {key: value for key, value in headers.items()}
 
         try:
-            response = await self._session.request(  # type: ignore[reportUnknownMemberType]
-                method=cast("HttpMethod", method.upper()),
+            response: Response = await self._session.request(
+                method=method_upper,
                 url=url,
                 headers=headers_dict,
                 data=data,
             )
 
+            response_headers: dict[str, str] = {
+                key: value for key, value in response.headers.items() if value is not None
+            }
             return WMNResponse(
                 status_code=response.status_code,
                 text=response.text,
                 elapsed=response.elapsed,
+                headers=response_headers,
             )
         except CurlTimeout as e:
             msg = f"{method_upper} timeout for {url}"
@@ -366,8 +375,9 @@ class CurlCFFISession:
             raise HttpSessionError(msg, cause=e) from e
         except CurlHTTPError as e:
             status_code: int | None = None
-            if hasattr(e, "response") and e.response is not None:
-                status_code = getattr(e.response, "status_code", None)
+            err_response: Response | None = getattr(e, "response", None)
+            if err_response is not None:
+                status_code = err_response.status_code
             msg = f"{method_upper} returned error status for {url}"
             raise HttpStatusError(msg, status_code=status_code, url=url, cause=e) from e
         except (

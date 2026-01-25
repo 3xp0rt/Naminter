@@ -33,22 +33,40 @@ keywords = [
     "naminter"
 ]
 dependencies = [
-    "click>=8.3.1",
     "curl-cffi>=0.14.0",
+    "jsonschema>=4.26.0",
+    "orjson>=3.11.5",
+    "click>=8.3.1",
+    "rich>=14.2.0",
+    "rich-click>=1.9.6",
     "aiofiles>=25.1.0",
     "jinja2>=3.1.6",
-    "jsonschema>=4.26.0",
-    "rich>=14.2.0",
-    "rich-click>=1.9.5",
-    "weasyprint>=67.0",
+    "weasyprint>=68.0",
+    "pathvalidate>=3.3.1",
+    "uvloop>=0.22.1",
 ]
 
 [project.optional-dependencies]
+core = [
+    "curl-cffi>=0.14.0",
+    "jsonschema>=4.26.0",
+    "orjson>=3.11.5",
+]
+cli = [
+    "click>=8.3.1",
+    "rich>=14.2.0",
+    "rich-click>=1.9.6",
+    "aiofiles>=25.1.0",
+    "jinja2>=3.1.6",
+    "weasyprint>=68.0",
+    "pathvalidate>=3.3.1",
+    "uvloop>=0.22.1",
+]
 dev = [
-    "ruff>=0.14.11",
+    "ruff>=0.14.14",
     "mkdocs>=1.6.1",
     "mkdocs-material>=9.7.1",
-    "mkdocstrings[python]>=1.0.0",
+    "mkdocstrings[python]>=1.0.1",
 ]
 
 [project.urls]
@@ -146,6 +164,9 @@ select = [
     'PERF',   # perflint
     'NPY',    # numpy
 ]
+ignore = [
+    'COM812',  # conflicts with formatter
+]
 
 [tool.ruff.lint.per-file-ignores]
 "__init__.py" = ["F401"]  # unused imports
@@ -177,3 +198,7 @@ skip-magic-trailing-comma = false
 line-ending = "auto"
 docstring-code-format = true
 docstring-code-line-length = 79
+
+[tool.pyright]
+typeCheckingMode = "strict"
+reportUnknownMemberType = "none"

@@ -1,10 +1,15 @@
-import asyncio
+from functools import wraps
 import logging
 from pathlib import Path
-from typing import Any, Final, get_args
+from typing import TYPE_CHECKING, Any, Final, cast, get_args
 
+import uvloop
 from curl_cffi import BrowserTypeLiteral
 import rich_click as click
+from pathvalidate.click import validate_filepath_arg
+
+if TYPE_CHECKING:
+    from curl_cffi import ExtraFingerprints
 
 from naminter.cli.config import NaminterConfig
 from naminter.cli.console import (
@@ -12,14 +17,13 @@ from naminter.cli.console import (
     console,
     display_diff,
     display_error,
-    display_validation_errors,
+    display_errors,
     display_version,
     display_warning,
 )
 from naminter.cli.constants import (
     EXIT_CODE_ERROR,
     EXIT_CODE_INTERRUPTED,
-    OPTION_AUTO_VALUE,
 )
 from naminter.cli.exceptions import (
     BrowserError,
@@ -59,7 +63,13 @@ from naminter.core.exceptions import (
 )
 from naminter.core.formatter import WMNFormatter
 from naminter.core.main import Naminter
-from naminter.core.models import WMNMode, WMNResult, WMNStatus, WMNTestResult
+from naminter.core.models import (
+    WMNDataset,
+    WMNMode,
+    WMNResult,
+    WMNStatus,
+    WMNTestResult,
+)
 from naminter.core.network import CurlCFFISession
 from naminter.core.validator import WMNValidator
 
@@ -93,7 +103,8 @@ class NaminterCLI:
         """Create status filter mapping from config."""
         return {
             WMNStatus.EXISTS: self._config.filter_exists,
-            WMNStatus.PARTIAL: self._config.filter_partial,
+            WMNStatus.PARTIAL_EXISTS: self._config.filter_partial,
+            WMNStatus.PARTIAL_MISSING: self._config.filter_partial,
             WMNStatus.CONFLICTING: self._config.filter_conflicting,
             WMNStatus.UNKNOWN: self._config.filter_unknown,
             WMNStatus.MISSING: self._config.filter_missing,
@@ -110,28 +121,24 @@ class NaminterCLI:
         if not self._config.save_response:
             return None
 
-        dir_path = self._config.response_dir
-        if not dir_path:
-            display_warning("Response saving enabled but no directory configured")
-            self._config.save_response = False
+        dir_path = self._config.response_dir_path
+        if dir_path is None:
             return None
 
         try:
             dir_path.mkdir(parents=True, exist_ok=True)
         except PermissionError as e:
             display_warning(
-                f"Permission denied creating response directory, disabling: {e}",
+                f"Permission denied creating response directory: {e}",
             )
-            self._config.save_response = False
             return None
         except OSError as e:
             display_warning(
-                f"OS error creating response directory, disabling: {e}",
+                f"OS error creating response directory: {e}",
             )
-            self._config.save_response = False
             return None
-        else:
-            return dir_path
+
+        return dir_path
 
     @staticmethod
     def setup_logging(config: NaminterConfig) -> None:
@@ -182,30 +189,36 @@ class NaminterCLI:
             verify=self._config.verify_ssl,
             timeout=self._config.timeout,
             allow_redirects=self._config.allow_redirects,
-            impersonate=self._config.impersonate,
+            impersonate=cast("BrowserTypeLiteral | None", self._config.impersonate),
             ja3=self._config.ja3,
             akamai=self._config.akamai,
-            extra_fp=self._config.extra_fp,
+            extra_fp=cast("ExtraFingerprints | None", self._config.extra_fp),
         ) as http_client:
             wmn_data: dict[str, Any] | None = None
             if self._config.local_list_path:
                 wmn_data = await read_json(self._config.local_list_path)
             elif self._config.remote_list_url:
-                wmn_data = await fetch_json(http_client, self._config.remote_list_url)
+                wmn_data = cast(
+                    "dict[str, Any]",
+                    await fetch_json(http_client, self._config.remote_list_url),
+                )
 
             wmn_schema: dict[str, Any] | None = None
             if not self._config.skip_validation:
                 if self._config.local_schema_path:
                     wmn_schema = await read_json(self._config.local_schema_path)
                 elif self._config.remote_schema_url:
-                    wmn_schema = await fetch_json(
-                        http_client,
-                        self._config.remote_schema_url,
+                    wmn_schema = cast(
+                        "dict[str, Any]",
+                        await fetch_json(
+                            http_client,
+                            self._config.remote_schema_url,
+                        ),
                     )
 
             async with Naminter(
                 http_client=http_client,
-                wmn_data=wmn_data,
+                wmn_data=cast("WMNDataset | None", wmn_data),
                 wmn_schema=wmn_schema,
                 max_tasks=self._config.max_tasks,
             ) as naminter:
@@ -216,7 +229,12 @@ class NaminterCLI:
 
                 if self._config.export_formats and results:
                     exporter = Exporter(self._config.usernames or [])
-                    await exporter.export(results, self._config.export_formats)
+                    await exporter.export(
+                        cast("list[WMNResult | WMNTestResult]", results),
+                        cast(
+                            "dict[Any, str | Path | None]", self._config.export_formats
+                        ),
+                    )
 
     async def _run_check(self, naminter: Naminter) -> list[WMNResult]:
         """Run the username enumeration functionality."""
@@ -246,12 +264,13 @@ class NaminterCLI:
             include_categories=self._config.include_categories,
             exclude_categories=self._config.exclude_categories,
             mode=self._config.mode,
+            exclude_text=not self._config.save_response,
         ):
             progress_bar.add_result(result)
 
             if self._filter_result(result):
                 try:
-                    file_path = await self._save_response_file(result)
+                    file_path = await self._save_response(result)
                     await self._open_in_browser(result, file_path)
                     formatted_output = self._formatter.format_result(result, file_path)
                     console.print(formatted_output)
@@ -290,6 +309,7 @@ class NaminterCLI:
             include_categories=self._config.include_categories,
             exclude_categories=self._config.exclude_categories,
             mode=self._config.mode,
+            exclude_text=not self._config.save_response,
         ):
             if result.results:
                 for site_result in result.results:
@@ -300,7 +320,7 @@ class NaminterCLI:
                     response_files: list[Path | None] = []
                     if result.results:
                         for site_result in result.results:
-                            file_path = await self._save_response_file(site_result)
+                            file_path = await self._save_response(site_result)
                             await self._open_in_browser(site_result, file_path)
                             response_files.append(file_path)
                     formatted_output = self._formatter.format_validation(
@@ -338,15 +358,12 @@ class NaminterCLI:
                 display_error(f"Browser error opening {result.url}: {e}")
 
         if self._config.open_response and file_path:
-            file_uri = await asyncio.to_thread(
-                lambda: file_path.resolve().as_uri(),  # noqa: ASYNC240
-            )
             try:
-                await open_url(file_uri)
+                await open_url(file_path)
             except BrowserError as e:
-                display_error(f"Browser error opening response file {file_uri}: {e}")
+                display_error(f"Browser error opening response file {file_path}: {e}")
 
-    async def _save_response_file(self, result: WMNResult) -> Path | None:
+    async def _save_response(self, result: WMNResult) -> Path | None:
         """Save HTTP response to file if configured."""
         if not self._config.save_response:
             return None
@@ -374,15 +391,58 @@ def _handle_cli_error(ctx: click.Context, error: BaseException) -> None:
         error: The exception that was raised.
     """
     if isinstance(error, WMNValidationError):
-        display_error(str(error), end="" if error.errors else "\n")
-        if error.errors:
-            display_validation_errors(error.errors)
+        display_error(str(error), end="")
+        if error.schema_errors:
+            display_errors(error.schema_errors, "Schema Errors")
+        if error.dataset_errors:
+            display_errors(error.dataset_errors, "Dataset Errors")
     elif isinstance(error, CLIError):
         display_error(str(error))
     else:
-        display_error(f"Unexpected error: {error}")
+        display_error(str(error))
 
     ctx.exit(EXIT_CODE_ERROR)
+
+
+def handle_cli_errors(func: Any) -> Any:
+    """Decorator to centralize CLI error handling.
+
+    Handles KeyboardInterrupt and common CLI exceptions for Click commands.
+    The decorated function must accept `ctx` as its first parameter.
+
+    Args:
+        func: The Click command function to wrap.
+
+    Returns:
+        Wrapped function with error handling.
+    """
+
+    @wraps(func)
+    def wrapper(ctx: click.Context, *args: Any, **kwargs: Any) -> Any:
+        try:
+            return func(ctx, *args, **kwargs)
+        except KeyboardInterrupt:
+            display_warning("Operation interrupted")
+            ctx.exit(EXIT_CODE_INTERRUPTED)
+        except (
+            ConfigurationError,
+            ValidationError,
+            FileError,
+            NetworkError,
+            HttpError,
+            WMNFormatError,
+            WMNValidationError,
+            WMNDataError,
+            BrowserError,
+            ExportError,
+            CLIError,
+        ) as e:
+            _handle_cli_error(ctx, e)
+        except Exception as e:
+            display_error(f"Unexpected error: {type(e).__name__}: {e}")
+            ctx.exit(EXIT_CODE_ERROR)
+
+    return wrapper
 
 
 @click.group(
@@ -478,7 +538,7 @@ def _handle_cli_error(ctx: click.Context, error: BaseException) -> None:
 )
 @click.option(
     "--timeout",
-    type=int,
+    type=click.IntRange(1, 300),
     default=HTTP_REQUEST_TIMEOUT_SECONDS,
     help="Maximum time in seconds to wait for each HTTP request",
 )
@@ -490,7 +550,7 @@ def _handle_cli_error(ctx: click.Context, error: BaseException) -> None:
 @click.option(
     "--verify-ssl/--no-verify-ssl",
     default=HTTP_SSL_VERIFY,
-    help="Whether to verify SSL/TLS certificates for HTTPS requests",
+    help="Verify SSL certificates",
 )
 @click.option(
     "--impersonate",
@@ -515,7 +575,7 @@ def _handle_cli_error(ctx: click.Context, error: BaseException) -> None:
 # Concurrency & Debugging
 @click.option(
     "--max-tasks",
-    type=int,
+    type=click.IntRange(1, 1000),
     default=MAX_CONCURRENT_TASKS,
     help="Maximum number of concurrent tasks",
 )
@@ -523,61 +583,77 @@ def _handle_cli_error(ctx: click.Context, error: BaseException) -> None:
     "--mode",
     type=click.Choice([WMNMode.ANY.value, WMNMode.ALL.value]),
     default=WMNMode.ALL.value,
-    help="Validation mode: 'all' for strict (AND), 'any' for fuzzy (OR)",
+    help="Validation mode: all or any",
 )
 @click.option(
     "--log-level",
     type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
     help="Set logging level",
 )
-@click.option("--log-file", help="Path to log file for debug output")
+@click.option("--log-file", help="Path to log file")
 # Response Handling
 @click.option(
     "--save-response",
-    "save_response_opt",
-    type=str,
-    flag_value=OPTION_AUTO_VALUE,
+    is_flag=True,
+    help="Save HTTP responses",
+)
+@click.option(
+    "--response-dir",
+    callback=validate_filepath_arg,
+    type=click.Path(file_okay=False, dir_okay=True),
     default=None,
-    help="Save HTTP responses; optionally specify directory path",
+    help="Custom directory for responses",
 )
 @click.option(
     "--open-response",
     is_flag=True,
-    help="Open saved response files in web browser",
+    help="Open response files in browser",
 )
 @click.option("--browse", is_flag=True, help="Open found profiles in web browser")
 # Export Options
 @click.option(
     "--csv",
-    "csv_opt",
-    type=str,
-    flag_value=OPTION_AUTO_VALUE,
+    is_flag=True,
+    help="Export results to CSV",
+)
+@click.option(
+    "--csv-path",
+    callback=validate_filepath_arg,
     default=None,
-    help="Export results to CSV; optionally specify a custom path",
+    help="CSV export file path",
 )
 @click.option(
     "--json",
-    "json_opt",
-    type=str,
-    flag_value=OPTION_AUTO_VALUE,
+    is_flag=True,
+    help="Export results to JSON",
+)
+@click.option(
+    "--json-path",
+    callback=validate_filepath_arg,
     default=None,
-    help="Export results to JSON; optionally specify a custom path",
+    help="JSON export file path",
 )
 @click.option(
     "--html",
-    "html_opt",
-    type=str,
-    flag_value=OPTION_AUTO_VALUE,
+    is_flag=True,
+    help="Export results to HTML",
+)
+@click.option(
+    "--html-path",
+    callback=validate_filepath_arg,
     default=None,
-    help="Export results to HTML; optionally specify a custom path",
+    help="HTML export file path",
 )
 @click.option(
     "--pdf",
-    "pdf_opt",
-    type=str,
-    flag_value=OPTION_AUTO_VALUE,
+    is_flag=True,
+    help="Export results to PDF",
+)
+@click.option(
+    "--pdf-path",
+    callback=validate_filepath_arg,
     default=None,
-    help="Export results to PDF; optionally specify a custom path",
+    help="PDF export file path",
 )
 # Result Filtering
 @click.option(
@@ -621,6 +697,7 @@ def _handle_cli_error(ctx: click.Context, error: BaseException) -> None:
     help="Show only error results in console output and exports",
 )
 @click.pass_context
+@handle_cli_errors
 def main(ctx: click.Context, **kwargs: dict[str, Any]) -> None:
     """A Python package and CLI tool for asynchronous OSINT username enumeration.
 
@@ -633,27 +710,10 @@ def main(ctx: click.Context, **kwargs: dict[str, Any]) -> None:
     if kwargs.get("no_color"):
         console.no_color = True
 
-    try:
-        config = NaminterConfig(**kwargs)
-        NaminterCLI.setup_logging(config)
-        naminter_cli = NaminterCLI(config)
-        asyncio.run(naminter_cli.run())
-    except KeyboardInterrupt:
-        display_warning("Operation interrupted")
-        ctx.exit(EXIT_CODE_INTERRUPTED)
-    except (
-        ConfigurationError,
-        ValidationError,
-        FileError,
-        NetworkError,
-        HttpError,
-        WMNValidationError,
-        WMNDataError,
-        BrowserError,
-        ExportError,
-        CLIError,
-    ) as e:
-        _handle_cli_error(ctx, e)
+    config = NaminterConfig.from_click(**kwargs)
+    NaminterCLI.setup_logging(config)
+    naminter_cli = NaminterCLI(config)
+    uvloop.run(naminter_cli.run())
 
 
 @main.command(name="validate")
@@ -671,6 +731,7 @@ def main(ctx: click.Context, **kwargs: dict[str, Any]) -> None:
 )
 @click.option("--no-color", is_flag=True, help="Disable colored console output")
 @click.pass_context
+@handle_cli_errors
 def validator_command(
     ctx: click.Context,
     local_schema: Path,
@@ -684,43 +745,26 @@ def validator_command(
 
     async def run_validator() -> None:
         """Run validation asynchronously."""
-        try:
-            schema = await read_json(local_schema)
-            data = await read_json(local_data)
+        schema = await read_json(local_schema)
+        data = await read_json(local_data)
+        wmn_data = cast("WMNDataset", data)
 
-            validator = WMNValidator(schema)
-            errors = validator.validate(data)
+        validator = WMNValidator(schema)
+        schema_errors = validator.validate_schema(wmn_data)
+        dataset_errors = WMNValidator.validate_dataset(wmn_data)
 
-            if errors:
-                display_validation_errors(errors)
-                ctx.exit(EXIT_CODE_ERROR)
-            else:
-                console.print(
-                    "[green]+ [Validator] Validation passed: No errors found[/green]",
-                )
-        except (
-            FileError,
-            WMNValidationError,
-            WMNDataError,
-        ) as e:
-            _handle_cli_error(ctx, e)
+        if schema_errors or dataset_errors:
+            if schema_errors:
+                display_errors(schema_errors, "Schema Errors")
+            if dataset_errors:
+                display_errors(dataset_errors, "Dataset Errors")
+            ctx.exit(EXIT_CODE_ERROR)
 
-    try:
-        asyncio.run(run_validator())
-    except KeyboardInterrupt:
-        display_warning("Operation interrupted")
-        ctx.exit(EXIT_CODE_INTERRUPTED)
-    except (
-        ConfigurationError,
-        ValidationError,
-        FileError,
-        WMNValidationError,
-        WMNDataError,
-        BrowserError,
-        ExportError,
-        CLIError,
-    ) as e:
-        _handle_cli_error(ctx, e)
+        console.print(
+            "[green]+ [Validator] Validation passed: No errors found[/green]",
+        )
+
+    uvloop.run(run_validator())
 
 
 @main.command(name="format")
@@ -739,11 +783,12 @@ def validator_command(
 @click.option(
     "--output",
     "-o",
-    type=click.Path(path_type=Path),
+    callback=validate_filepath_arg,
     help="Output file path (defaults to overwriting input file)",
 )
 @click.option("--no-color", is_flag=True, help="Disable colored console output")
 @click.pass_context
+@handle_cli_errors
 def format_command(
     ctx: click.Context,
     local_schema: Path,
@@ -758,54 +803,27 @@ def format_command(
 
     async def run_formatter() -> None:
         """Run formatting asynchronously."""
-        try:
-            schema_data = await read_json(local_schema)
-            data = await read_json(local_data)
+        schema_data = await read_json(local_schema)
+        data = await read_json(local_data)
 
-            original_content = await read_file(local_data)
+        original_content = await read_file(local_data)
 
-            formatter = WMNFormatter(schema_data)
-            formatted_content = formatter.format_dataset(data)
+        formatter = WMNFormatter(schema_data)
+        formatted_content = formatter.format_dataset(cast("WMNDataset", data))
 
-            output_path = output or local_data
+        output_path = output or local_data
 
-            if original_content != formatted_content:
-                await write_file(output_path, formatted_content)
-                display_diff(original_content, formatted_content, output_path)
-                msg = (
-                    f"[green]+ [Formatter] Formatted data written to: "
-                    f"{output_path}[/green]"
-                )
-                console.print(msg)
-            else:
-                console.print("[green]+ [Formatter] Data is already formatted[/green]")
-        except (
-            FileError,
-            WMNFormatError,
-            WMNValidationError,
-            WMNDataError,
-        ) as e:
-            _handle_cli_error(ctx, e)
+        if original_content != formatted_content:
+            await write_file(output_path, formatted_content)
+            display_diff(original_content, formatted_content, output_path)
+            msg = (
+                f"[green]+ [Formatter] Formatted data written to: {output_path}[/green]"
+            )
+            console.print(msg)
+        else:
+            console.print("[green]+ [Formatter] Data is already formatted[/green]")
 
-    try:
-        asyncio.run(run_formatter())
-    except KeyboardInterrupt:
-        display_warning("Operation interrupted")
-        ctx.exit(EXIT_CODE_INTERRUPTED)
-    except (
-        ConfigurationError,
-        ValidationError,
-        FileError,
-        NetworkError,
-        HttpError,
-        WMNFormatError,
-        WMNValidationError,
-        WMNDataError,
-        BrowserError,
-        ExportError,
-        CLIError,
-    ) as e:
-        _handle_cli_error(ctx, e)
+    uvloop.run(run_formatter())
 
 
 def entry_point() -> None:

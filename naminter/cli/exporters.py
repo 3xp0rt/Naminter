@@ -2,22 +2,18 @@ import csv
 from datetime import UTC, datetime
 import importlib.resources
 from io import StringIO
-import json
+import orjson
 from pathlib import Path
 from typing import Any, Literal, Protocol, get_args
 
 import jinja2
-from weasyprint import HTML
+from weasyprint import HTML  # type: ignore[import-untyped]
 
 from naminter import __version__
 from naminter.cli.constants import HTML_FIELDS_ORDER
 from naminter.cli.exceptions import ExportError, FileError
 from naminter.cli.utils import read_file, write_file
-from naminter.core.constants import (
-    DEFAULT_JSON_ENSURE_ASCII,
-    DEFAULT_JSON_INDENT,
-    EMPTY_STRING,
-)
+from naminter.core.constants import EMPTY_STRING
 from naminter.core.models import WMNResult, WMNTestResult
 
 FormatName = Literal["json", "csv", "html", "pdf"]
@@ -130,16 +126,14 @@ class Exporter:
             ExportError: If JSON serialization fails or unexpected error occurs.
         """
         try:
-            json_content = json.dumps(
-                results,
-                ensure_ascii=DEFAULT_JSON_ENSURE_ASCII,
-                indent=DEFAULT_JSON_INDENT,
+            json_content = orjson.dumps(results, option=orjson.OPT_INDENT_2).decode(
+                "utf-8"
             )
             await write_file(output_path, json_content)
         except FileError as e:
             msg = f"File access error during JSON export: {e}"
             raise ExportError(msg) from e
-        except (TypeError, ValueError, RecursionError) as e:
+        except (TypeError, ValueError, RecursionError, orjson.JSONEncodeError) as e:
             msg = f"JSON serialization error: {e}"
             raise ExportError(msg) from e
         except Exception as e:
@@ -233,6 +227,9 @@ class Exporter:
             html = await self._generate_html(results)
             weasyprint_html = HTML(string=html)
             pdf_bytes = weasyprint_html.write_pdf()
+            if pdf_bytes is None:
+                msg = "PDF generation returned empty content"
+                raise ExportError(msg)
             await write_file(output_path, pdf_bytes)
         except FileError as e:
             msg = f"File access error during PDF export: {e}"
@@ -256,5 +253,5 @@ class Exporter:
             return Path(custom)
 
         timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
-        filename = f"results_{timestamp}.{format_name}"
+        filename = f"results_{timestamp}_UTC.{format_name}"
         return Path.cwd() / filename
