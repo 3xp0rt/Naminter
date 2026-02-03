@@ -14,7 +14,7 @@ async def execute_tasks(
         awaitables: Sequence of awaitables to execute.
 
     Yields:
-        Results from completed awaitables.
+        T: Results from completed awaitables as they finish.
     """
     if not awaitables:
         return

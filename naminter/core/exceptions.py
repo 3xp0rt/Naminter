@@ -136,7 +136,6 @@ class WMNValidationError(WMNDataError):
         self.dataset_errors: list[Any] = dataset_errors or []
 
 
-
 class WMNArgumentError(WMNDataError):
     """Raised when invalid arguments are passed to Naminter core APIs.
 

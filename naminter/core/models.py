@@ -140,7 +140,7 @@ class WMNResult:
             url: Optional URL.
 
         Returns:
-            WMNResult with ERROR status.
+            WMNResult: Result with ERROR status.
         """
         return cls(
             name=site.get("name", DEFAULT_UNKNOWN_VALUE),
@@ -203,7 +203,7 @@ class WMNResult:
             exclude_text: When True, omit response text from the result.
 
         Returns:
-            WMNResult with determined status.
+            WMNResult: Result with determined status.
         """
         exists_code_match = response.status_code == site["e_code"]
         exists_text_match = site["e_string"] in response.text
@@ -298,7 +298,7 @@ class WMNTestResult:
             error: Optional error message.
 
         Returns:
-            WMNTestResult with name and category extracted from site.
+            WMNTestResult: Result with name and category from site.
         """
         return cls(
             name=site.get(SITE_KEY_NAME, DEFAULT_UNKNOWN_VALUE),

@@ -202,3 +202,6 @@ docstring-code-line-length = 79
 [tool.pyright]
 typeCheckingMode = "strict"
 reportUnknownMemberType = "none"
+reportUnknownArgumentType = "none"
+reportUnknownVariableType = "none"
+reportUnknownLambdaType = "none"

@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from functools import cached_property
 import orjson
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from naminter.cli.console import display_warning
 from naminter.cli.exceptions import ConfigurationError
@@ -125,9 +125,10 @@ class NaminterConfig:
 
         # Input/Output: Handle username/site and data source parameters
         if "username" in parsed:
-            parsed["usernames"] = cast("list[str]", list(parsed.pop("username") or []))
+            usernames: list[str] = list(parsed.pop("username") or [])
+            parsed["usernames"] = usernames
         if "site" in parsed:
-            sites = cast("list[str]", list(parsed.pop("site") or []))
+            sites: list[str] = list(parsed.pop("site") or [])
             parsed["sites"] = sites if sites else None
 
         if "local_list" in parsed:
@@ -144,16 +145,12 @@ class NaminterConfig:
             parsed["include_categories"],
             tuple,
         ):
-            parsed["include_categories"] = list(
-                cast("tuple[str, ...]", parsed["include_categories"]),
-            )
+            parsed["include_categories"] = list(parsed["include_categories"])
         if "exclude_categories" in parsed and isinstance(
             parsed["exclude_categories"],
             tuple,
         ):
-            parsed["exclude_categories"] = list(
-                cast("tuple[str, ...]", parsed["exclude_categories"]),
-            )
+            parsed["exclude_categories"] = list(parsed["exclude_categories"])
 
         # Behavior/Output: Convert mode string to WMNMode enum if needed
         if "mode" in parsed and isinstance(parsed["mode"], str):

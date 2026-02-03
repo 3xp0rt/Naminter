@@ -1,7 +1,7 @@
 import asyncio
 from collections.abc import AsyncGenerator, Awaitable
 import logging
-from typing import Any
+from typing import Any, cast
 
 from naminter.core.constants import (
     ACCOUNT_PLACEHOLDER,
@@ -35,11 +35,11 @@ from naminter.core.exceptions import (
     WMNValidationError,
 )
 from naminter.core.models import (
-    WMNDataset,
     WMNError,
     WMNMode,
     WMNResponse,
     WMNResult,
+    WMNDataset,
     WMNSite,
     WMNSummary,
     WMNTestResult,
@@ -55,7 +55,7 @@ class Naminter:
     def __init__(
         self,
         http_client: BaseSession,
-        wmn_data: WMNDataset | None = None,
+        wmn_data: dict[str, Any] | None = None,
         wmn_schema: dict[str, Any] | None = None,
         max_tasks: int = MAX_CONCURRENT_TASKS,
     ) -> None:
@@ -68,7 +68,7 @@ class Naminter:
         if not self._logger.handlers:
             self._logger.addHandler(logging.NullHandler())
 
-        self._wmn_data: WMNDataset | None = wmn_data
+        self._wmn_data: dict[str, Any] | None = wmn_data
         self._wmn_schema: dict[str, Any] | None = wmn_schema
         self._semaphore = asyncio.Semaphore(max_tasks)
         self._http: BaseSession = http_client
@@ -133,10 +133,11 @@ class Naminter:
         schema_errors: list[WMNError] = []
         dataset_errors: list[WMNError] = []
 
+        data = cast(WMNDataset, self._wmn_data)
         try:
             if self._validator:
-                schema_errors = self._validator.validate_schema(self._wmn_data)
-            dataset_errors = WMNValidator.validate_dataset(self._wmn_data)
+                schema_errors = self._validator.validate_schema(data)
+            dataset_errors = WMNValidator.validate_dataset(data)
         except (TypeError, ValueError, KeyError, AttributeError) as e:
             self._logger.exception("Unexpected error loading WMN data")
             msg = f"Unexpected error loading WMN data: {e}"
@@ -200,7 +201,7 @@ class Naminter:
             exclude_categories: Optional list of categories to exclude.
 
         Returns:
-            Filtered list of site dictionaries.
+            list[WMNSite]: Filtered list of site configurations.
 
         Raises:
             WMNUninitializedError: If WMN data is not initialized.
@@ -278,7 +279,8 @@ class Naminter:
             username: Username to substitute.
 
         Returns:
-            Tuple of (uri_check, uri_pretty, headers, post_body).
+            tuple[str, str, dict[str, str], str | None]: The uri_check URL,
+                uri_pretty URL, headers dict, and optional post_body.
 
         Raises:
             WMNEnumerationError: If strip_bad_char configuration is invalid.
@@ -319,7 +321,7 @@ class Naminter:
             site: Site configuration containing strip_bad_char.
 
         Returns:
-            Cleaned username.
+            str: Username with bad characters removed.
 
         Raises:
             WMNEnumerationError: If strip_bad_char configuration is invalid.
@@ -357,7 +359,7 @@ class Naminter:
             site: Site configuration for logging.
 
         Returns:
-            HTTP response object.
+            WMNResponse: HTTP response with status, text, and elapsed time.
 
         Raises:
             asyncio.CancelledError: If the request is cancelled.
@@ -644,11 +646,10 @@ class Naminter:
             exclude_text:
                 When True, omit response text from each yielded result.
 
-        Returns:
-            AsyncGenerator[WMNResult, None]:
-                An async generator that yields WMNResult objects one at a time
-                as tasks complete. This allows streaming processing of results.
-                The order is not guaranteed to match submission order.
+        Yields:
+            WMNResult: Result objects one at a time as tasks complete. This
+                allows streaming processing of results. The order is not
+                guaranteed to match submission order.
 
         Raises:
             WMNUnknownSiteError: If any requested site name in site_names does not
@@ -727,9 +728,9 @@ class Naminter:
                 When True, omit response text from results within each test.
 
         Yields:
-            WMNTestResult for each site in completion order, containing the
-            site name, category, list of WMNResult objects, aggregate status,
-            and error message if testing failed.
+            WMNTestResult: Result for each site in completion order, containing
+                the site name, category, list of WMNResult objects, aggregate
+                status, and error message if testing failed.
 
         Raises:
             WMNUnknownSiteError: If site_names contains unknown sites.

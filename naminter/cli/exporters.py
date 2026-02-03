@@ -4,6 +4,7 @@ import importlib.resources
 from io import StringIO
 import orjson
 from pathlib import Path
+from collections.abc import Sequence
 from typing import Any, Literal, Protocol, get_args
 
 import jinja2
@@ -40,8 +41,8 @@ class Exporter:
 
     async def export(
         self,
-        results: list[WMNResult | WMNTestResult],
-        formats: dict[FormatName, str | Path | None],
+        results: Sequence[WMNResult | WMNTestResult],
+        formats: dict[str, str | Path | None],
     ) -> None:
         """Export results in the given formats.
 

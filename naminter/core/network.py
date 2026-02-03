@@ -109,7 +109,7 @@ class BaseSession(Protocol):
             headers: Optional HTTP headers to include.
 
         Returns:
-            WMNResponse: Response object with status, text, and elapsed time.
+            WMNResponse: Response with status, text, and elapsed time.
 
         Raises:
             HttpSessionError: If session is not initialized or invalid.
@@ -133,7 +133,7 @@ class BaseSession(Protocol):
             data: Optional request body data.
 
         Returns:
-            WMNResponse: Response object with status, text, and elapsed time.
+            WMNResponse: Response with status, text, and elapsed time.
 
         Raises:
             HttpSessionError: If session is not initialized or invalid.
@@ -159,7 +159,7 @@ class BaseSession(Protocol):
             data: Optional request body data.
 
         Returns:
-            WMNResponse: Response object with status, text, and elapsed time.
+            WMNResponse: Response with status, text, and elapsed time.
 
         Raises:
             HttpSessionError: If session is not initialized or invalid.
@@ -359,7 +359,9 @@ class CurlCFFISession:
             )
 
             response_headers: dict[str, str] = {
-                key: value for key, value in response.headers.items() if value is not None
+                key: value
+                for key, value in response.headers.items()
+                if value is not None
             }
             return WMNResponse(
                 status_code=response.status_code,

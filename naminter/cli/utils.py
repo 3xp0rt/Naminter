@@ -33,7 +33,7 @@ def get_response_filename(result: WMNResult) -> str:
         result: The WMNResult containing response data.
 
     Returns:
-        A sanitized filename with format: status_code_site_username_timestamp.html
+        str: Sanitized filename in format status_code_site_username_timestamp.html.
 
     Raises:
         ValidationError: If WMNResult is missing required attributes.
@@ -76,7 +76,7 @@ async def read_file(file_path: str | Path) -> str:
         file_path: Path to the file to read.
 
     Returns:
-        Text content of the file.
+        str: Text content of the file.
 
     Raises:
         ValidationError: If file_path is missing or invalid.
@@ -118,7 +118,7 @@ async def read_json(path: str | Path) -> dict[str, Any]:
         path: Path to the JSON file.
 
     Returns:
-        Parsed JSON data as dictionary.
+        dict[str, Any]: Parsed JSON data.
 
     Raises:
         ValidationError: If path is missing or invalid.
@@ -167,7 +167,9 @@ async def write_file(file_path: str | Path, data: str | bytes) -> None:
             async with aiofiles.open(path_obj, mode="wb") as f:
                 await f.write(data)
         else:
-            async with aiofiles.open(path_obj, mode="w", encoding=DEFAULT_FILE_ENCODING) as f:
+            async with aiofiles.open(
+                path_obj, mode="w", encoding=DEFAULT_FILE_ENCODING
+            ) as f:
                 await f.write(data)
     except PermissionError as e:
         msg = f"Permission denied writing to {path_obj}"

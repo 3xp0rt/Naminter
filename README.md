@@ -12,16 +12,6 @@ Naminter is a Python package and command-line interface (CLI) tool for asynchron
 <img width="70%" height="70%" src="preview.png"/>
 </p>
 
-## Installation
-
-Quick install from PyPI:
-
-```bash
-pip install naminter
-```
-
-For detailed installation instructions including optional dependencies, Docker, and source installation, see the [Installation Guide](https://naminter.github.io/getting-started/installation/).
-
 ## Documentation
 
 Full documentation is available at [https://naminter.github.io/](https://naminter.github.io/), including:

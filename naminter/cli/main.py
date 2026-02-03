@@ -3,6 +3,7 @@ import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, cast, get_args
 
+import orjson
 import uvloop
 from curl_cffi import BrowserTypeLiteral
 import rich_click as click
@@ -64,8 +65,8 @@ from naminter.core.exceptions import (
 from naminter.core.formatter import WMNFormatter
 from naminter.core.main import Naminter
 from naminter.core.models import (
-    WMNDataset,
     WMNMode,
+    WMNDataset,
     WMNResult,
     WMNStatus,
     WMNTestResult,
@@ -198,27 +199,29 @@ class NaminterCLI:
             if self._config.local_list_path:
                 wmn_data = await read_json(self._config.local_list_path)
             elif self._config.remote_list_url:
-                wmn_data = cast(
-                    "dict[str, Any]",
-                    await fetch_json(http_client, self._config.remote_list_url),
-                )
+                raw_list = await fetch_json(http_client, self._config.remote_list_url)
+                if not isinstance(raw_list, dict):
+                    msg = "Remote list must be a JSON object"
+                    raise FileError(msg)
+                wmn_data = raw_list
 
             wmn_schema: dict[str, Any] | None = None
             if not self._config.skip_validation:
                 if self._config.local_schema_path:
                     wmn_schema = await read_json(self._config.local_schema_path)
                 elif self._config.remote_schema_url:
-                    wmn_schema = cast(
-                        "dict[str, Any]",
-                        await fetch_json(
-                            http_client,
-                            self._config.remote_schema_url,
-                        ),
+                    raw_schema = await fetch_json(
+                        http_client,
+                        self._config.remote_schema_url,
                     )
+                    if not isinstance(raw_schema, dict):
+                        msg = "Remote schema must be a JSON object"
+                        raise FileError(msg)
+                    wmn_schema = raw_schema
 
             async with Naminter(
                 http_client=http_client,
-                wmn_data=cast("WMNDataset | None", wmn_data),
+                wmn_data=wmn_data,
                 wmn_schema=wmn_schema,
                 max_tasks=self._config.max_tasks,
             ) as naminter:
@@ -230,10 +233,8 @@ class NaminterCLI:
                 if self._config.export_formats and results:
                     exporter = Exporter(self._config.usernames or [])
                     await exporter.export(
-                        cast("list[WMNResult | WMNTestResult]", results),
-                        cast(
-                            "dict[Any, str | Path | None]", self._config.export_formats
-                        ),
+                        results,
+                        self._config.export_formats,
                     )
 
     async def _run_check(self, naminter: Naminter) -> list[WMNResult]:
@@ -746,18 +747,18 @@ def validator_command(
     async def run_validator() -> None:
         """Run validation asynchronously."""
         schema = await read_json(local_schema)
-        data = await read_json(local_data)
-        wmn_data = cast("WMNDataset", data)
+        data = cast(WMNDataset, await read_json(local_data))
 
         validator = WMNValidator(schema)
-        schema_errors = validator.validate_schema(wmn_data)
-        dataset_errors = WMNValidator.validate_dataset(wmn_data)
+        schema_errors = validator.validate_schema(data)
+        dataset_errors = WMNValidator.validate_dataset(data)
+
+        if schema_errors:
+            display_errors(schema_errors, "Schema Errors")
+        if dataset_errors:
+            display_errors(dataset_errors, "Dataset Errors")
 
         if schema_errors or dataset_errors:
-            if schema_errors:
-                display_errors(schema_errors, "Schema Errors")
-            if dataset_errors:
-                display_errors(dataset_errors, "Dataset Errors")
             ctx.exit(EXIT_CODE_ERROR)
 
         console.print(
@@ -804,22 +805,25 @@ def format_command(
     async def run_formatter() -> None:
         """Run formatting asynchronously."""
         schema_data = await read_json(local_schema)
-        data = await read_json(local_data)
-
         original_content = await read_file(local_data)
 
+        try:
+            data = orjson.loads(original_content)
+        except orjson.JSONDecodeError as e:
+            msg = f"Invalid JSON in file {local_data} at position {e.pos}: {e.msg}"
+            raise FileError(msg) from e
+
         formatter = WMNFormatter(schema_data)
-        formatted_content = formatter.format_dataset(cast("WMNDataset", data))
+        formatted_content = formatter.format_dataset(data)
 
         output_path = output or local_data
 
         if original_content != formatted_content:
             await write_file(output_path, formatted_content)
             display_diff(original_content, formatted_content, output_path)
-            msg = (
-                f"[green]+ [Formatter] Formatted data written to: {output_path}[/green]"
+            console.print(
+                f"[green]+ [Formatter] Formatted data written to: {output_path}[/green]",
             )
-            console.print(msg)
         else:
             console.print("[green]+ [Formatter] Data is already formatted[/green]")
 

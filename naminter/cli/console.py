@@ -51,7 +51,7 @@ def _get_status_symbol(status: WMNStatus) -> str:
         status: The WMNStatus to get symbol for.
 
     Returns:
-        Symbol character for the status.
+        str: Symbol character for the status.
     """
     return STATUS_SYMBOLS.get(status, "?")
 
@@ -63,7 +63,7 @@ def _get_status_style(status: WMNStatus) -> Style:
         status: The WMNStatus to get styling for.
 
     Returns:
-        Rich Style object with appropriate color and formatting.
+        Style: Rich Style object with appropriate color and formatting.
     """
     style_str = STATUS_STYLES.get(status, "white")
     return Style.parse(style_str)
@@ -92,7 +92,7 @@ class ResultFormatter:
             response_file_path: Optional path to the response file for debugging.
 
         Returns:
-            A Rich Tree object containing the formatted result.
+            Tree: Rich Tree containing the formatted result.
         """
         root_label = Text()
         status_symbol = _get_status_symbol(site_result.status)
@@ -129,7 +129,7 @@ class ResultFormatter:
             response_files: Optional list of response file paths for debugging.
 
         Returns:
-            A Rich Tree object containing the formatted validation results.
+            Tree: Rich Tree containing the formatted validation results.
         """
         root_label = Text()
         root_label.append(
@@ -294,7 +294,7 @@ def display_errors(errors: list[Any], title: str | None = None) -> None:
     else:
         root_label = Text()
     console.print()
-    
+
     tree = Tree(root_label, guide_style=THEME.muted, expanded=True)
 
     for error in errors:
