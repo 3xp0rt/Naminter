@@ -8,10 +8,6 @@
 
 Naminter is a Python package and command-line interface (CLI) tool for asynchronous OSINT username enumeration using the WhatsMyName dataset. Leveraging the comprehensive [WhatsMyName](https://github.com/WebBreacher/WhatsMyName) list, Naminter enumerates usernames across hundreds of websites. With advanced features like browser impersonation, asynchronous enumeration, and customizable filtering, it can be used both as a command-line tool and as a library in your Python projects.
 
-<p align="center">
-<img width="70%" height="70%" src="preview.png"/>
-</p>
-
 ## Documentation
 
 Full documentation is available at [https://naminter.github.io/](https://naminter.github.io/), including:

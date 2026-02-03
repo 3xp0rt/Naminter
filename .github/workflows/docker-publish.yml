@@ -1,12 +1,6 @@
 name: Build and Publish Docker Image
 
 on:
-  release:
-    types: [published]
-  pull_request:
-    branches:
-      - main
-      - master
   workflow_dispatch:
 
 env:
