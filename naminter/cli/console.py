@@ -72,13 +72,13 @@ def _get_status_style(status: WMNStatus) -> Style:
 class ResultFormatter:
     """Formats test results for console output."""
 
-    def __init__(self, *, show_details: bool = False) -> None:
+    def __init__(self, *, verbose: int = 0) -> None:
         """Initialize the result formatter.
 
         Args:
-            show_details: Whether to include detailed debug information in output.
+            verbose: Verbosity level (0=off, 1=errors, 2=+details, 3=+headers).
         """
-        self.show_details = show_details
+        self.verbose = verbose
 
     def format_result(
         self,
@@ -106,13 +106,15 @@ class ResultFormatter:
 
         tree = Tree(root_label, guide_style=THEME.muted)
 
-        if self.show_details:
-            self._add_debug_info(
+        if self.verbose > 0:
+            self._add_verbose(
                 tree,
-                site_result.status_code,
-                site_result.elapsed,
-                site_result.error,
-                response_file_path,
+                self.verbose,
+                status_code=site_result.status_code,
+                headers=site_result.headers,
+                elapsed=site_result.elapsed,
+                error=site_result.error,
+                response_file=response_file_path,
             )
 
         return tree
@@ -155,48 +157,67 @@ class ResultFormatter:
 
                 result_node = tree.add(url_text)
 
-                if self.show_details:
+                if self.verbose > 0:
                     response_file = (
                         response_files[i]
                         if response_files and i < len(response_files)
                         else None
                     )
-                    self._add_debug_info(
+                    self._add_verbose(
                         result_node,
-                        result.status_code,
-                        result.elapsed,
-                        result.error,
-                        response_file,
+                        self.verbose,
+                        status_code=result.status_code,
+                        headers=result.headers,
+                        elapsed=result.elapsed,
+                        error=result.error,
+                        response_file=response_file,
                     )
 
         return tree
 
     @staticmethod
-    def _add_debug_info(
+    def _add_verbose(
         node: Tree,
+        level: int,
+        *,
         status_code: int | None = None,
+        headers: dict[str, str] | None = None,
         elapsed: timedelta | None = None,
         error: str | None = None,
         response_file: Path | None = None,
     ) -> None:
-        """Add debug information to a tree node.
+        """Add debug information to a tree node based on verbosity level.
+
+        Levels:
+            1 (-v):   error details
+            2 (-vv):  + status code, elapsed, response file path
+            3 (-vvv): + headers
 
         Args:
             node: The tree node to add information to.
+            level: Verbosity level (1-3).
             status_code: Optional HTTP status code.
-            elapsed: Optional elapsed time in seconds.
+            headers: Optional HTTP response headers.
+            elapsed: Optional elapsed time.
             error: Optional error message.
             response_file: Optional path to response file.
         """
-        if status_code is not None:
-            node.add(Text(f"Status Code: {status_code}", style=THEME.info))
-        if response_file is not None:
-            node.add(Text(f"Response File: {response_file}", style=THEME.info))
-        if elapsed is not None:
-            elapsed_seconds = elapsed.total_seconds()
-            node.add(Text(f"Elapsed: {elapsed_seconds:.2f}s", style=THEME.info))
         if error is not None:
             node.add(Text(f"Error: {error}", style=THEME.error))
+
+        if level >= 2:
+            if status_code is not None:
+                node.add(Text(f"Status Code: {status_code}", style=THEME.info))
+            if elapsed is not None:
+                elapsed_seconds = elapsed.total_seconds()
+                node.add(Text(f"Elapsed: {elapsed_seconds:.2f}s", style=THEME.info))
+            if response_file is not None:
+                node.add(Text(f"Response File: {response_file}", style=THEME.info))
+
+        if level >= 3 and headers:
+            headers_node = node.add(Text("Headers:", style=THEME.info))
+            for key, value in headers.items():
+                headers_node.add(Text(f"{key}: {value}", style=THEME.muted))
 
 
 def display_version() -> None:
@@ -244,37 +265,21 @@ def _display_message(
 def display_error(
     message: str,
     *,
-    show_traceback: bool = False,
     end: str = "\n",
 ) -> None:
     """Display an error message.
 
     Args:
         message: The error message to display.
-        show_traceback: Whether to print the full traceback.
         end: String to append after the message (default: newline).
     """
     _display_message(message, THEME.error, "!", "ERROR", end=end)
-    if show_traceback:
-        console.print_exception()
 
 
 def display_warning(message: str) -> None:
     """Display a warning message."""
 
     _display_message(message, THEME.warning, "?", "WARNING")
-
-
-def display_info(message: str) -> None:
-    """Display an info message."""
-
-    _display_message(message, THEME.info, "*", "INFO")
-
-
-def display_success(message: str) -> None:
-    """Display a success message."""
-
-    _display_message(message, THEME.success, "+", "SUCCESS")
 
 
 def display_errors(errors: list[Any], title: str | None = None) -> None:

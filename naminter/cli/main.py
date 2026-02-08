@@ -50,7 +50,7 @@ from naminter.core.constants import (
     BROWSER_IMPERSONATE_NONE,
     DEFAULT_FILE_ENCODING,
     HTTP_ALLOW_REDIRECTS,
-    HTTP_REQUEST_TIMEOUT_SECONDS,
+    HTTP_TIMEOUT,
     HTTP_SSL_VERIFY,
     LOGGING_FORMAT,
     MAX_CONCURRENT_TASKS,
@@ -93,7 +93,7 @@ class NaminterCLI:
     def __init__(self, config: NaminterConfig) -> None:
         self._config: NaminterConfig = config
         self._formatter: ResultFormatter = ResultFormatter(
-            show_details=config.show_details,
+            verbose=config.verbose,
         )
         self._response_dir: Path | None = self._setup_response_dir()
         self._status_filters: Final[dict[WMNStatus, bool]] = (
@@ -468,9 +468,10 @@ def handle_cli_errors(func: Any) -> Any:
     help="Disable progress bar during execution",
 )
 @click.option(
-    "--show-details",
-    is_flag=True,
-    help="Show detailed information in console output",
+    "--verbose",
+    "-v",
+    count=True,
+    help="Increase output verbosity (-v errors, -vv details, -vvv headers)",
 )
 # Input Specification
 @click.option(
@@ -540,7 +541,7 @@ def handle_cli_errors(func: Any) -> Any:
 @click.option(
     "--timeout",
     type=click.IntRange(1, 300),
-    default=HTTP_REQUEST_TIMEOUT_SECONDS,
+    default=HTTP_TIMEOUT,
     help="Maximum time in seconds to wait for each HTTP request",
 )
 @click.option(
@@ -804,28 +805,34 @@ def format_command(
 
     async def run_formatter() -> None:
         """Run formatting asynchronously."""
-        schema_data = await read_json(local_schema)
-        original_content = await read_file(local_data)
+        original_schema_content = await read_file(local_schema)
+        original_dataset_content = await read_file(local_data)
 
         try:
-            data = orjson.loads(original_content)
+            schema_data = orjson.loads(original_schema_content)
+        except orjson.JSONDecodeError as e:
+            msg = f"Invalid JSON in file {local_schema} at position {e.pos}: {e.msg}"
+            raise FileError(msg) from e
+
+        try:
+            data = orjson.loads(original_dataset_content)
         except orjson.JSONDecodeError as e:
             msg = f"Invalid JSON in file {local_data} at position {e.pos}: {e.msg}"
             raise FileError(msg) from e
 
         formatter = WMNFormatter(schema_data)
-        formatted_content = formatter.format_dataset(data)
+        formatted_dataset_content = formatter.format_dataset(data)
+        formatted_schema_content = formatter.format_schema()
 
         output_path = output or local_data
 
-        if original_content != formatted_content:
-            await write_file(output_path, formatted_content)
-            display_diff(original_content, formatted_content, output_path)
-            console.print(
-                f"[green]+ [Formatter] Formatted data written to: {output_path}[/green]",
-            )
-        else:
-            console.print("[green]+ [Formatter] Data is already formatted[/green]")
+        if original_dataset_content != formatted_dataset_content:
+            await write_file(output_path, formatted_dataset_content)
+            display_diff(original_dataset_content, formatted_dataset_content, output_path)
+
+        if original_schema_content != formatted_schema_content:
+            await write_file(local_schema, formatted_schema_content)
+            display_diff(original_schema_content, formatted_schema_content, local_schema)
 
     uvloop.run(run_formatter())
 

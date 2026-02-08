@@ -17,6 +17,7 @@ from naminter.core.constants import (
     SITE_KEY_STRIP_BAD_CHAR,
     SITE_KEY_URI_CHECK,
     SITE_KEY_URI_PRETTY,
+    SITE_KEY_VALID,
     WMN_KEY_AUTHORS,
     WMN_KEY_LICENSE,
     WMN_KEY_SITES,
@@ -540,6 +541,10 @@ class Naminter:
                 print(result.name, result.username, result.status, result.url)
             ```
         """
+        if site.get(SITE_KEY_VALID) is False:
+            self._logger.debug("Skipping invalid site: %s", site)
+            return WMNResult.from_not_valid(username=username, site=site)
+
         try:
             uri_check, uri_pretty, headers, post_body = self._prepare_request(
                 site,
@@ -548,7 +553,7 @@ class Naminter:
         except WMNEnumerationError as e:
             return WMNResult.from_error(
                 username=username,
-                message=e.message,
+                message=str(e),
                 site=site,
             )
 
@@ -556,6 +561,8 @@ class Naminter:
             response = await self._perform_request(uri_check, headers, post_body, site)
         except asyncio.CancelledError:
             self._logger.debug("Request cancelled for site: %s", site)
+            raise
+        except HttpSessionError:
             raise
         except HttpError as e:
             error_type = type(e).__name__

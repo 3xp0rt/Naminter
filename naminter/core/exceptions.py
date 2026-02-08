@@ -7,13 +7,10 @@ class NaminterError(Exception):
 
     Args:
         message: Error message describing what went wrong.
-        cause: Optional underlying exception that caused this error.
     """
 
-    def __init__(self, message: str, cause: Exception | None = None) -> None:
+    def __init__(self, message: str) -> None:
         super().__init__(message)
-        self.message = message
-        self.cause = cause
 
 
 # Network/HTTP errors
@@ -31,34 +28,6 @@ class HttpSessionError(HttpError):
     This includes session initialization errors, authentication failures,
     and session state management issues.
     """
-
-
-class HttpTimeoutError(HttpError):
-    """Raised when network requests timeout.
-
-    This includes both connection timeouts and read timeouts
-    during HTTP requests.
-    """
-
-
-class HttpStatusError(HttpError):
-    """Raised when an HTTP request returns an error status code.
-
-    Attributes:
-        status_code: The HTTP status code that caused the error.
-        url: The URL that returned the error status.
-    """
-
-    def __init__(
-        self,
-        message: str,
-        status_code: int | None = None,
-        url: str | None = None,
-        cause: Exception | None = None,
-    ) -> None:
-        super().__init__(message, cause)
-        self.status_code: int | None = status_code
-        self.url: str | None = url
 
 
 # Data processing errors
@@ -88,9 +57,8 @@ class WMNUnknownSiteError(WMNDataError):
         self,
         message: str,
         site_names: list[str] | None = None,
-        cause: Exception | None = None,
     ) -> None:
-        super().__init__(message, cause)
+        super().__init__(message)
         self.site_names: list[str] = site_names or []
 
 
@@ -105,9 +73,8 @@ class WMNUnknownCategoriesError(WMNDataError):
         self,
         message: str,
         categories: list[str] | None = None,
-        cause: Exception | None = None,
     ) -> None:
-        super().__init__(message, cause)
+        super().__init__(message)
         self.categories: list[str] = categories or []
 
 
@@ -129,9 +96,8 @@ class WMNValidationError(WMNDataError):
         message: str,
         schema_errors: list[Any] | None = None,
         dataset_errors: list[Any] | None = None,
-        cause: Exception | None = None,
     ) -> None:
-        super().__init__(message, cause)
+        super().__init__(message)
         self.schema_errors: list[Any] = schema_errors or []
         self.dataset_errors: list[Any] = dataset_errors or []
 
@@ -163,8 +129,6 @@ class WMNFormatError(WMNDataError):
 __all__ = [
     "HttpError",
     "HttpSessionError",
-    "HttpStatusError",
-    "HttpTimeoutError",
     "NaminterError",
     "WMNArgumentError",
     "WMNDataError",

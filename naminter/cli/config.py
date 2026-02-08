@@ -10,7 +10,7 @@ from naminter.core.constants import (
     BROWSER_IMPERSONATE_AGENT,
     BROWSER_IMPERSONATE_NONE,
     HTTP_ALLOW_REDIRECTS,
-    HTTP_REQUEST_TIMEOUT_SECONDS,
+    HTTP_TIMEOUT,
     HTTP_SSL_VERIFY,
     MAX_CONCURRENT_TASKS,
     WMN_REMOTE_URL,
@@ -54,7 +54,7 @@ class NaminterConfig:
 
     # Network/HTTP
     max_tasks: int = MAX_CONCURRENT_TASKS
-    timeout: int = HTTP_REQUEST_TIMEOUT_SECONDS
+    timeout: int = HTTP_TIMEOUT
     proxy: str | None = None
     allow_redirects: bool = HTTP_ALLOW_REDIRECTS
     verify_ssl: bool = HTTP_SSL_VERIFY
@@ -70,7 +70,7 @@ class NaminterConfig:
     no_progressbar: bool = False
     log_level: str | None = None
     log_file: str | None = None
-    show_details: bool = False
+    verbose: int = 0
 
     # Response saving
     save_response: bool = False
@@ -118,7 +118,6 @@ class NaminterConfig:
 
         parsed = kwargs.copy()
 
-        # Remove CLI-only options that are not NaminterConfig fields
         cli_only_keys = ["no_color"]
         for key in cli_only_keys:
             parsed.pop(key, None)
@@ -172,7 +171,6 @@ class NaminterConfig:
             "verify_ssl",
             "browse",
             "test",
-            "show_details",
             "open_response",
             "no_progressbar",
             "filter_all",

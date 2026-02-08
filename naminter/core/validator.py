@@ -11,6 +11,8 @@ from jsonschema.validators import validator_for
 
 from naminter.core.constants import (
     ACCOUNT_PLACEHOLDER,
+    HTTP_STATUS_CODE_MAX,
+    HTTP_STATUS_CODE_MIN,
     SITE_KEY_E_CODE,
     SITE_KEY_E_STRING,
     SITE_KEY_HEADERS,
@@ -102,6 +104,11 @@ class WMNValidator:
         errors.extend(WMNValidator._validate_authors(data))
         errors.extend(WMNValidator._validate_categories(data))
         errors.extend(WMNValidator._validate_duplicates(data))
+
+        sites_data: Any = data.get(WMN_KEY_SITES, [])
+        if isinstance(sites_data, list):
+            errors.extend(WMNValidator._validate_sites(sites_data))
+
         return errors
 
     @staticmethod
@@ -134,7 +141,7 @@ class WMNValidator:
         Returns:
             list[WMNError]: Duplicate site name errors.
         """
-        sites_data: Any = data.get("sites", [])
+        sites_data: Any = data.get(WMN_KEY_SITES, [])
         if not isinstance(sites_data, list):
             return []
 
@@ -280,7 +287,8 @@ class WMNValidator:
         """
         return WMNValidator._validate_string_list(data, WMN_KEY_CATEGORIES)
 
-    def _validate_sites(self, sites: list[WMNSite]) -> list[WMNError]:
+    @staticmethod
+    def _validate_sites(sites: list[WMNSite]) -> list[WMNError]:
         """Validate all site configurations.
 
         Args:
@@ -418,10 +426,11 @@ class WMNValidator:
                         f"Invalid {key}: must be integer, got {type(code_value).__name__}",
                         code_value,
                     )
-                elif not (100 <= code_value <= 599):
+                elif not (HTTP_STATUS_CODE_MIN <= code_value <= HTTP_STATUS_CODE_MAX):
                     _create_error(
                         key,
-                        f"Invalid {key}: must be valid HTTP status code (100-599), got {code_value}",
+                        f"Invalid {key}: must be valid HTTP status code "
+                        f"({HTTP_STATUS_CODE_MIN}-{HTTP_STATUS_CODE_MAX}), got {code_value}",
                         code_value,
                     )
 

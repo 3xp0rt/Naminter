@@ -1,6 +1,5 @@
 from collections import defaultdict
 import time
-from types import TracebackType
 
 from rich.console import Console
 from rich.progress import (
@@ -152,16 +151,3 @@ class ProgressBar:
             self.progress.stop()
             self.progress = None
             self.task_id = None
-
-    def __enter__(self) -> "ProgressBar":
-        """Enter context manager."""
-        return self
-
-    def __exit__(
-        self,
-        exc_type: type[BaseException] | None,
-        exc_val: BaseException | None,
-        exc_tb: TracebackType | None,
-    ) -> None:
-        """Exit context manager and stop progress bar."""
-        self.stop()

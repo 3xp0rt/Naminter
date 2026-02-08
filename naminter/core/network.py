@@ -6,65 +6,18 @@ from typing import Any, Protocol, cast, runtime_checkable
 from curl_cffi import BrowserTypeLiteral, ExtraFingerprints
 from curl_cffi.requests import AsyncSession, ProxySpec, Response
 from curl_cffi.requests.exceptions import (
-    CertificateVerifyError as CurlCertificateVerifyError,
-)
-from curl_cffi.requests.exceptions import (
-    ConnectionError as CurlConnectionError,
-)
-from curl_cffi.requests.exceptions import (
-    CookieConflict as CurlCookieConflict,
-)
-from curl_cffi.requests.exceptions import (
-    DNSError as CurlDNSError,
-)
-from curl_cffi.requests.exceptions import (
-    HTTPError as CurlHTTPError,
-)
-from curl_cffi.requests.exceptions import (
-    ImpersonateError as CurlImpersonateError,
-)
-from curl_cffi.requests.exceptions import (
-    IncompleteRead as CurlIncompleteRead,
-)
-from curl_cffi.requests.exceptions import (
-    InterfaceError as CurlInterfaceError,
-)
-from curl_cffi.requests.exceptions import (
-    InvalidProxyURL as CurlInvalidProxyURL,
-)
-from curl_cffi.requests.exceptions import (
-    InvalidURL as CurlInvalidURL,
-)
-from curl_cffi.requests.exceptions import (
-    ProxyError as CurlProxyError,
-)
-from curl_cffi.requests.exceptions import (
-    RequestException as CurlRequestException,
-)
-from curl_cffi.requests.exceptions import (
     SessionClosed as CurlSessionClosed,
-)
-from curl_cffi.requests.exceptions import (
-    SSLError as CurlSSLError,
-)
-from curl_cffi.requests.exceptions import (
-    Timeout as CurlTimeout,
-)
-from curl_cffi.requests.exceptions import (
-    TooManyRedirects as CurlTooManyRedirects,
 )
 
 from naminter.core.constants import (
     HTTP_METHOD_GET,
     HTTP_METHOD_POST,
-    HTTP_REQUEST_TIMEOUT_SECONDS,
+    HTTP_TIMEOUT,
     HttpMethod,
 )
 from naminter.core.exceptions import (
     HttpError,
     HttpSessionError,
-    HttpStatusError,
-    HttpTimeoutError,
 )
 from naminter.core.models import WMNResponse
 
@@ -75,8 +28,6 @@ class BaseSession(Protocol):
 
     Implementations should raise the following exceptions:
     - HttpSessionError: For session initialization/management errors
-    - HttpTimeoutError: For request timeouts
-    - HttpStatusError: For HTTP error status codes (4xx, 5xx)
     - HttpError: For other network-related errors
 
     All exceptions should preserve the underlying cause when available.
@@ -113,8 +64,6 @@ class BaseSession(Protocol):
 
         Raises:
             HttpSessionError: If session is not initialized or invalid.
-            HttpTimeoutError: If the request times out.
-            HttpStatusError: If HTTP error status code is returned.
             HttpError: For other network-related errors.
         """
         ...
@@ -137,8 +86,6 @@ class BaseSession(Protocol):
 
         Raises:
             HttpSessionError: If session is not initialized or invalid.
-            HttpTimeoutError: If the request times out.
-            HttpStatusError: If HTTP error status code is returned.
             HttpError: For other network-related errors.
         """
         ...
@@ -163,8 +110,6 @@ class BaseSession(Protocol):
 
         Raises:
             HttpSessionError: If session is not initialized or invalid.
-            HttpTimeoutError: If the request times out.
-            HttpStatusError: If HTTP error status code is returned.
             HttpError: For other network-related errors.
         """
         ...
@@ -175,7 +120,7 @@ class BaseSession(Protocol):
 
     async def __aexit__(
         self,
-        exc_type: type | None,
+        exc_type: type[BaseException] | None,
         exc_val: BaseException | None,
         exc_tb: object,
     ) -> None:
@@ -195,7 +140,7 @@ class CurlCFFISession:
         *,
         proxies: str | dict[str, str] | None = None,
         verify: bool = True,
-        timeout: int = HTTP_REQUEST_TIMEOUT_SECONDS,
+        timeout: int = HTTP_TIMEOUT,
         allow_redirects: bool = True,
         impersonate: BrowserTypeLiteral | None = None,
         ja3: str | None = None,
@@ -254,21 +199,9 @@ class CurlCFFISession:
                     akamai=self._akamai,
                     extra_fp=extra_fp_spec,
                 )
-            except CurlImpersonateError as e:
-                msg = f"Browser impersonation failed: {e}"
-                raise HttpSessionError(msg, cause=e) from e
-            except (CurlInvalidProxyURL, CurlInvalidURL) as e:
-                msg = f"Invalid URL in session configuration: {e}"
-                raise HttpError(msg, cause=e) from e
-            except CurlInterfaceError as e:
-                msg = f"Network interface error during session initialization: {e}"
-                raise HttpSessionError(msg, cause=e) from e
-            except CurlRequestException as e:
-                msg = f"Failed to initialize HTTP session: {e}"
-                raise HttpSessionError(msg, cause=e) from e
             except Exception as e:
-                msg = "Unexpected error opening HTTP session"
-                raise HttpSessionError(msg, cause=e) from e
+                msg = f"Failed to initialize HTTP session: {e}"
+                raise HttpSessionError(msg) from e
 
     async def close(self) -> None:
         """Close the HTTP session.
@@ -296,6 +229,19 @@ class CurlCFFISession:
         url: str,
         headers: Mapping[str, str] | None = None,
     ) -> WMNResponse:
+        """HTTP GET request.
+
+        Args:
+            url: The URL to request.
+            headers: Optional HTTP headers to include.
+
+        Returns:
+            WMNResponse: Response with status, text, and elapsed time.
+
+        Raises:
+            HttpSessionError: If session is not initialized or was closed.
+            HttpError: For other network-related errors.
+        """
         return await self.request(HTTP_METHOD_GET, url, headers=headers)
 
     async def post(
@@ -304,6 +250,20 @@ class CurlCFFISession:
         headers: Mapping[str, str] | None = None,
         data: str | bytes | None = None,
     ) -> WMNResponse:
+        """HTTP POST request.
+
+        Args:
+            url: The URL to request.
+            headers: Optional HTTP headers to include.
+            data: Optional request body data.
+
+        Returns:
+            WMNResponse: Response with status, text, and elapsed time.
+
+        Raises:
+            HttpSessionError: If session is not initialized or was closed.
+            HttpError: For other network-related errors.
+        """
         return await self.request(HTTP_METHOD_POST, url, headers=headers, data=data)
 
     async def request(
@@ -326,8 +286,6 @@ class CurlCFFISession:
 
         Raises:
             HttpSessionError: If session is not initialized or was closed.
-            HttpTimeoutError: If the request times out.
-            HttpStatusError: If HTTP error status code is returned (4xx, 5xx).
             HttpError: For unsupported HTTP methods or other network-related errors.
         """
         if self._session is None:
@@ -369,40 +327,12 @@ class CurlCFFISession:
                 elapsed=response.elapsed,
                 headers=response_headers,
             )
-        except CurlTimeout as e:
-            msg = f"{method_upper} timeout for {url}"
-            raise HttpTimeoutError(msg, cause=e) from e
         except CurlSessionClosed as e:
             msg = f"HTTP session was closed: {e}"
-            raise HttpSessionError(msg, cause=e) from e
-        except CurlHTTPError as e:
-            status_code: int | None = None
-            err_response: Response | None = getattr(e, "response", None)
-            if err_response is not None:
-                status_code = err_response.status_code
-            msg = f"{method_upper} returned error status for {url}"
-            raise HttpStatusError(msg, status_code=status_code, url=url, cause=e) from e
-        except (
-            CurlSSLError,
-            CurlCertificateVerifyError,
-            CurlDNSError,
-            CurlConnectionError,
-            CurlProxyError,
-            CurlInterfaceError,
-            CurlTooManyRedirects,
-            CurlInvalidProxyURL,
-            CurlInvalidURL,
-            CurlIncompleteRead,
-            CurlCookieConflict,
-        ) as e:
-            msg = f"{method_upper} request failed: {e}"
-            raise HttpError(msg, cause=e) from e
-        except CurlRequestException as e:
-            msg = f"{method_upper} request failed: {e}"
-            raise HttpError(msg, cause=e) from e
+            raise HttpSessionError(msg) from e
         except Exception as e:
-            msg = f"Unexpected error during {method_upper} request: {e}"
-            raise HttpError(msg, cause=e) from e
+            msg = f"{method_upper} request failed for {url}: {e}"
+            raise HttpError(msg) from e
 
     async def __aenter__(self) -> "CurlCFFISession":
         """Async context manager entry."""
@@ -422,5 +352,4 @@ class CurlCFFISession:
 __all__ = [
     "BaseSession",
     "CurlCFFISession",
-    "WMNResponse",
 ]

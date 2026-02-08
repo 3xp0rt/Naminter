@@ -14,7 +14,6 @@ PROGRESS_ADVANCE_INCREMENT: Final[int] = 1
 
 # Exit codes
 EXIT_CODE_ERROR: Final[int] = 1
-EXIT_CODE_SUCCESS: Final[int] = 0
 EXIT_CODE_INTERRUPTED: Final[int] = 130
 
 # Filename constraints

@@ -44,30 +44,30 @@ class WMNSite(TypedDict):
     """
 
     name: str
-    cat: str
     uri_check: str
     uri_pretty: NotRequired[str]
-    headers: NotRequired[dict[str, str]]
     post_body: NotRequired[str]
+    headers: NotRequired[dict[str, str]]
     strip_bad_char: NotRequired[str]
     e_code: int
     e_string: str
-    m_code: int
     m_string: str
+    m_code: int
     known: list[str]
+    cat: str
     valid: NotRequired[bool]
     protection: NotRequired[list[str]]
 
 
 WMN_REQUIRED_KEYS: frozenset[str] = frozenset({
     "name",
-    "cat",
     "uri_check",
     "e_code",
     "e_string",
-    "m_code",
     "m_string",
+    "m_code",
     "known",
+    "cat",
 })
 
 
@@ -117,6 +117,7 @@ class WMNResult:
     status: WMNStatus
     url: str | None = None
     status_code: int | None = None
+    headers: dict[str, str] | None = None
     text: str | None = None
     elapsed: timedelta | None = None
     error: str | None = None
@@ -149,6 +150,29 @@ class WMNResult:
             url=url,
             status=WMNStatus.ERROR,
             error=message,
+        )
+
+    @classmethod
+    def from_not_valid(
+        cls,
+        *,
+        username: str,
+        site: WMNSite,
+    ) -> WMNResult:
+        """Create a NOT_VALID result for sites marked as invalid.
+
+        Args:
+            username: Username being checked.
+            site: Site configuration.
+
+        Returns:
+            WMNResult: Result with NOT_VALID status.
+        """
+        return cls(
+            name=site.get("name", DEFAULT_UNKNOWN_VALUE),
+            category=site.get("cat", DEFAULT_UNKNOWN_VALUE),
+            username=username,
+            status=WMNStatus.NOT_VALID,
         )
 
     @staticmethod
@@ -238,6 +262,7 @@ class WMNResult:
             url=url,
             status=status,
             status_code=response.status_code,
+            headers=response.headers,
             elapsed=response.elapsed,
             text=None if exclude_text else response.text,
         )
@@ -255,6 +280,7 @@ class WMNResult:
             "status": self.status.value,
             "url": self.url,
             "status_code": self.status_code,
+            "headers": self.headers,
             "elapsed": self.elapsed.total_seconds() if self.elapsed else None,
             "error": self.error,
             "created_at": self.created_at.isoformat(),
