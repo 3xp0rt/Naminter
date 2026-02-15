@@ -1,3 +1,5 @@
+"""Progress bar and result tracking for CLI enumeration operations."""
+
 from collections import defaultdict
 import time
 
@@ -39,7 +41,11 @@ class ProgressBar:
         self.status_counts: dict[WMNStatus, int] = defaultdict(int)
 
     def add_result(self, result: WMNResult) -> None:
-        """Update counters with a new result and refresh progress display."""
+        """Update counters with a new result and refresh progress display.
+
+        Args:
+            result: The completed result to record.
+        """
         self.results_count += 1
         self.status_counts[result.status] += 1
         self.update(
@@ -48,7 +54,11 @@ class ProgressBar:
         )
 
     def _get_progress_text(self) -> str:
-        """Get formatted progress text with request speed and statistics."""
+        """Get formatted progress text with request speed and statistics.
+
+        Returns:
+            str: Rich-formatted progress string with rate and status counts.
+        """
         elapsed = time.time() - self.start_time if self.start_time else 0.0
 
         exists = self.status_counts[WMNStatus.EXISTS]
@@ -75,23 +85,26 @@ class ProgressBar:
             )
         if partial_exists > 0:
             sections.append(
-                f"[{THEME.warning}]{STATUS_SYMBOLS[WMNStatus.PARTIAL_EXISTS]} ~E {partial_exists}[/]",
+                f"[{THEME.warning}]~+ {partial_exists}[/]",
             )
         if partial_missing > 0:
             sections.append(
-                f"[{THEME.warning}]{STATUS_SYMBOLS[WMNStatus.PARTIAL_MISSING]} ~M {partial_missing}[/]",
+                f"[{THEME.warning}]~- {partial_missing}[/]",
             )
         if conflicting > 0:
+            sym = STATUS_SYMBOLS[WMNStatus.CONFLICTING]
             sections.append(
-                f"[{THEME.warning}]{STATUS_SYMBOLS[WMNStatus.CONFLICTING]} {conflicting}[/]",
+                f"[{THEME.warning}]{sym} {conflicting}[/]",
             )
         if errors > 0:
+            sym = STATUS_SYMBOLS[WMNStatus.ERROR]
             sections.append(
-                f"[{THEME.error}]{STATUS_SYMBOLS[WMNStatus.ERROR]} {errors}[/]",
+                f"[{THEME.error}]{sym} {errors}[/]",
             )
         if not_valid > 0:
+            sym = STATUS_SYMBOLS[WMNStatus.NOT_VALID]
             sections.append(
-                f"[{THEME.warning}]{STATUS_SYMBOLS[WMNStatus.NOT_VALID]} {not_valid}[/]",
+                f"[{THEME.warning}]{sym} {not_valid}[/]",
             )
 
         sections.append(f"[{THEME.primary}]{self.results_count}/{self.total_sites}[/]")
@@ -101,7 +114,7 @@ class ProgressBar:
         """Create a new progress bar with configured styling.
 
         Returns:
-            Configured Progress instance ready for display.
+            Progress: Configured Progress instance ready for display.
         """
         return Progress(
             SpinnerColumn(),

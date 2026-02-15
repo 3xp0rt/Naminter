@@ -1,13 +1,15 @@
+"""Result exporters for CSV, JSON, HTML, and PDF formats."""
+
+from collections.abc import Sequence
 import csv
 from datetime import UTC, datetime
 import importlib.resources
 from io import StringIO
-import orjson
 from pathlib import Path
-from collections.abc import Sequence
 from typing import Any, Literal, Protocol, get_args
 
 import jinja2
+import orjson
 from weasyprint import HTML  # type: ignore[import-untyped]
 
 from naminter import __version__
@@ -24,13 +26,25 @@ ResultDict = dict[str, Any]
 class ExportMethod(Protocol):
     """Protocol for export method callables."""
 
-    async def __call__(self, results: list[ResultDict], output_path: Path) -> None: ...
+    async def __call__(self, results: list[ResultDict], output_path: Path) -> None:
+        """Export results to the specified output path.
+
+        Args:
+            results: List of result dictionaries to export.
+            output_path: Path where the exported file will be written.
+        """
+        ...
 
 
 class Exporter:
     """Unified exporter for CSV, JSON, HTML, and PDF formats."""
 
     def __init__(self, usernames: list[str] | None = None) -> None:
+        """Initialize exporter with optional usernames for report metadata.
+
+        Args:
+            usernames: List of usernames to include in export reports.
+        """
         self.usernames = usernames or []
         self.export_methods: dict[FormatName, ExportMethod] = {
             "csv": self._export_csv,
@@ -47,7 +61,7 @@ class Exporter:
         """Export results in the given formats.
 
         Args:
-            results: List of results to export.
+            results: Sequence of results to export.
             formats: Dictionary mapping format names to output paths (None for auto).
 
         Raises:
@@ -148,7 +162,7 @@ class Exporter:
             results: List of result dictionaries to format as HTML.
 
         Returns:
-            Generated HTML string.
+            str: Generated HTML string.
 
         Raises:
             ExportError: If template loading or rendering fails.
@@ -227,16 +241,22 @@ class Exporter:
         try:
             html = await self._generate_html(results)
             weasyprint_html = HTML(string=html)
-            pdf_bytes = weasyprint_html.write_pdf()
-            if pdf_bytes is None:
-                msg = "PDF generation returned empty content"
-                raise ExportError(msg)
-            await write_file(output_path, pdf_bytes)
-        except FileError as e:
-            msg = f"File access error during PDF export: {e}"
-            raise ExportError(msg) from e
+            pdf_bytes: bytes | None = weasyprint_html.write_pdf()
         except Exception as e:
             msg = f"PDF generation error: {e}"
+            raise ExportError(msg) from e
+
+        if pdf_bytes is None:
+            msg = "PDF generation returned empty content"
+            raise ExportError(msg)
+
+        try:
+            await write_file(output_path, pdf_bytes)
+        except FileError as e:
+            msg = f"File access error writing PDF: {e}"
+            raise ExportError(msg) from e
+        except Exception as e:
+            msg = f"Unexpected error writing PDF: {e}"
             raise ExportError(msg) from e
 
     @staticmethod
@@ -248,7 +268,7 @@ class Exporter:
             custom: Custom path if provided, None for auto-generated path.
 
         Returns:
-            Resolved Path object for the output file.
+            Path: Resolved Path object for the output file.
         """
         if custom:
             return Path(custom)

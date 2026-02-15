@@ -1,3 +1,5 @@
+"""Console output formatting and display utilities for Naminter CLI."""
+
 from dataclasses import dataclass
 from datetime import timedelta
 import difflib
@@ -23,6 +25,8 @@ from naminter import (
 from naminter.cli.constants import (
     STATUS_STYLES,
     STATUS_SYMBOLS,
+    VERBOSE_LEVEL_DETAILS,
+    VERBOSE_LEVEL_HEADERS,
 )
 from naminter.core.models import WMNResult, WMNStatus, WMNTestResult
 
@@ -31,7 +35,16 @@ console: Console = Console()
 
 @dataclass(frozen=True)
 class Theme:
-    """Application color theme configuration."""
+    """Application color theme configuration.
+
+    Attributes:
+        primary: Primary accent color.
+        success: Color for success messages.
+        error: Color for error messages.
+        warning: Color for warning messages.
+        info: Color for informational messages.
+        muted: Color for de-emphasized text.
+    """
 
     primary: str = "bright_blue"
     success: str = "bright_green"
@@ -70,7 +83,7 @@ def _get_status_style(status: WMNStatus) -> Style:
 
 
 class ResultFormatter:
-    """Formats test results for console output."""
+    """Formats enumeration and validation results for console output."""
 
     def __init__(self, *, verbose: int = 0) -> None:
         """Initialize the result formatter.
@@ -188,10 +201,8 @@ class ResultFormatter:
     ) -> None:
         """Add debug information to a tree node based on verbosity level.
 
-        Levels:
-            1 (-v):   error details
-            2 (-vv):  + status code, elapsed, response file path
-            3 (-vvv): + headers
+        Verbosity levels: 1 (-v) shows error details, 2 (-vv) adds status
+        code, elapsed time, and response file path, 3 (-vvv) adds headers.
 
         Args:
             node: The tree node to add information to.
@@ -205,7 +216,7 @@ class ResultFormatter:
         if error is not None:
             node.add(Text(f"Error: {error}", style=THEME.error))
 
-        if level >= 2:
+        if level >= VERBOSE_LEVEL_DETAILS:
             if status_code is not None:
                 node.add(Text(f"Status Code: {status_code}", style=THEME.info))
             if elapsed is not None:
@@ -214,7 +225,7 @@ class ResultFormatter:
             if response_file is not None:
                 node.add(Text(f"Response File: {response_file}", style=THEME.info))
 
-        if level >= 3 and headers:
+        if level >= VERBOSE_LEVEL_HEADERS and headers:
             headers_node = node.add(Text("Headers:", style=THEME.info))
             for key, value in headers.items():
                 headers_node.add(Text(f"{key}: {value}", style=THEME.muted))
@@ -251,7 +262,15 @@ def _display_message(
     label: str,
     end: str = "\n",
 ) -> None:
-    """Display a styled message with symbol and label."""
+    """Display a styled message with symbol and label.
+
+    Args:
+        message: The message text to display.
+        style: Rich style string for the symbol and label.
+        symbol: Symbol character to prefix the message.
+        label: Label text shown between brackets after the symbol.
+        end: String to append after the message (default: newline).
+    """
 
     formatted_message = Text()
     formatted_message.append(symbol, style=style)
@@ -277,7 +296,11 @@ def display_error(
 
 
 def display_warning(message: str) -> None:
-    """Display a warning message."""
+    """Display a warning message.
+
+    Args:
+        message: The warning message to display.
+    """
 
     _display_message(message, THEME.warning, "?", "WARNING")
 

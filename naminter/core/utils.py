@@ -1,3 +1,5 @@
+"""Async utility functions for concurrent task execution."""
+
 import asyncio
 from collections.abc import AsyncGenerator, Awaitable, Sequence
 from typing import TypeVar

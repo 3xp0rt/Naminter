@@ -1,3 +1,5 @@
+"""Exception hierarchy for Naminter core errors."""
+
 from typing import Any
 
 
@@ -58,6 +60,12 @@ class WMNUnknownSiteError(WMNDataError):
         message: str,
         site_names: list[str] | None = None,
     ) -> None:
+        """Initialize WMNUnknownSiteError.
+
+        Args:
+            message: Error message describing what went wrong.
+            site_names: List of unknown site names that were requested.
+        """
         super().__init__(message)
         self.site_names: list[str] = site_names or []
 
@@ -74,6 +82,12 @@ class WMNUnknownCategoriesError(WMNDataError):
         message: str,
         categories: list[str] | None = None,
     ) -> None:
+        """Initialize WMNUnknownCategoriesError.
+
+        Args:
+            message: Error message describing what went wrong.
+            categories: List of unknown category names that were requested.
+        """
         super().__init__(message)
         self.categories: list[str] = categories or []
 
@@ -97,6 +111,13 @@ class WMNValidationError(WMNDataError):
         schema_errors: list[Any] | None = None,
         dataset_errors: list[Any] | None = None,
     ) -> None:
+        """Initialize WMNValidationError.
+
+        Args:
+            message: Error message describing what went wrong.
+            schema_errors: List of JSON schema validation errors.
+            dataset_errors: List of custom dataset validation errors.
+        """
         super().__init__(message)
         self.schema_errors: list[Any] = schema_errors or []
         self.dataset_errors: list[Any] = dataset_errors or []

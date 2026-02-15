@@ -24,7 +24,7 @@ naminter --username john_doe \
     --max-tasks 100 \
     --timeout 15 \
     --impersonate chrome \
-    --include-categories social coding
+    --include-categories social --include-categories coding
 
 # Using proxy and saving responses
 naminter --username jane_smith \
@@ -49,15 +49,14 @@ naminter --username alice_bob \
     --html \
     --filter-all
 
-# Export with custom paths using merged flags
+# Export with custom paths
 naminter --username alice_bob \
-    --csv results.csv \
-    --json results.json \
-    --html report.html
+    --csv --csv-path results.csv \
+    --json --json-path results.json \
+    --html --html-path report.html
 
 # Site validation with detailed output
 naminter --test \
-    --show-details \
     --log-level DEBUG \
     --log-file debug.log
 ```
@@ -125,7 +124,7 @@ async def main():
         wmn_data = (await http_client.get(WMN_REMOTE_URL)).json()
 
         async with Naminter(http_client=http_client, wmn_data=wmn_data) as naminter:
-            async for site_result in naminter.enumerate_test():
+            async for site_result in naminter.test_enumeration():
                 if site_result.error:
                     print(f"❌ {site_result.name}: {site_result.error}")
                 else:
@@ -153,7 +152,7 @@ async def main():
             wmn_data=wmn_data,
             wmn_schema=wmn_schema,
         ) as naminter:
-            summary = naminter.get_wmn_summary()
+            summary = naminter.summary()
             print(f"Total sites: {summary.sites_count}")
             print(f"Total categories: {summary.categories_count}")
             print(f"Known accounts: {summary.known_count}")

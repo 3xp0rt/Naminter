@@ -1,6 +1,9 @@
+"""Formatter for sorting and ordering WhatsMyName JSON data per schema."""
+
 from collections.abc import Mapping, Sequence
-import orjson
 from typing import Any
+
+import orjson
 
 from naminter.core.constants import (
     SCHEMA_KEY_ITEMS,
@@ -30,12 +33,29 @@ class WMNFormatter:
 
     @staticmethod
     def _sort_array_alphabetically(array: list[str]) -> list[str]:
-        """Sort strings alphabetically case-insensitively."""
+        """Sort strings alphabetically case-insensitively.
+
+        Args:
+            array: List of strings to sort.
+
+        Returns:
+            list[str]: Sorted list of strings.
+        """
         return sorted(array, key=str.casefold)
 
     @staticmethod
     def _sort_sites_by_name(sites: Sequence[Any]) -> list[dict[str, Any]]:
-        """Sort sites by name case-insensitively."""
+        """Sort sites by name case-insensitively.
+
+        Args:
+            sites: Sequence of site mapping objects to sort.
+
+        Returns:
+            list[dict[str, Any]]: Sites sorted alphabetically by name.
+
+        Raises:
+            WMNFormatError: If any site entry is not a mapping.
+        """
         site_dicts: list[dict[str, Any]] = []
         for i, site in enumerate(sites):
             if not isinstance(site, Mapping):
@@ -55,7 +75,17 @@ class WMNFormatter:
     def _sort_site_headers(
         site_data: Mapping[str, Any],
     ) -> dict[str, Any]:
-        """Return new site dict with headers sorted by name."""
+        """Return new site dict with headers sorted by name.
+
+        Args:
+            site_data: Site configuration mapping to process.
+
+        Returns:
+            dict[str, Any]: New site dict with alphabetically sorted headers.
+
+        Raises:
+            WMNFormatError: If headers value is not a dict.
+        """
         result = dict(site_data)
 
         headers = result.get(SITE_KEY_HEADERS)
@@ -80,7 +110,18 @@ class WMNFormatter:
         site_data: Mapping[str, Any],
         key_order: list[str],
     ) -> dict[str, Any]:
-        """Return site dict with keys in schema-defined order."""
+        """Return site dict with keys in schema-defined order.
+
+        Args:
+            site_data: Site configuration mapping to reorder.
+            key_order: List of keys in the desired order.
+
+        Returns:
+            dict[str, Any]: New dict with keys ordered per schema.
+
+        Raises:
+            WMNFormatError: If site_data contains unknown keys.
+        """
         if self._site_key_order_set is None:
             self._site_key_order_set = set(key_order)
         allowed = self._site_key_order_set
@@ -93,7 +134,18 @@ class WMNFormatter:
 
     @staticmethod
     def _dumps(obj: object, *, what: str) -> str:
-        """Serialize object to JSON string with consistent error handling."""
+        """Serialize object to JSON string with consistent error handling.
+
+        Args:
+            obj: Object to serialize.
+            what: Label for the object used in error messages.
+
+        Returns:
+            str: Formatted JSON string.
+
+        Raises:
+            WMNFormatError: If the object is not JSON-serializable.
+        """
         try:
             return orjson.dumps(obj, option=orjson.OPT_INDENT_2).decode("utf-8")
         except (TypeError, ValueError, RecursionError, orjson.JSONEncodeError) as error:
@@ -101,7 +153,11 @@ class WMNFormatter:
             raise WMNFormatError(msg) from error
 
     def format_schema(self) -> str:
-        """Return formatted schema JSON string."""
+        """Return formatted schema JSON string.
+
+        Returns:
+            str: Schema serialized as a formatted JSON string.
+        """
         return self._dumps(self._schema, what="Schema")
 
     def format_dataset(self, data: dict[str, Any]) -> str:
@@ -115,6 +171,7 @@ class WMNFormatter:
 
         Raises:
             WMNFormatError: If data is not JSON-serializable or invalid.
+            WMNSchemaError: If site schema properties are not found or invalid.
         """
         formatted_authors = self._format_string_array(data, WMN_KEY_AUTHORS)
         formatted_categories = self._format_string_array(data, WMN_KEY_CATEGORIES)
@@ -174,7 +231,19 @@ class WMNFormatter:
         return self._site_key_order
 
     def _format_string_array(self, data: Mapping[str, Any], key: str) -> list[str]:
-        """Sort string array alphabetically if present."""
+        """Sort a string array field alphabetically.
+
+        Args:
+            data: Dataset mapping containing the array field.
+            key: Key name of the string array to sort.
+
+        Returns:
+            list[str]: Alphabetically sorted list of strings.
+
+        Raises:
+            WMNFormatError: If the field is missing, not a list, empty,
+                or contains non-string or blank items.
+        """
         array_data = data.get(key)
         if array_data is None:
             msg = f"'{key}' is required but not found"
@@ -200,12 +269,35 @@ class WMNFormatter:
         site_data: Mapping[str, Any],
         key_order: list[str],
     ) -> dict[str, Any]:
-        """Format one site with sorted headers and ordered keys."""
+        """Format one site with sorted headers and ordered keys.
+
+        Args:
+            site_data: Site configuration mapping to format.
+            key_order: List of keys in the desired schema order.
+
+        Returns:
+            dict[str, Any]: Formatted site dict with sorted headers and ordered keys.
+
+        Raises:
+            WMNFormatError: If headers value is not a dict or site_data
+                contains unknown keys.
+        """
         formatted_site = self._sort_site_headers(site_data)
         return self._reorder_site_keys(formatted_site, key_order)
 
     def _format_sites(self, data: Mapping[str, Any]) -> list[dict[str, Any]]:
-        """Sort and format site data per schema."""
+        """Sort and format site data per schema.
+
+        Args:
+            data: Dataset mapping containing the sites array.
+
+        Returns:
+            list[dict[str, Any]]: Sorted and formatted site dicts.
+
+        Raises:
+            WMNFormatError: If sites field is not a list or contains invalid entries.
+            WMNSchemaError: If site schema properties are not found or invalid.
+        """
         sites = data.get(WMN_KEY_SITES)
         if not isinstance(sites, list):
             msg = f"'{WMN_KEY_SITES}' must be a list, got {type(sites).__name__}"

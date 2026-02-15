@@ -1,7 +1,7 @@
 site_name: Naminter Documentation
 site_description: A Python package and CLI tool for asynchronous OSINT username enumeration
 site_author: 3xp0rt
-site_url: https://naminter.github.io
+site_url: https://3xp0rt.github.io/naminter/
 copyright: Copyright &copy; 2025 3xp0rt
 
 repo_name: 3xp0rt/naminter
@@ -40,13 +40,6 @@ theme:
     - content.code.annotate
   icon:
     repo: fontawesome/brands/github
-  social:
-    - icon: fontawesome/brands/github
-      link: https://github.com/3xp0rt/naminter
-    - icon: fontawesome/brands/python
-      link: https://pypi.org/project/naminter/
-  toc:
-    depth: 4
 
 markdown_extensions:
   - pymdownx.highlight:
@@ -77,12 +70,15 @@ markdown_extensions:
   - pymdownx.caret
   - pymdownx.mark
   - pymdownx.tilde
+  - toc:
+      toc_depth: 4
 
 nav:
   - Home: index.md
   - Getting Started:
     - Installation: getting-started/installation.md
     - Usage: getting-started/usage.md
+  - CLI Reference: cli/index.md
   - API Reference:
     - Naminter: api/core/main.md
     - Models: api/core/models.md
@@ -120,11 +116,19 @@ plugins:
             heading_level: 2
             show_submodules: false
 
-# Uncomment to add Google Analytics
-# extra:
-#   analytics:
-#     provider: google
-#     property: G-XXXXXXXXXX
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/3xp0rt/naminter
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/naminter/
+    - icon: fontawesome/brands/x-twitter
+      link: https://x.com/3xp0rtblog
+
+# Uncomment to add Google Analytics (add under extra:)
+#  analytics:
+#    provider: google
+#    property: G-XXXXXXXXXX
 
 # Uncomment to add custom CSS/JS
 # extra_css:

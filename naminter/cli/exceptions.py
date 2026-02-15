@@ -1,3 +1,6 @@
+"""Exception hierarchy for Naminter CLI-layer errors."""
+
+
 class CLIError(Exception):
     """Base class for all CLI-layer errors."""
 

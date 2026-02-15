@@ -1,10 +1,12 @@
+"""File, network, and browser utility functions for Naminter CLI."""
+
 import asyncio
-import orjson
 from pathlib import Path
 from typing import Any
 import webbrowser
 
 import aiofiles
+import orjson
 from pathvalidate import sanitize_filename
 
 from naminter.cli.constants import (
@@ -25,7 +27,11 @@ from naminter.core.models import WMNResult
 from naminter.core.network import BaseSession
 
 
-# Filename utilities
+# =============================================================================
+# Filename Utilities
+# =============================================================================
+
+
 def get_response_filename(result: WMNResult) -> str:
     """Generate a sanitized filename for saving response data.
 
@@ -33,7 +39,8 @@ def get_response_filename(result: WMNResult) -> str:
         result: The WMNResult containing response data.
 
     Returns:
-        str: Sanitized filename in format status_code_site_username_timestamp.html.
+        str: Sanitized filename in format
+            ``{status}_{statuscode}_{site}_{username}_{timestamp}.html``.
 
     Raises:
         ValidationError: If WMNResult is missing required attributes.
@@ -68,7 +75,11 @@ def get_response_filename(result: WMNResult) -> str:
     return f"{safe_base_name}{RESPONSE_FILE_EXTENSION}"
 
 
-# File operations
+# =============================================================================
+# File Operations
+# =============================================================================
+
+
 async def read_file(file_path: str | Path) -> str:
     """Read text content from a file asynchronously with error handling.
 
@@ -182,7 +193,11 @@ async def write_file(file_path: str | Path, data: str | bytes) -> None:
         raise FileError(msg) from e
 
 
-# Network operations
+# =============================================================================
+# Network Operations
+# =============================================================================
+
+
 async def fetch_json(http_client: BaseSession, url: str) -> dict[str, Any] | list[Any]:
     """Fetch and parse JSON from a URL.
 
@@ -191,10 +206,10 @@ async def fetch_json(http_client: BaseSession, url: str) -> dict[str, Any] | lis
         url: URL to fetch JSON from.
 
     Returns:
-        Parsed JSON data as dictionary or list.
+        dict[str, Any] | list[Any]: Parsed JSON data as dictionary or list.
 
     Raises:
-        ValidationError: If http_client or url is missing or invalid.
+        ValidationError: If url is missing or empty.
         NetworkError: For any URL / HTTP / network / JSON issues.
     """
     url_stripped = url.strip() if url else ""
@@ -214,31 +229,47 @@ async def fetch_json(http_client: BaseSession, url: str) -> dict[str, Any] | lis
 
     try:
         result = response.json()
-        if not isinstance(result, (dict, list)):
-            msg = f"Unexpected JSON type from {url_stripped}: expected dict or list"
-            raise NetworkError(msg)
-        return result
     except (ValueError, orjson.JSONDecodeError) as e:
         msg = f"Failed to parse JSON from {url_stripped}: {e}"
         raise NetworkError(msg) from e
 
+    if not isinstance(result, (dict, list)):
+        msg = f"Unexpected JSON type from {url_stripped}: expected dict or list"
+        raise NetworkError(msg)
+    return result
 
-# Browser operations
+
+# =============================================================================
+# Browser Operations
+# =============================================================================
+
+
+def _resolve_url(url: str | Path) -> str:
+    """Resolve a URL or Path to a string.
+
+    Args:
+        url: URL string or Path to resolve.
+
+    Returns:
+        str: Resolved URL string.
+    """
+    if isinstance(url, Path):
+        return url.resolve().as_uri()
+    return url.strip() if url else ""
+
+
 async def open_url(url: str | Path) -> None:
     """Open a URL in the browser with error handling.
 
     Args:
-        url: URL string or Path to open in the default browser. Paths are converted
-            to file URIs automatically.
+        url: URL string or Path to open in the default browser.
+            Paths are converted to file URIs automatically.
 
     Raises:
         ValidationError: If url is missing or invalid.
         BrowserError: For any issue with the browser operation.
     """
-    if isinstance(url, Path):
-        url_str = url.resolve().as_uri()
-    else:
-        url_str = url.strip() if url else ""
+    url_str = _resolve_url(url)
 
     if not url_str:
         msg = "URL is required and cannot be empty"

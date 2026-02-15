@@ -16,8 +16,6 @@ Naminter uses a hierarchical exception structure with `NaminterError` as the bas
 
 ::: naminter.core.exceptions.HttpError
 ::: naminter.core.exceptions.HttpSessionError
-::: naminter.core.exceptions.HttpTimeoutError
-::: naminter.core.exceptions.HttpStatusError
 
 ### Data Processing Errors
 
@@ -27,26 +25,23 @@ Naminter uses a hierarchical exception structure with `NaminterError` as the bas
 ::: naminter.core.exceptions.WMNUnknownCategoriesError
 ::: naminter.core.exceptions.WMNSchemaError
 ::: naminter.core.exceptions.WMNValidationError
+::: naminter.core.exceptions.WMNArgumentError
+::: naminter.core.exceptions.WMNEnumerationError
+::: naminter.core.exceptions.WMNFormatError
 
 ## Common Exception Patterns
 
 ### Handling Network Errors
 
 ```python
-from naminter import HttpError, HttpTimeoutError
-from naminter.core.exceptions import HttpStatusError
+from naminter.core.exceptions import HttpError, HttpSessionError
 
 try:
     # Network operation
     pass
-except HttpTimeoutError:
-    # Handle timeout specifically (e.g., retry with backoff)
+except HttpSessionError:
+    # Handle session issues specifically
     pass
-except HttpStatusError as e:
-    # Handle HTTP error status codes (access e.status_code, e.url)
-    if e.status_code == 404:
-        # Handle not found
-        pass
 except HttpError:
     # Handle any other HTTP error
     pass
@@ -73,8 +68,10 @@ except WMNUnknownSiteError as e:
     print(f"Unknown sites: {e.site_names}")
 except WMNValidationError as e:
     # Access validation errors
-    for error in e.errors:
-        print(f"Validation error: {error}")
+    for error in e.schema_errors:
+        print(f"Schema error: {error}")
+    for error in e.dataset_errors:
+        print(f"Dataset error: {error}")
 except WMNDataError:
     # Handle any other data error
     pass

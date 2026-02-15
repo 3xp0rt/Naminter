@@ -27,7 +27,7 @@ original_content = input_path.read_text(encoding="utf-8")
 # Create formatter with schema
 formatter = WMNFormatter(schema)
 # Format data (data is not modified)
-formatted_content = formatter.format_data(data)
+formatted_content = formatter.format_dataset(data)
 
 # Compare and write if changed
 if original_content != formatted_content:

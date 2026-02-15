@@ -1,25 +1,52 @@
+"""CLI constants for status display, exit codes, and file operations."""
+
 from typing import Final
 
 from naminter.core.models import WMNStatus
 
-# Constants for file operations
+# =============================================================================
+# File Operations
+# =============================================================================
+
 RESPONSE_FILE_DATE_FORMAT: Final[str] = "%Y%m%d_%H%M%S"
 RESPONSE_FILE_EXTENSION: Final[str] = ".html"
 
-# Default fallback values
+# =============================================================================
+# Default Fallback Values
+# =============================================================================
+
 DEFAULT_UNNAMED_VALUE: Final[str] = "unnamed"
 
-# Progress tracking
+# =============================================================================
+# Progress Tracking
+# =============================================================================
+
 PROGRESS_ADVANCE_INCREMENT: Final[int] = 1
 
-# Exit codes
+# =============================================================================
+# Exit Codes
+# =============================================================================
+
 EXIT_CODE_ERROR: Final[int] = 1
 EXIT_CODE_INTERRUPTED: Final[int] = 130
 
-# Filename constraints
+# =============================================================================
+# Verbosity Levels
+# =============================================================================
+
+VERBOSE_LEVEL_DETAILS: Final[int] = 2
+VERBOSE_LEVEL_HEADERS: Final[int] = 3
+
+# =============================================================================
+# Filename Constraints
+# =============================================================================
+
 MAX_FILENAME_LENGTH: Final[int] = 200
 
-# Status Display Configuration (for CLI/UI)
+# =============================================================================
+# Status Display Configuration
+# =============================================================================
+
 # Symbol keys use WMNStatus enum members
 STATUS_SYMBOLS: Final[dict[WMNStatus, str]] = {
     WMNStatus.EXISTS: "+",
@@ -44,5 +71,8 @@ STATUS_STYLES: Final[dict[WMNStatus, str]] = {
     WMNStatus.ERROR: "bright_red bold",
 }
 
-# Export field ordering
+# =============================================================================
+# Export Field Ordering
+# =============================================================================
+
 HTML_FIELDS_ORDER: Final[list[str]] = ["name", "url", "elapsed"]

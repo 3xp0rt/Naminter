@@ -1,10 +1,13 @@
+"""Data models for WMN dataset structures, enumeration results, and responses."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import StrEnum, auto
-import orjson
 from typing import Any, NotRequired, TypedDict
+
+import orjson
 
 from naminter.core.constants import (
     DEFAULT_UNKNOWN_VALUE,
@@ -85,7 +88,17 @@ class WMNDataset(TypedDict):
 
 @dataclass(slots=True, frozen=True, kw_only=True)
 class WMNSummary:
-    """Summary of the loaded WhatsMyName dataset and filters applied."""
+    """Summary of the loaded WhatsMyName dataset and filters applied.
+
+    Attributes:
+        license: License information from the dataset.
+        authors: Authors of the dataset.
+        site_names: Names of all sites included.
+        sites_count: Total number of sites.
+        categories: Categories of the included sites.
+        categories_count: Number of unique categories.
+        known_count: Total number of known usernames across all sites.
+    """
 
     license: tuple[str, ...]
     authors: tuple[str, ...]
@@ -96,6 +109,11 @@ class WMNSummary:
     known_count: int
 
     def to_dict(self) -> dict[str, Any]:
+        """Convert the summary to a plain dictionary.
+
+        Returns:
+            dict[str, Any]: Dictionary representation with lists instead of tuples.
+        """
         return {
             "license": list(self.license),
             "authors": list(self.authors),
@@ -109,7 +127,21 @@ class WMNSummary:
 
 @dataclass(slots=True, frozen=True, kw_only=True)
 class WMNResult:
-    """Result of testing a username on a site."""
+    """Result of testing a username on a site.
+
+    Attributes:
+        name: Site name from the WMN dataset.
+        category: Site category from the WMN dataset.
+        username: Username that was tested.
+        status: Detection status of the username on the site.
+        url: URL used for the check (may be the "pretty" URL).
+        status_code: HTTP status code of the response.
+        headers: HTTP response headers.
+        text: Response body text.
+        elapsed: Time elapsed for the HTTP request.
+        error: Error message if the check failed.
+        created_at: Timestamp when the result was created.
+    """
 
     name: str
     category: str
@@ -192,6 +224,15 @@ class WMNResult:
         4. PARTIAL_EXISTS - if only code OR text matched for exists
         5. PARTIAL_MISSING - if only code OR text matched for missing
         6. UNKNOWN - if no condition matched
+
+        Args:
+            condition_exists: Whether the full "exists" condition matched.
+            condition_missing: Whether the full "missing" condition matched.
+            partial_exists: Whether a partial "exists" match occurred.
+            partial_missing: Whether a partial "missing" match occurred.
+
+        Returns:
+            WMNStatus: The determined status based on the priority order above.
         """
         if condition_exists and condition_missing:
             return WMNStatus.CONFLICTING
@@ -273,6 +314,15 @@ class WMNResult:
         exclude_text: bool = False,
         exclude_none: bool = True,
     ) -> dict[str, Any]:
+        """Convert the result to a plain dictionary.
+
+        Args:
+            exclude_text: When True, omit the response text field.
+            exclude_none: When True, omit fields with None values.
+
+        Returns:
+            dict[str, Any]: Dictionary representation of this result.
+        """
         result_dict: dict[str, Any] = {
             "name": self.name,
             "category": self.category,
@@ -296,7 +346,16 @@ class WMNResult:
 
 @dataclass(slots=True, frozen=True, kw_only=True)
 class WMNTestResult:
-    """Result of validation testing for a site's detection methods."""
+    """Result of validation testing for a site's detection methods.
+
+    Attributes:
+        name: Site name from the WMN dataset.
+        category: Site category from the WMN dataset.
+        results: List of individual WMNResult objects, or None.
+        error: Error message if testing failed.
+        created_at: Timestamp when the test result was created.
+        status: Aggregate status computed from individual results.
+    """
 
     name: str
     category: str
@@ -339,17 +398,17 @@ class WMNTestResult:
         Priority order:
         1. ERROR - if error message exists or any result has ERROR status
         2. UNKNOWN - if no results exist
-        3. Return the single status if all results have the same status
-        4. CONFLICTING - if both EXISTS and MISSING are present
-        5. PARTIAL_EXISTS - if PARTIAL_EXISTS is present in mixed statuses
-        6. PARTIAL_MISSING - if PARTIAL_MISSING is present in mixed statuses
-        7. UNKNOWN - for other mixed statuses
-        """
-        if self.error:
-            return WMNStatus.ERROR
+        3. Single status if all results share the same status
+        4. CONFLICTING - if both exist-like (EXISTS/PARTIAL_EXISTS) and
+           miss-like (MISSING/PARTIAL_MISSING) statuses are present
+        5. PARTIAL_EXISTS or PARTIAL_MISSING if present in mixed statuses
+        6. UNKNOWN - for other mixed statuses
 
-        if not self.results:
-            return WMNStatus.UNKNOWN
+        Returns:
+            WMNStatus: The aggregate status for this test result.
+        """
+        if self.error or not self.results:
+            return WMNStatus.ERROR if self.error else WMNStatus.UNKNOWN
 
         statuses = {result.status for result in self.results}
 
@@ -359,16 +418,19 @@ class WMNTestResult:
         if len(statuses) == 1:
             return next(iter(statuses))
 
-        if WMNStatus.EXISTS in statuses and WMNStatus.MISSING in statuses:
+        exist_signals = {WMNStatus.EXISTS, WMNStatus.PARTIAL_EXISTS}
+        miss_signals = {WMNStatus.MISSING, WMNStatus.PARTIAL_MISSING}
+        if statuses & exist_signals and statuses & miss_signals:
             return WMNStatus.CONFLICTING
 
         if WMNStatus.PARTIAL_EXISTS in statuses:
             return WMNStatus.PARTIAL_EXISTS
 
-        if WMNStatus.PARTIAL_MISSING in statuses:
-            return WMNStatus.PARTIAL_MISSING
-
-        return WMNStatus.UNKNOWN
+        return (
+            WMNStatus.PARTIAL_MISSING
+            if WMNStatus.PARTIAL_MISSING in statuses
+            else WMNStatus.UNKNOWN
+        )
 
     def to_dict(
         self,
@@ -376,6 +438,15 @@ class WMNTestResult:
         exclude_text: bool = False,
         exclude_none: bool = True,
     ) -> dict[str, Any]:
+        """Convert the test result to a plain dictionary.
+
+        Args:
+            exclude_text: When True, omit response text from nested results.
+            exclude_none: When True, omit fields with None values.
+
+        Returns:
+            dict[str, Any]: Dictionary representation of this test result.
+        """
         result_dict: dict[str, Any] = {
             "name": self.name,
             "category": self.category,
@@ -399,7 +470,14 @@ class WMNTestResult:
 
 @dataclass(slots=True, frozen=True, kw_only=True)
 class WMNResponse:
-    """HTTP response abstraction used by session adapters."""
+    """HTTP response abstraction used by session adapters.
+
+    Attributes:
+        status_code: HTTP status code of the response.
+        text: Response body text.
+        elapsed: Time elapsed for the HTTP request.
+        headers: HTTP response headers, or None if unavailable.
+    """
 
     status_code: int
     text: str
@@ -409,6 +487,10 @@ class WMNResponse:
     def json(self) -> dict[str, Any] | list[Any] | str | int | float | bool | None:
         """Parse the response body as JSON and return the resulting object.
 
+        Returns:
+            dict[str, Any] | list[Any] | str | int | float | bool | None:
+                The parsed JSON value.
+
         Raises:
             orjson.JSONDecodeError: If the response text is not valid JSON.
         """
@@ -417,7 +499,13 @@ class WMNResponse:
 
 @dataclass(frozen=True, slots=True, kw_only=True)
 class WMNError:
-    """Structured representation of a validation error."""
+    """Structured representation of a validation error.
+
+    Attributes:
+        path: JSON path where the error occurred.
+        data: Preview of the offending data, or None.
+        message: Human-readable error description.
+    """
 
     path: str
     data: str | None

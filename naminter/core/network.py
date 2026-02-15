@@ -1,3 +1,5 @@
+"""HTTP session protocol and curl_cffi implementation for Naminter."""
+
 import asyncio
 from collections.abc import Mapping
 import logging
@@ -44,7 +46,12 @@ class BaseSession(Protocol):
     async def close(self) -> None:
         """Close the underlying HTTP session.
 
-        Should handle errors gracefully and not raise exceptions during cleanup.
+        Should handle errors gracefully and not raise exceptions during
+        cleanup, except for CancelledError which must be propagated.
+
+        Raises:
+            asyncio.CancelledError: Propagated to allow proper cancellation
+                handling.
         """
         ...
 
@@ -206,9 +213,12 @@ class CurlCFFISession:
     async def close(self) -> None:
         """Close the HTTP session.
 
-        Handles errors gracefully during cleanup and does not raise exceptions.
-        Catches session closure errors and logs them without propagating.
-        CancelledError is re-raised to allow proper cancellation handling.
+        Handles errors gracefully during cleanup. Catches session closure
+        errors and logs them without propagating.
+
+        Raises:
+            asyncio.CancelledError: Re-raised to allow proper cancellation
+                handling.
         """
         async with self._lock:
             if self._session is None:
@@ -306,7 +316,7 @@ class CurlCFFISession:
 
         headers_dict: dict[str, str] | None = None
         if headers is not None:
-            headers_dict = {key: value for key, value in headers.items()}
+            headers_dict = dict(headers)
 
         try:
             response: Response = await self._session.request(

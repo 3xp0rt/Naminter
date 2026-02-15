@@ -1,3 +1,5 @@
+"""Main Naminter class for asynchronous username enumeration and site testing."""
+
 import asyncio
 from collections.abc import AsyncGenerator, Awaitable
 import logging
@@ -36,11 +38,11 @@ from naminter.core.exceptions import (
     WMNValidationError,
 )
 from naminter.core.models import (
+    WMNDataset,
     WMNError,
     WMNMode,
     WMNResponse,
     WMNResult,
-    WMNDataset,
     WMNSite,
     WMNSummary,
     WMNTestResult,
@@ -61,6 +63,12 @@ class Naminter:
         max_tasks: int = MAX_CONCURRENT_TASKS,
     ) -> None:
         """Initialize Naminter with configuration parameters.
+
+        Args:
+            http_client: Async HTTP session implementing the BaseSession protocol.
+            wmn_data: Parsed WhatsMyName dataset dictionary.
+            wmn_schema: Optional JSON Schema dictionary for dataset validation.
+            max_tasks: Maximum number of concurrent enumeration tasks.
 
         Raises:
             WMNSchemaError: If the JSON schema is invalid.
@@ -89,6 +97,12 @@ class Naminter:
         lifecycle control. For scripts and CLI usage, prefer the context
         manager pattern: `async with Naminter(...) as naminter:`.
 
+        Raises:
+            HttpSessionError: If HTTP session initialization fails.
+            WMNUninitializedError: If WMN data is not provided.
+            WMNDataError: If WMN data loading fails.
+            WMNValidationError: If dataset validation fails.
+
         Example:
             ```python
             # Long-running service (FastAPI, etc.)
@@ -99,12 +113,6 @@ class Naminter:
 
             await naminter.close()  # Call once at shutdown
             ```
-
-        Raises:
-            HttpSessionError: If HTTP session initialization fails.
-            WMNUninitializedError: If WMN data is not provided.
-            WMNDataError: If WMN data loading fails.
-            WMNValidationError: If dataset validation fails.
         """
         try:
             await self._http.open()
@@ -134,7 +142,7 @@ class Naminter:
         schema_errors: list[WMNError] = []
         dataset_errors: list[WMNError] = []
 
-        data = cast(WMNDataset, self._wmn_data)
+        data = cast("WMNDataset", self._wmn_data)
         try:
             if self._validator:
                 schema_errors = self._validator.validate_schema(data)
@@ -161,8 +169,11 @@ class Naminter:
         Use this method for long-running services to clean up at shutdown.
         For scripts and CLI usage, prefer the context manager pattern.
 
-        Handles errors gracefully during cleanup. CancelledError is propagated
-        to allow proper cancellation handling.
+        Handles errors gracefully during cleanup.
+
+        Raises:
+            asyncio.CancelledError: Propagated to allow proper cancellation
+                handling.
         """
         try:
             await self._http.close()
@@ -387,7 +398,7 @@ class Naminter:
             )
             return response
 
-    def get_wmn_summary(
+    def summary(
         self,
         site_names: list[str] | None = None,
         include_categories: list[str] | None = None,
@@ -413,19 +424,20 @@ class Naminter:
                 categories, and known usernames count.
 
         Raises:
+            WMNUninitializedError: If WMN data is not initialized.
             WMNUnknownSiteError: If site_names contains unknown site names.
             WMNUnknownCategoriesError: If include_categories or exclude_categories
                 contains unknown categories.
 
         Example:
             ```python
-            async with Naminter(wmn_data, wmn_schema) as naminter:
+            async with Naminter(http_client, wmn_data, wmn_schema) as naminter:
                 # Get summary of all sites
-                summary = naminter.get_wmn_summary()
+                summary = naminter.summary()
                 print(f"Total sites: {summary.sites_count}")
 
                 # Get summary for specific categories
-                summary = naminter.get_wmn_summary(
+                summary = naminter.summary(
                     include_categories=["social", "coding"],
                 )
                 print(f"Social/coding sites: {summary.sites_count}")
@@ -489,12 +501,13 @@ class Naminter:
                 placeholder), "e_code" (expected HTTP status for an existing account),
                 "e_string" (expected string in body for an existing account),
                 "m_code" (expected HTTP status for a missing account), and
-                "m_string" (expected string in body for a "missing" account).
+                "m_string" (expected string in body for a missing account).
                 Optional keys include "headers" (dict of HTTP headers to send with
                 the request), "post_body" (POST body template containing "{account}"),
                 "strip_bad_char" (characters to strip from the username before
-                substitution in the URL/body), and "uri_pretty" (an optional "pretty"
-                URL template for reporting).
+                substitution in the URL/body), "uri_pretty" (an optional "pretty"
+                URL template for reporting), and "valid" (boolean flag; sites with
+                valid=False are skipped and return NOT_VALID status).
             username:
                 The raw username to test on this site. It is used to build the
                 request URL and optional POST body. If the site defines
@@ -515,7 +528,8 @@ class Naminter:
                 "name"), category (from "cat"), the username that was tested, the
                 final URL used for reporting (may be "uri_pretty"), a high-level
                 status classification (e.g. EXISTS, PARTIAL_EXISTS, PARTIAL_MISSING,
-                CONFLICTING, MISSING, UNKNOWN, ERROR, or NOT_VALID), status_code, text, and elapsed time
+                CONFLICTING, MISSING, UNKNOWN, ERROR, or NOT_VALID),
+                status_code, text, and elapsed time
                 (if the HTTP request completed successfully), and an error message
                 (if an error occurred).
 
@@ -523,6 +537,8 @@ class Naminter:
             asyncio.CancelledError:
                 Propagated if the caller cancels the task while the HTTP request
                 is in progress.
+            HttpSessionError:
+                Propagated if the HTTP session is not initialized or was closed.
 
         Example:
             ```python
@@ -635,7 +651,7 @@ class Naminter:
                 Optional list of site names to restrict enumeration to a subset of
                 sites. If None, all sites from the WMN dataset are considered
                 (subject to category filters). If provided, every name must correspond
-                to a known site; otherwise a WMNDataError is raised.
+                to a known site; otherwise a WMNUnknownSiteError is raised.
             include_categories:
                 Optional list of site categories (values of the "cat" field) to
                 include. When provided, only sites whose category is in this list
@@ -659,11 +675,12 @@ class Naminter:
                 guaranteed to match submission order.
 
         Raises:
+            WMNArgumentError: If usernames list is empty.
+            WMNUninitializedError: If WMN data is not initialized.
             WMNUnknownSiteError: If any requested site name in site_names does not
                 exist in the loaded WMN dataset.
             WMNUnknownCategoriesError: If include_categories or exclude_categories
                 contains unknown categories.
-            WMNArgumentError: If usernames list is empty.
         """
         if not usernames:
             msg = "At least one username must be provided"
@@ -703,7 +720,7 @@ class Naminter:
             self._logger.debug("Enumeration cancelled")
             raise
 
-    async def enumerate_test(
+    async def test_enumeration(
         self,
         site_names: list[str] | None = None,
         include_categories: list[str] | None = None,
@@ -740,6 +757,7 @@ class Naminter:
                 status, and error message if testing failed.
 
         Raises:
+            WMNUninitializedError: If WMN data is not initialized.
             WMNUnknownSiteError: If site_names contains unknown sites.
             WMNUnknownCategoriesError: If categories are unknown.
         """

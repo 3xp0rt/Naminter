@@ -1,3 +1,5 @@
+"""Constants for HTTP configuration, WMN dataset keys, and application settings."""
+
 from typing import Final, Literal
 
 # =============================================================================

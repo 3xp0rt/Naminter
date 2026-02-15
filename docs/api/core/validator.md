@@ -23,13 +23,18 @@ with open("wmn-schema.json", encoding="utf-8") as f:
 # Create validator with schema
 validator = WMNValidator(schema)
 
-# Validate data (data is not modified)
-errors = validator.validate(data)
+# Validate against JSON schema
+schema_errors = validator.validate_schema(data)
 
-if errors:
-    print(f"Validation failed with {len(errors)} errors:")
-    for error in errors:
-        print(f"  - {error.path}: {error.message}")
+# Validate with custom dataset rules
+dataset_errors = WMNValidator.validate_dataset(data)
+
+if schema_errors or dataset_errors:
+    print(f"Validation failed:")
+    for error in schema_errors:
+        print(f"  Schema: {error.path}: {error.message}")
+    for error in dataset_errors:
+        print(f"  Dataset: {error.path}: {error.message}")
 else:
     print("Validation passed!")
 ```

@@ -1,8 +1,11 @@
+"""CLI configuration dataclass for Naminter runtime settings."""
+
 from dataclasses import dataclass, field
 from functools import cached_property
-import orjson
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
+
+import orjson
 
 from naminter.cli.console import display_warning
 from naminter.cli.exceptions import ConfigurationError
@@ -10,8 +13,8 @@ from naminter.core.constants import (
     BROWSER_IMPERSONATE_AGENT,
     BROWSER_IMPERSONATE_NONE,
     HTTP_ALLOW_REDIRECTS,
-    HTTP_TIMEOUT,
     HTTP_SSL_VERIFY,
+    HTTP_TIMEOUT,
     MAX_CONCURRENT_TASKS,
     WMN_REMOTE_URL,
     WMN_SCHEMA_URL,
@@ -32,17 +35,17 @@ class NaminterConfig:
     """
 
     # Input/Output
-    usernames: list[str] = field(default_factory=lambda: list[str]())
+    usernames: list[str] = field(default_factory=list)
     sites: list[str] | None = None
-    local_list_path: Path | str | None = None
-    remote_list_url: str | None = None
-    local_schema_path: Path | str | None = None
-    remote_schema_url: str = WMN_SCHEMA_URL
+    local_list: Path | str | None = None
+    remote_list: str | None = None
+    local_schema: Path | str | None = None
+    remote_schema: str = WMN_SCHEMA_URL
 
     # Validation & Filtering
     skip_validation: bool = False
-    include_categories: list[str] = field(default_factory=lambda: list[str]())
-    exclude_categories: list[str] = field(default_factory=lambda: list[str]())
+    include_categories: list[str] = field(default_factory=list)
+    exclude_categories: list[str] = field(default_factory=list)
     filter_all: bool = False
     filter_exists: bool = False
     filter_partial: bool = False
@@ -88,7 +91,11 @@ class NaminterConfig:
     json_path: Path | str | None = None
 
     def __post_init__(self) -> None:
-        """Validate and normalize configuration after initialization."""
+        """Validate and normalize configuration after initialization.
+
+        Raises:
+            ConfigurationError: If configuration values are invalid or conflicting.
+        """
         self._validate_usernames()
         self._validate_mode()
         self._validate_sources()
@@ -97,99 +104,66 @@ class NaminterConfig:
         self._normalize_fingerprint()
 
     @classmethod
-    def from_click(cls, **kwargs: Any) -> "NaminterConfig":
+    def from_click(cls, **kwargs: Any) -> "NaminterConfig":  # noqa: ANN401
         """Create NaminterConfig from Click CLI arguments.
 
-        This method handles the transformation of Click-specific kwargs
-        (with CLI naming conventions) into the internal config field names.
+        Transforms Click kwargs (CLI option names) into config field names
+        and normalizes types (tuples to lists, mode string to enum).
 
         Args:
-            **kwargs: Raw kwargs from Click CLI.
+            **kwargs: Raw kwargs from Click CLI (main command options).
 
         Returns:
-            Initialized NaminterConfig instance.
+            NaminterConfig: Initialized NaminterConfig instance.
 
         Raises:
-            ConfigurationError: If no kwargs are provided or validation fails.
+            ConfigurationError: If validation fails.
         """
-        if not kwargs:
-            msg = "NaminterConfig requires at least one keyword argument"
-            raise ConfigurationError(msg)
-
         parsed = kwargs.copy()
+        parsed.pop("no_color", None)
 
-        cli_only_keys = ["no_color"]
-        for key in cli_only_keys:
-            parsed.pop(key, None)
-
-        # Input/Output: Handle username/site and data source parameters
-        if "username" in parsed:
-            usernames: list[str] = list(parsed.pop("username") or [])
-            parsed["usernames"] = usernames
-        if "site" in parsed:
-            sites: list[str] = list(parsed.pop("site") or [])
-            parsed["sites"] = sites if sites else None
-
-        if "local_list" in parsed:
-            parsed["local_list_path"] = parsed.pop("local_list")
-        if "remote_list" in parsed:
-            parsed["remote_list_url"] = parsed.pop("remote_list")
-        if "local_schema" in parsed:
-            parsed["local_schema_path"] = parsed.pop("local_schema")
-        if "remote_schema" in parsed:
-            parsed["remote_schema_url"] = parsed.pop("remote_schema")
-
-        # Validation & Filtering: Handle categories (convert tuples to lists)
-        if "include_categories" in parsed and isinstance(
-            parsed["include_categories"],
-            tuple,
-        ):
-            parsed["include_categories"] = list(parsed["include_categories"])
-        if "exclude_categories" in parsed and isinstance(
-            parsed["exclude_categories"],
-            tuple,
-        ):
-            parsed["exclude_categories"] = list(parsed["exclude_categories"])
-
-        # Behavior/Output: Convert mode string to WMNMode enum if needed
-        if "mode" in parsed and isinstance(parsed["mode"], str):
-            parsed["mode"] = WMNMode(parsed["mode"])
-
-        # Export Formats: Parse export format options (separate boolean flags and paths)
-        for fmt in ["csv", "pdf", "html", "json"]:
-            flag_key = fmt
-            path_key = f"{fmt}_path"
-            if flag_key in parsed:
-                parsed[f"{fmt}_export"] = parsed.pop(flag_key)
-            if path_key in parsed:
-                parsed[f"{fmt}_path"] = parsed.pop(path_key)
-
-        # Convert boolean strings to actual booleans
-        bool_fields = [
-            "skip_validation",
-            "allow_redirects",
-            "verify_ssl",
-            "browse",
-            "test",
-            "open_response",
-            "no_progressbar",
-            "filter_all",
-            "filter_exists",
-            "filter_partial",
-            "filter_conflicting",
-            "filter_unknown",
-            "filter_missing",
-            "filter_not_valid",
-            "filter_errors",
-        ]
-        for field_name in bool_fields:
-            if field_name in parsed and not isinstance(parsed[field_name], bool):
-                parsed[field_name] = bool(parsed[field_name])
+        cls._rename_click_keys(parsed)
+        cls._normalize_click_types(parsed)
 
         return cls(**parsed)
 
+    @classmethod
+    def _rename_click_keys(cls, parsed: dict[str, Any]) -> None:
+        """Rename Click CLI keys that differ from config field names.
+
+        Args:
+            parsed: Mutable dictionary of parsed kwargs to transform.
+        """
+        # Click uses singular --username / --site; config uses usernames / sites
+        if "username" in parsed:
+            parsed["usernames"] = list(parsed.pop("username") or [])
+        if "site" in parsed:
+            parsed["sites"] = list(parsed.pop("site")) or None
+
+        for fmt in ("csv", "pdf", "html", "json"):
+            if fmt in parsed:
+                parsed[f"{fmt}_export"] = parsed.pop(fmt)
+
+    @classmethod
+    def _normalize_click_types(cls, parsed: dict[str, Any]) -> None:
+        """Normalize Click argument types to config field types.
+
+        Args:
+            parsed: Mutable dictionary of parsed kwargs to normalize.
+        """
+        for list_key in ("include_categories", "exclude_categories"):
+            if list_key in parsed and isinstance(parsed[list_key], tuple):
+                parsed[list_key] = list(parsed[list_key])
+
+        if "mode" in parsed:
+            parsed["mode"] = WMNMode(parsed["mode"])
+
     def _validate_usernames(self) -> None:
-        """Ensure usernames are provided when not running in test mode."""
+        """Ensure usernames are provided when not running in test mode.
+
+        Raises:
+            ConfigurationError: If no usernames are provided and test mode is off.
+        """
         if not self.usernames and not self.test:
             msg = (
                 "At least one --username/-u is required unless --test is used. "
@@ -198,7 +172,7 @@ class NaminterConfig:
             raise ConfigurationError(msg)
 
     def _validate_mode(self) -> None:
-        """Validate and warn about site validation mode configuration."""
+        """Warn when test mode is enabled with usernames provided."""
         if self.test and self.usernames:
             display_warning(
                 "Site validation mode enabled: provided usernames will be ignored, "
@@ -206,32 +180,33 @@ class NaminterConfig:
             )
 
     def _validate_sources(self) -> None:
-        """Validate data source configuration (list and schema sources)."""
+        """Validate data source configuration (list and schema sources).
+
+        Raises:
+            ConfigurationError: If conflicting data sources are provided.
+        """
         # Validate list sources
-        if self.local_list_path and self.remote_list_url:
+        if self.local_list and self.remote_list:
             msg = (
-                "Conflicting list sources: both local_list_path and remote_list_url "
+                "Conflicting list sources: both local_list and remote_list "
                 "are provided. Please specify only one."
             )
             raise ConfigurationError(msg)
 
-        if not self.local_list_path and not self.remote_list_url:
-            object.__setattr__(self, "remote_list_url", WMN_REMOTE_URL)
+        if not self.local_list and not self.remote_list:
+            object.__setattr__(self, "remote_list", WMN_REMOTE_URL)  # noqa: PLC2801
 
         # Skip schema source validation if validation is disabled
         if self.skip_validation:
             return
 
         # Validate schema sources
-        if self.local_schema_path and self.remote_schema_url != WMN_SCHEMA_URL:
+        if self.local_schema and self.remote_schema != WMN_SCHEMA_URL:
             msg = (
-                "Conflicting schema sources: both local_schema_path and "
-                "remote_schema_url are provided. Please specify only one."
+                "Conflicting schema sources: both local_schema and "
+                "remote_schema are provided. Please specify only one."
             )
             raise ConfigurationError(msg)
-
-        if not self.local_schema_path and not self.remote_schema_url:
-            object.__setattr__(self, "remote_schema_url", WMN_SCHEMA_URL)
 
     def _normalize_filters(self) -> None:
         """Normalize filter settings to ensure at least one filter is active."""
@@ -247,7 +222,7 @@ class NaminterConfig:
         ])
 
         if not has_any_filter:
-            object.__setattr__(self, "filter_exists", True)
+            object.__setattr__(self, "filter_exists", True)  # noqa: PLC2801
 
     def _normalize_impersonate(self) -> None:
         """Normalize impersonate setting to handle 'none' string value."""
@@ -255,16 +230,20 @@ class NaminterConfig:
             isinstance(self.impersonate, str)
             and self.impersonate.lower() == BROWSER_IMPERSONATE_NONE
         ):
-            object.__setattr__(self, "impersonate", None)
+            object.__setattr__(self, "impersonate", None)  # noqa: PLC2801
 
     def _normalize_fingerprint(self) -> None:
-        """Parse and normalize extra_fp from JSON string to dict if needed."""
+        """Parse and normalize extra_fp from JSON string to dict if needed.
+
+        Raises:
+            ConfigurationError: If extra_fp is not valid JSON or not a dict.
+        """
         if not isinstance(self.extra_fp, str):
             return
 
         extra_fp_str = self.extra_fp.strip()
         if not extra_fp_str:
-            object.__setattr__(self, "extra_fp", None)
+            object.__setattr__(self, "extra_fp", None)  # noqa: PLC2801
             return
 
         try:
@@ -275,14 +254,18 @@ class NaminterConfig:
                     f"got {type(parsed).__name__}"
                 )
                 raise ConfigurationError(msg)
-            object.__setattr__(self, "extra_fp", parsed)
+            object.__setattr__(self, "extra_fp", parsed)  # noqa: PLC2801
         except orjson.JSONDecodeError as e:
             msg = f"Invalid JSON in extra_fp parameter: {e}"
             raise ConfigurationError(msg) from e
 
     @cached_property
     def response_dir_path(self) -> Path | None:
-        """Return response directory Path if save_response is enabled."""
+        """Return response directory Path if save_response is enabled.
+
+        Returns:
+            Path | None: Configured directory path, or None if saving is disabled.
+        """
         if not self.save_response:
             return None
 
@@ -293,7 +276,11 @@ class NaminterConfig:
 
     @cached_property
     def export_formats(self) -> dict[str, Path | str | None]:
-        """Return enabled export formats with their custom paths."""
+        """Return enabled export formats with their custom paths.
+
+        Returns:
+            dict[str, Path | str | None]: Mapping of format names to output paths.
+        """
         export_configs = [
             ("csv", self.csv_export, self.csv_path),
             ("pdf", self.pdf_export, self.pdf_path),

@@ -36,7 +36,7 @@ The `BaseSession` protocol requires the following methods:
 - `async close() -> None`: Clean up/close the HTTP session
 - `async get(url: str, headers: Mapping[str, str] | None = None) -> WMNResponse`: Perform HTTP GET request
 - `async post(url: str, headers: Mapping[str, str] | None = None, data: str | bytes | None = None) -> WMNResponse`: Perform HTTP POST request
-- `async request(method: str, url: str, headers: Mapping[str, str] | None = None, data: str | bytes | None = None) -> WMNResponse`: Generic HTTP request
+- `async request(method: HttpMethod, url: str, headers: Mapping[str, str] | None = None, data: str | bytes | None = None) -> WMNResponse`: Generic HTTP request (`HttpMethod` is `Literal["GET", "POST"]`)
 - `async __aenter__() -> BaseSession`: Async context manager entry
 - `async __aexit__(exc_type, exc_val, exc_tb) -> None`: Async context manager exit
 
@@ -44,20 +44,20 @@ The `BaseSession` protocol requires the following methods:
 
 Your implementation should raise the following exceptions:
 - `HttpSessionError`: For session initialization/management errors
-- `HttpTimeoutError`: For request timeouts
 - `HttpError`: For other network-related errors
 
 ### Example: aiohttp Implementation
 
 ```python
 import asyncio
+import time
 import aiohttp
 from collections.abc import Mapping
+from datetime import timedelta
 from naminter import (
     BaseSession,
     HttpError,
     HttpSessionError,
-    HttpTimeoutError,
     Naminter,
     WMNResponse,
 )
@@ -79,7 +79,7 @@ class AiohttpSession:
                     **self._kwargs
                 )
             except Exception as e:
-                raise HttpSessionError("Failed to create session", cause=e) from e
+                raise HttpSessionError(f"Failed to create session: {e}") from e
     
     async def close(self) -> None:
         """Close the aiohttp session."""
@@ -116,6 +116,7 @@ class AiohttpSession:
             raise HttpSessionError("Session not initialized")
         
         try:
+            start = time.monotonic()
             async with self._session.request(
                 method=method,
                 url=url,
@@ -123,17 +124,18 @@ class AiohttpSession:
                 data=data,
             ) as response:
                 text = await response.text()
+                elapsed = timedelta(seconds=time.monotonic() - start)
                 return WMNResponse(
                     status_code=response.status,
                     text=text,
-                    elapsed=0.0,  # aiohttp doesn't provide elapsed time directly
+                    elapsed=elapsed,
                 )
         except asyncio.TimeoutError as e:
-            raise HttpTimeoutError(f"{method} timeout for {url}", cause=e) from e
+            raise HttpError(f"{method} timeout for {url}") from e
         except aiohttp.ClientError as e:
-            raise HttpError(f"{method} failed for {url}: {e}", cause=e) from e
+            raise HttpError(f"{method} failed for {url}: {e}") from e
         except Exception as e:
-            raise HttpError(f"Unexpected error: {e}", cause=e) from e
+            raise HttpError(f"Unexpected error: {e}") from e
     
     async def __aenter__(self) -> "AiohttpSession":
         """Async context manager entry."""

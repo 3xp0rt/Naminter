@@ -11,6 +11,7 @@ Naminter leverages the comprehensive [WhatsMyName](https://github.com/WebBreache
 ### Getting Started
 - [Installation Guide](getting-started/installation.md) - Installation instructions for all platforms
 - [Usage Examples](getting-started/usage.md) - CLI and Python API usage examples
+- [CLI Reference](cli/index.md) - Complete CLI options and practical examples
 
 ### API Reference
 - [Naminter Class](api/core/main.md) - Main enumeration class

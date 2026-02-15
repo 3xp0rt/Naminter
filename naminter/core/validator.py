@@ -1,13 +1,15 @@
+"""WMN dataset validator using JSON Schema and custom validation rules."""
+
+from __future__ import annotations
+
 from collections import defaultdict
-from collections.abc import Mapping
-import orjson
 import logging
-from typing import Any, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from jsonschema.exceptions import SchemaError as JsonSchemaError
 from jsonschema.exceptions import ValidationError
-from jsonschema.protocols import Validator
 from jsonschema.validators import validator_for
+import orjson
 
 from naminter.core.constants import (
     ACCOUNT_PLACEHOLDER,
@@ -31,11 +33,16 @@ from naminter.core.constants import (
 from naminter.core.exceptions import WMNSchemaError
 from naminter.core.models import WMN_REQUIRED_KEYS, WMNDataset, WMNError, WMNSite
 
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from jsonschema.protocols import Validator
+
 logger = logging.getLogger(__name__)
 
 
 class WMNValidator:
-    """Validates WMN dataset against JSON Schema."""
+    """Validates WMN dataset against JSON Schema and custom rules."""
 
     __slots__ = ("_schema", "_validator")
 
@@ -91,7 +98,9 @@ class WMNValidator:
         """Validate dataset fields with custom rules and return list of errors.
 
         Performs code-based validation for license, authors, categories,
-        and duplicate site names. Does not use JSON schema.
+        duplicate site names, and individual site configurations
+        (uri_check, post_body, headers, status codes, known usernames, etc.).
+        Does not use JSON schema.
 
         Args:
             data: WMN dataset to validate. This will not be modified.
@@ -193,7 +202,10 @@ class WMNValidator:
                 WMNError(
                     path=f"$.{WMN_KEY_LICENSE}",
                     data=WMNValidator._preview(license_data),
-                    message=f"Invalid {WMN_KEY_LICENSE}: must be array, got {type(license_data).__name__}",
+                    message=(
+                        f"Invalid {WMN_KEY_LICENSE}: must be array, "
+                        f"got {type(license_data).__name__}"
+                    ),
                 ),
             )
 
@@ -201,11 +213,11 @@ class WMNValidator:
 
     @staticmethod
     def _validate_string_list(data: WMNDataset, field_key: str) -> list[WMNError]:
-        """Validate a field that must be a non-empty list of unique non-empty strings.
+        """Validate a field as a non-empty list of unique non-empty strings.
 
         Args:
             data: WMN dataset to check.
-            field_key: The key name of the field to validate (e.g., 'authors', 'categories').
+            field_key: The key name of the field to validate.
 
         Returns:
             list[WMNError]: Validation errors for the field.
@@ -218,7 +230,10 @@ class WMNValidator:
                 WMNError(
                     path=f"$.{field_key}",
                     data=WMNValidator._preview(field_data),
-                    message=f"Invalid {field_key}: must be array, got {type(field_data).__name__}",
+                    message=(
+                        f"Invalid {field_key}: must be array, "
+                        f"got {type(field_data).__name__}"
+                    ),
                 ),
             )
         else:
@@ -239,7 +254,11 @@ class WMNValidator:
                         WMNError(
                             path=f"$.{field_key}[{index}]",
                             data=WMNValidator._preview(item),
-                            message=f"Invalid {field_key} item at index {index}: must be string, got {type(item).__name__}",
+                            message=(
+                                f"Invalid {field_key} item at "
+                                f"index {index}: must be string, "
+                                f"got {type(item).__name__}"
+                            ),
                         ),
                     )
                 elif not item.strip():
@@ -247,7 +266,11 @@ class WMNValidator:
                         WMNError(
                             path=f"$.{field_key}[{index}]",
                             data=WMNValidator._preview(item),
-                            message=f"Invalid {field_key} item at index {index}: must be non-empty string",
+                            message=(
+                                f"Invalid {field_key} item at "
+                                f"index {index}: must be "
+                                f"non-empty string"
+                            ),
                         ),
                     )
                 else:
@@ -288,6 +311,31 @@ class WMNValidator:
         return WMNValidator._validate_string_list(data, WMN_KEY_CATEGORIES)
 
     @staticmethod
+    def _site_error(
+        base_path: str,
+        suffix: str,
+        message: str,
+        data: object | None = None,
+    ) -> WMNError:
+        """Create a WMNError for a site validation issue.
+
+        Args:
+            base_path: JSON path prefix for the site.
+            suffix: JSON path suffix appended to base_path.
+            message: Human-readable error description.
+            data: Optional offending value for preview.
+
+        Returns:
+            WMNError: Constructed validation error.
+        """
+        path = f"{base_path}.{suffix}" if suffix else base_path
+        return WMNError(
+            path=path,
+            data=WMNValidator._preview(data),
+            message=message,
+        )
+
+    @staticmethod
     def _validate_sites(sites: list[WMNSite]) -> list[WMNError]:
         """Validate all site configurations.
 
@@ -298,183 +346,372 @@ class WMNValidator:
             list[WMNError]: Validation errors, empty if all sites are valid.
         """
         errors: list[WMNError] = []
-
         for index, site in enumerate(sites):
             base_path = f"$.{WMN_KEY_SITES}[{index}]"
-            site_errors: list[WMNError] = []
+            site_errors = WMNValidator._validate_site(site, base_path)
+            if site_errors:
+                name: Any = site.get(SITE_KEY_NAME)
+                label = name if isinstance(name, str) and name.strip() else base_path
+                msgs = [e.message for e in site_errors]
+                logger.warning(
+                    "Invalid site %s: %s",
+                    label,
+                    "; ".join(msgs),
+                )
+                errors.extend(site_errors)
+        return errors
 
-            def _create_error(
-                path_suffix: str,
-                message: str,
-                data: object | None = None,
-            ) -> None:
-                """Helper to create WMNError with path and data."""
-                path = f"{base_path}.{path_suffix}" if path_suffix else base_path
-                data_preview = WMNValidator._preview(data)
-                error = WMNError(path=path, data=data_preview, message=message)
-                site_errors.append(error)
+    @staticmethod
+    def _validate_site(
+        site: WMNSite,
+        base_path: str,
+    ) -> list[WMNError]:
+        """Validate a single site configuration.
 
-            name: Any = site.get(SITE_KEY_NAME)
-            if not isinstance(name, str):
-                _create_error(
+        Args:
+            site: Site configuration to validate.
+            base_path: JSON path prefix for the site.
+
+        Returns:
+            list[WMNError]: Validation errors for this site.
+        """
+        errors: list[WMNError] = []
+
+        name: Any = site.get(SITE_KEY_NAME)
+        if not isinstance(name, str):
+            errors.append(
+                WMNValidator._site_error(
+                    base_path,
                     SITE_KEY_NAME,
-                    f"Invalid {SITE_KEY_NAME}: must be string, got {type(name).__name__}",
+                    f"Invalid {SITE_KEY_NAME}: "
+                    f"must be string, got {type(name).__name__}",
                     name,
                 )
-            elif not name.strip():
-                _create_error(
+            )
+        elif not name.strip():
+            errors.append(
+                WMNValidator._site_error(
+                    base_path,
                     SITE_KEY_NAME,
                     f"Invalid {SITE_KEY_NAME}: must be non-empty string",
                     name,
                 )
+            )
 
-            site_label = name if isinstance(name, str) and name.strip() else base_path
-
-            missing_keys = [key for key in WMN_REQUIRED_KEYS if key not in site]
-            if missing_keys:
-                _create_error("", f"Missing required keys: {missing_keys}", site)
-                error_messages = [error.message for error in site_errors]
-                logger.warning(
-                    "Invalid site %s: %s",
-                    site_label,
-                    "; ".join(error_messages),
+        missing = [key for key in WMN_REQUIRED_KEYS if key not in site]
+        if missing:
+            errors.append(
+                WMNValidator._site_error(
+                    base_path,
+                    "",
+                    f"Missing required keys: {missing}",
+                    site,
                 )
-                errors.extend(site_errors)
-                continue
+            )
+            return errors
 
-            uri_check: Any = site.get(SITE_KEY_URI_CHECK)
-            if not isinstance(uri_check, str) or not uri_check:
-                _create_error(
+        errors.extend(
+            WMNValidator._validate_site_uri_body(site, base_path),
+        )
+        errors.extend(
+            WMNValidator._validate_site_headers(site, base_path),
+        )
+
+        strip_bad_char: Any = site.get(SITE_KEY_STRIP_BAD_CHAR)
+        if strip_bad_char is not None and not isinstance(
+            strip_bad_char,
+            str,
+        ):
+            errors.append(
+                WMNValidator._site_error(
+                    base_path,
+                    SITE_KEY_STRIP_BAD_CHAR,
+                    f"Invalid {SITE_KEY_STRIP_BAD_CHAR}: "
+                    f"must be string or None, "
+                    f"got {type(strip_bad_char).__name__}",
+                    strip_bad_char,
+                )
+            )
+
+        errors.extend(
+            WMNValidator._validate_site_codes(site, base_path),
+        )
+        errors.extend(
+            WMNValidator._validate_site_strings(site, base_path),
+        )
+        errors.extend(
+            WMNValidator._validate_site_known(site, base_path),
+        )
+        return errors
+
+    @staticmethod
+    def _validate_site_uri_body(
+        site: WMNSite,
+        base_path: str,
+    ) -> list[WMNError]:
+        """Validate uri_check and post_body fields.
+
+        Args:
+            site: Site configuration to validate.
+            base_path: JSON path prefix for the site.
+
+        Returns:
+            list[WMNError]: Validation errors for uri/body fields.
+        """
+        errors: list[WMNError] = []
+
+        uri_check: Any = site.get(SITE_KEY_URI_CHECK)
+        if not isinstance(uri_check, str) or not uri_check:
+            errors.append(
+                WMNValidator._site_error(
+                    base_path,
                     SITE_KEY_URI_CHECK,
                     f"Invalid {SITE_KEY_URI_CHECK}: must be non-empty string",
                     uri_check,
                 )
+            )
 
-            post_body: Any = site.get(SITE_KEY_POST_BODY)
-            if post_body is not None:
-                if not isinstance(post_body, str):
-                    _create_error(
+        post_body: Any = site.get(SITE_KEY_POST_BODY)
+        if post_body is not None:
+            if not isinstance(post_body, str):
+                errors.append(
+                    WMNValidator._site_error(
+                        base_path,
                         SITE_KEY_POST_BODY,
-                        f"Invalid {SITE_KEY_POST_BODY}: must be string or None, "
+                        f"Invalid {SITE_KEY_POST_BODY}: "
+                        f"must be string or None, "
                         f"got {type(post_body).__name__}",
                         post_body,
                     )
-                elif post_body:
-                    if ACCOUNT_PLACEHOLDER not in post_body:
-                        _create_error(
+                )
+            elif post_body:
+                if ACCOUNT_PLACEHOLDER not in post_body:
+                    errors.append(
+                        WMNValidator._site_error(
+                            base_path,
                             SITE_KEY_POST_BODY,
-                            f"Invalid {SITE_KEY_POST_BODY}: must contain '{ACCOUNT_PLACEHOLDER}'",
+                            f"Invalid {SITE_KEY_POST_BODY}: "
+                            f"must contain "
+                            f"'{ACCOUNT_PLACEHOLDER}'",
                             post_body,
                         )
-                    if site.get(SITE_KEY_HEADERS) is None:
-                        _create_error(
+                    )
+                if site.get(SITE_KEY_HEADERS) is None:
+                    errors.append(
+                        WMNValidator._site_error(
+                            base_path,
                             SITE_KEY_POST_BODY,
-                            f"Invalid {SITE_KEY_POST_BODY}: when {SITE_KEY_POST_BODY} is provided, "
+                            f"Invalid {SITE_KEY_POST_BODY}: "
+                            f"when {SITE_KEY_POST_BODY} is "
+                            f"provided, "
                             f"{SITE_KEY_HEADERS} is required",
                             post_body,
                         )
-            else:
-                if isinstance(uri_check, str) and ACCOUNT_PLACEHOLDER not in uri_check:
-                    _create_error(
-                        SITE_KEY_URI_CHECK,
-                        f"Invalid {SITE_KEY_URI_CHECK}: must contain '{ACCOUNT_PLACEHOLDER}' "
-                        f"when {SITE_KEY_POST_BODY} is not provided",
-                        uri_check,
                     )
+        elif isinstance(uri_check, str) and ACCOUNT_PLACEHOLDER not in uri_check:
+            errors.append(
+                WMNValidator._site_error(
+                    base_path,
+                    SITE_KEY_URI_CHECK,
+                    f"Invalid {SITE_KEY_URI_CHECK}: "
+                    f"must contain '{ACCOUNT_PLACEHOLDER}' "
+                    f"when {SITE_KEY_POST_BODY} is not provided",
+                    uri_check,
+                )
+            )
 
-            headers: Any = site.get(SITE_KEY_HEADERS)
-            if headers is not None:
-                if not isinstance(headers, dict):
-                    _create_error(
-                        SITE_KEY_HEADERS,
-                        f"Invalid {SITE_KEY_HEADERS}: must be dict or None, "
-                        f"got {type(headers).__name__}",
-                        headers,
+        return errors
+
+    @staticmethod
+    def _validate_site_headers(
+        site: WMNSite,
+        base_path: str,
+    ) -> list[WMNError]:
+        """Validate headers field.
+
+        Args:
+            site: Site configuration to validate.
+            base_path: JSON path prefix for the site.
+
+        Returns:
+            list[WMNError]: Validation errors for headers.
+        """
+        errors: list[WMNError] = []
+
+        headers: Any = site.get(SITE_KEY_HEADERS)
+        if headers is None:
+            return errors
+
+        if not isinstance(headers, dict):
+            errors.append(
+                WMNValidator._site_error(
+                    base_path,
+                    SITE_KEY_HEADERS,
+                    f"Invalid {SITE_KEY_HEADERS}: "
+                    f"must be dict or None, "
+                    f"got {type(headers).__name__}",
+                    headers,
+                )
+            )
+            return errors
+
+        headers_dict: dict[Any, Any] = cast(
+            "dict[Any, Any]",
+            headers,
+        )
+        for hdr_key, hdr_val in headers_dict.items():
+            if not isinstance(hdr_key, str):
+                errors.append(
+                    WMNValidator._site_error(
+                        base_path,
+                        f"{SITE_KEY_HEADERS}.{hdr_key}",
+                        f"Invalid {SITE_KEY_HEADERS} key: "
+                        f"must be string, "
+                        f"got {type(hdr_key).__name__}",
+                        hdr_key,
                     )
-                else:
-                    headers_dict: dict[Any, Any] = cast("dict[Any, Any]", headers)
-                    for header_key, header_value in headers_dict.items():
-                        if not isinstance(header_key, str):
-                            _create_error(
-                                f"{SITE_KEY_HEADERS}.{header_key}",
-                                f"Invalid {SITE_KEY_HEADERS} key: must be string, "
-                                f"got {type(header_key).__name__}",
-                                header_key,
-                            )
-                        if not isinstance(header_value, str):
-                            _create_error(
-                                f"{SITE_KEY_HEADERS}[{header_key}]",
-                                f"Invalid {SITE_KEY_HEADERS} value for key '{header_key}': "
-                                f"must be string, got {type(header_value).__name__}",
-                                header_value,
-                            )
-
-            strip_bad_char: Any = site.get(SITE_KEY_STRIP_BAD_CHAR)
-            if strip_bad_char is not None and not isinstance(strip_bad_char, str):
-                _create_error(
-                    SITE_KEY_STRIP_BAD_CHAR,
-                    f"Invalid {SITE_KEY_STRIP_BAD_CHAR}: must be string or None, "
-                    f"got {type(strip_bad_char).__name__}",
-                    strip_bad_char,
+                )
+            if not isinstance(hdr_val, str):
+                errors.append(
+                    WMNValidator._site_error(
+                        base_path,
+                        f"{SITE_KEY_HEADERS}[{hdr_key}]",
+                        f"Invalid {SITE_KEY_HEADERS} value "
+                        f"for key '{hdr_key}': must be string, "
+                        f"got {type(hdr_val).__name__}",
+                        hdr_val,
+                    )
                 )
 
-            for key in (SITE_KEY_E_CODE, SITE_KEY_M_CODE):
-                code_value: Any = site.get(key)
-                if not isinstance(code_value, int):
-                    _create_error(
-                        key,
-                        f"Invalid {key}: must be integer, got {type(code_value).__name__}",
-                        code_value,
-                    )
-                elif not (HTTP_STATUS_CODE_MIN <= code_value <= HTTP_STATUS_CODE_MAX):
-                    _create_error(
-                        key,
-                        f"Invalid {key}: must be valid HTTP status code "
-                        f"({HTTP_STATUS_CODE_MIN}-{HTTP_STATUS_CODE_MAX}), got {code_value}",
-                        code_value,
-                    )
+        return errors
 
-            for key in (SITE_KEY_E_STRING, SITE_KEY_M_STRING):
-                string_value: Any = site.get(key)
-                if not isinstance(string_value, str):
-                    _create_error(
+    @staticmethod
+    def _validate_site_codes(
+        site: WMNSite,
+        base_path: str,
+    ) -> list[WMNError]:
+        """Validate e_code and m_code fields.
+
+        Args:
+            site: Site configuration to validate.
+            base_path: JSON path prefix for the site.
+
+        Returns:
+            list[WMNError]: Validation errors for status code fields.
+        """
+        errors: list[WMNError] = []
+
+        for key in (SITE_KEY_E_CODE, SITE_KEY_M_CODE):
+            code_value: Any = site.get(key)
+            if not isinstance(code_value, int):
+                errors.append(
+                    WMNValidator._site_error(
+                        base_path,
                         key,
-                        f"Invalid {key}: must be string, got {type(string_value).__name__}",
+                        f"Invalid {key}: must be integer, "
+                        f"got {type(code_value).__name__}",
+                        code_value,
+                    )
+                )
+            elif not (HTTP_STATUS_CODE_MIN <= code_value <= HTTP_STATUS_CODE_MAX):
+                errors.append(
+                    WMNValidator._site_error(
+                        base_path,
+                        key,
+                        f"Invalid {key}: must be valid HTTP "
+                        f"status code "
+                        f"({HTTP_STATUS_CODE_MIN}"
+                        f"-{HTTP_STATUS_CODE_MAX}), "
+                        f"got {code_value}",
+                        code_value,
+                    )
+                )
+
+        return errors
+
+    @staticmethod
+    def _validate_site_strings(
+        site: WMNSite,
+        base_path: str,
+    ) -> list[WMNError]:
+        """Validate e_string and m_string fields.
+
+        Args:
+            site: Site configuration to validate.
+            base_path: JSON path prefix for the site.
+
+        Returns:
+            list[WMNError]: Validation errors for string fields.
+        """
+        errors: list[WMNError] = []
+
+        for key in (SITE_KEY_E_STRING, SITE_KEY_M_STRING):
+            string_value: Any = site.get(key)
+            if not isinstance(string_value, str):
+                errors.append(
+                    WMNValidator._site_error(
+                        base_path,
+                        key,
+                        f"Invalid {key}: must be string, "
+                        f"got {type(string_value).__name__}",
                         string_value,
                     )
+                )
 
-            known: Any = site.get(SITE_KEY_KNOWN)
-            if not isinstance(known, list):
-                msg = (
+        return errors
+
+    @staticmethod
+    def _validate_site_known(
+        site: WMNSite,
+        base_path: str,
+    ) -> list[WMNError]:
+        """Validate known usernames field.
+
+        Args:
+            site: Site configuration to validate.
+            base_path: JSON path prefix for the site.
+
+        Returns:
+            list[WMNError]: Validation errors for known field.
+        """
+        errors: list[WMNError] = []
+
+        known: Any = site.get(SITE_KEY_KNOWN)
+        if not isinstance(known, list):
+            errors.append(
+                WMNValidator._site_error(
+                    base_path,
+                    SITE_KEY_KNOWN,
                     f"Invalid {SITE_KEY_KNOWN}: must be list, "
-                    f"got {type(known).__name__}"
+                    f"got {type(known).__name__}",
+                    known,
                 )
-                _create_error(SITE_KEY_KNOWN, msg, known)
-            else:
-                known_list: list[Any] = cast("list[Any]", known)
-                for known_index, item in enumerate(known_list):
-                    if not isinstance(item, str):
-                        _create_error(
-                            f"{SITE_KEY_KNOWN}[{known_index}]",
-                            f"Invalid {SITE_KEY_KNOWN} item at index {known_index}: "
-                            f"must be string, got {type(item).__name__}",
-                            item,
-                        )
-                    elif not item.strip():
-                        _create_error(
-                            f"{SITE_KEY_KNOWN}[{known_index}]",
-                            f"Invalid {SITE_KEY_KNOWN} item at index {known_index}: "
-                            f"must be non-empty string",
-                            item,
-                        )
+            )
+            return errors
 
-            if site_errors:
-                error_messages = [error.message for error in site_errors]
-                logger.warning(
-                    "Invalid site %s: %s",
-                    site_label,
-                    "; ".join(error_messages),
+        known_list: list[Any] = cast("list[Any]", known)
+        for idx, item in enumerate(known_list):
+            if not isinstance(item, str):
+                errors.append(
+                    WMNValidator._site_error(
+                        base_path,
+                        f"{SITE_KEY_KNOWN}[{idx}]",
+                        f"Invalid {SITE_KEY_KNOWN} item at "
+                        f"index {idx}: must be string, "
+                        f"got {type(item).__name__}",
+                        item,
+                    )
                 )
-                errors.extend(site_errors)
+            elif not item.strip():
+                errors.append(
+                    WMNValidator._site_error(
+                        base_path,
+                        f"{SITE_KEY_KNOWN}[{idx}]",
+                        f"Invalid {SITE_KEY_KNOWN} item at "
+                        f"index {idx}: must be "
+                        f"non-empty string",
+                        item,
+                    )
+                )
 
         return errors

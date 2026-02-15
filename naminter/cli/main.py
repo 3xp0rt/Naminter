@@ -1,13 +1,16 @@
+"""CLI entry point, Click commands, and error handling for Naminter."""
+
+from collections.abc import Callable
 from functools import wraps
 import logging
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Final, cast, get_args
 
-import orjson
-import uvloop
 from curl_cffi import BrowserTypeLiteral
-import rich_click as click
+import orjson
 from pathvalidate.click import validate_filepath_arg
+import rich_click as click
+import uvloop
 
 if TYPE_CHECKING:
     from curl_cffi import ExtraFingerprints
@@ -50,8 +53,8 @@ from naminter.core.constants import (
     BROWSER_IMPERSONATE_NONE,
     DEFAULT_FILE_ENCODING,
     HTTP_ALLOW_REDIRECTS,
-    HTTP_TIMEOUT,
     HTTP_SSL_VERIFY,
+    HTTP_TIMEOUT,
     LOGGING_FORMAT,
     MAX_CONCURRENT_TASKS,
     WMN_SCHEMA_URL,
@@ -65,8 +68,8 @@ from naminter.core.exceptions import (
 from naminter.core.formatter import WMNFormatter
 from naminter.core.main import Naminter
 from naminter.core.models import (
-    WMNMode,
     WMNDataset,
+    WMNMode,
     WMNResult,
     WMNStatus,
     WMNTestResult,
@@ -80,7 +83,13 @@ def _version_callback(
     _param: click.Parameter,
     value: bool,  # noqa: FBT001
 ) -> None:
-    """Eager callback to display version and exit."""
+    """Eager callback to display version and exit.
+
+    Args:
+        ctx: Click context for the current invocation.
+        _param: The Click parameter that triggered this callback.
+        value: Whether the version flag was set.
+    """
     if not value or ctx.resilient_parsing:
         return
     display_version()
@@ -91,6 +100,11 @@ class NaminterCLI:
     """Handles username enumeration operations."""
 
     def __init__(self, config: NaminterConfig) -> None:
+        """Initialize the CLI handler with configuration.
+
+        Args:
+            config: Validated configuration for the CLI session.
+        """
         self._config: NaminterConfig = config
         self._formatter: ResultFormatter = ResultFormatter(
             verbose=config.verbose,
@@ -101,7 +115,11 @@ class NaminterCLI:
         )
 
     def _create_status_filters(self) -> dict[WMNStatus, bool]:
-        """Create status filter mapping from config."""
+        """Create status filter mapping from config.
+
+        Returns:
+            dict[WMNStatus, bool]: Mapping of statuses to their filter flags.
+        """
         return {
             WMNStatus.EXISTS: self._config.filter_exists,
             WMNStatus.PARTIAL_EXISTS: self._config.filter_partial,
@@ -117,7 +135,7 @@ class NaminterCLI:
         """Setup response directory if response saving is enabled.
 
         Returns:
-            Path to response directory if enabled, None otherwise.
+            Path | None: Path to response directory if enabled, None otherwise.
         """
         if not self._config.save_response:
             return None
@@ -143,7 +161,14 @@ class NaminterCLI:
 
     @staticmethod
     def setup_logging(config: NaminterConfig) -> None:
-        """Configure project logging."""
+        """Configure project logging.
+
+        Args:
+            config: Configuration containing log file and level settings.
+
+        Raises:
+            OSError: If log directory or file creation fails.
+        """
         if not config.log_file:
             return
 
@@ -184,7 +209,17 @@ class NaminterCLI:
             raise OSError(msg) from e
 
     async def run(self) -> None:
-        """Main execution method with progress tracking."""
+        """Load data, validate, run enumeration or testing, and export results.
+
+        Raises:
+            FileError: If data loading or remote fetching fails.
+            NetworkError: If remote resource fetching fails.
+            ExportError: If result exporting fails.
+            HttpSessionError: If HTTP session initialization fails.
+            WMNUninitializedError: If WMN data is not provided.
+            WMNDataError: If WMN data loading fails.
+            WMNValidationError: If dataset validation fails.
+        """
         async with CurlCFFISession(
             proxies=self._config.proxy,
             verify=self._config.verify_ssl,
@@ -196,10 +231,10 @@ class NaminterCLI:
             extra_fp=cast("ExtraFingerprints | None", self._config.extra_fp),
         ) as http_client:
             wmn_data: dict[str, Any] | None = None
-            if self._config.local_list_path:
-                wmn_data = await read_json(self._config.local_list_path)
-            elif self._config.remote_list_url:
-                raw_list = await fetch_json(http_client, self._config.remote_list_url)
+            if self._config.local_list:
+                wmn_data = await read_json(self._config.local_list)
+            elif self._config.remote_list:
+                raw_list = await fetch_json(http_client, self._config.remote_list)
                 if not isinstance(raw_list, dict):
                     msg = "Remote list must be a JSON object"
                     raise FileError(msg)
@@ -207,12 +242,12 @@ class NaminterCLI:
 
             wmn_schema: dict[str, Any] | None = None
             if not self._config.skip_validation:
-                if self._config.local_schema_path:
-                    wmn_schema = await read_json(self._config.local_schema_path)
-                elif self._config.remote_schema_url:
+                if self._config.local_schema:
+                    wmn_schema = await read_json(self._config.local_schema)
+                elif self._config.remote_schema:
                     raw_schema = await fetch_json(
                         http_client,
-                        self._config.remote_schema_url,
+                        self._config.remote_schema,
                     )
                     if not isinstance(raw_schema, dict):
                         msg = "Remote schema must be a JSON object"
@@ -238,8 +273,15 @@ class NaminterCLI:
                     )
 
     async def _run_check(self, naminter: Naminter) -> list[WMNResult]:
-        """Run the username enumeration functionality."""
-        summary = naminter.get_wmn_summary(
+        """Run the username enumeration functionality.
+
+        Args:
+            naminter: Initialized Naminter instance to enumerate with.
+
+        Returns:
+            list[WMNResult]: Filtered results from the enumeration.
+        """
+        summary = naminter.summary(
             site_names=self._config.sites,
             include_categories=self._config.include_categories,
             exclude_categories=self._config.exclude_categories,
@@ -286,8 +328,15 @@ class NaminterCLI:
         return results
 
     async def _run_validation(self, naminter: Naminter) -> list[WMNTestResult]:
-        """Run the site validation functionality."""
-        summary = naminter.get_wmn_summary(
+        """Run the site validation functionality.
+
+        Args:
+            naminter: Initialized Naminter instance to validate with.
+
+        Returns:
+            list[WMNTestResult]: Filtered results from site validation.
+        """
+        summary = naminter.summary(
             site_names=self._config.sites,
             include_categories=self._config.include_categories,
             exclude_categories=self._config.exclude_categories,
@@ -305,7 +354,7 @@ class NaminterCLI:
             "[bright_cyan]Running testing...[/bright_cyan]",
         )
 
-        async for result in naminter.enumerate_test(
+        async for result in naminter.test_enumeration(
             site_names=self._config.sites,
             include_categories=self._config.include_categories,
             exclude_categories=self._config.exclude_categories,
@@ -339,7 +388,14 @@ class NaminterCLI:
         return results
 
     def _filter_result(self, result: WMNResult | WMNTestResult) -> bool:
-        """Determine if a result should be included based on filter settings."""
+        """Determine if a result should be included based on filter settings.
+
+        Args:
+            result: The result to evaluate against active filters.
+
+        Returns:
+            bool: True if the result passes the active filters.
+        """
         if self._config.filter_all:
             return True
 
@@ -365,7 +421,14 @@ class NaminterCLI:
                 display_error(f"Browser error opening response file {file_path}: {e}")
 
     async def _save_response(self, result: WMNResult) -> Path | None:
-        """Save HTTP response to file if configured."""
+        """Save HTTP response to file if configured.
+
+        Args:
+            result: The WMN result containing the response text to save.
+
+        Returns:
+            Path | None: Path to the saved file, or None if not saved.
+        """
         if not self._config.save_response:
             return None
 
@@ -405,7 +468,9 @@ def _handle_cli_error(ctx: click.Context, error: BaseException) -> None:
     ctx.exit(EXIT_CODE_ERROR)
 
 
-def handle_cli_errors(func: Any) -> Any:
+def handle_cli_errors(
+    func: Callable[..., None],
+) -> Callable[..., None]:
     """Decorator to centralize CLI error handling.
 
     Handles KeyboardInterrupt and common CLI exceptions for Click commands.
@@ -415,13 +480,17 @@ def handle_cli_errors(func: Any) -> Any:
         func: The Click command function to wrap.
 
     Returns:
-        Wrapped function with error handling.
+        Callable[..., None]: Wrapped function with error handling.
     """
 
     @wraps(func)
-    def wrapper(ctx: click.Context, *args: Any, **kwargs: Any) -> Any:
+    def wrapper(
+        ctx: click.Context,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
         try:
-            return func(ctx, *args, **kwargs)
+            func(ctx, *args, **kwargs)
         except KeyboardInterrupt:
             display_warning("Operation interrupted")
             ctx.exit(EXIT_CODE_INTERRUPTED)
@@ -439,7 +508,7 @@ def handle_cli_errors(func: Any) -> Any:
             CLIError,
         ) as e:
             _handle_cli_error(ctx, e)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001
             display_error(f"Unexpected error: {type(e).__name__}: {e}")
             ctx.exit(EXIT_CODE_ERROR)
 
@@ -748,7 +817,7 @@ def validator_command(
     async def run_validator() -> None:
         """Run validation asynchronously."""
         schema = await read_json(local_schema)
-        data = cast(WMNDataset, await read_json(local_data))
+        data = cast("WMNDataset", await read_json(local_data))
 
         validator = WMNValidator(schema)
         schema_errors = validator.validate_schema(data)
@@ -783,19 +852,25 @@ def validator_command(
     help="Path to local WhatsMyName JSON data file to format",
 )
 @click.option(
-    "--output",
+    "--output-dataset",
     "-o",
     callback=validate_filepath_arg,
-    help="Output file path (defaults to overwriting input file)",
+    help="Output path for formatted dataset (defaults to overwriting --local-data)",
+)
+@click.option(
+    "--output-schema",
+    callback=validate_filepath_arg,
+    help="Output path for formatted schema (defaults to overwriting --local-schema)",
 )
 @click.option("--no-color", is_flag=True, help="Disable colored console output")
 @click.pass_context
 @handle_cli_errors
 def format_command(
-    ctx: click.Context,
+    _ctx: click.Context,
     local_schema: Path,
     local_data: Path,
-    output: Path | None,
+    output_dataset: Path | None,
+    output_schema: Path | None,
     *,
     no_color: bool,
 ) -> None:
@@ -824,15 +899,20 @@ def format_command(
         formatted_dataset_content = formatter.format_dataset(data)
         formatted_schema_content = formatter.format_schema()
 
-        output_path = output or local_data
+        dataset_output = output_dataset or local_data
+        schema_output = output_schema or local_schema
 
         if original_dataset_content != formatted_dataset_content:
-            await write_file(output_path, formatted_dataset_content)
-            display_diff(original_dataset_content, formatted_dataset_content, output_path)
+            await write_file(dataset_output, formatted_dataset_content)
+            display_diff(
+                original_dataset_content, formatted_dataset_content, dataset_output
+            )
 
         if original_schema_content != formatted_schema_content:
-            await write_file(local_schema, formatted_schema_content)
-            display_diff(original_schema_content, formatted_schema_content, local_schema)
+            await write_file(schema_output, formatted_schema_content)
+            display_diff(
+                original_schema_content, formatted_schema_content, schema_output
+            )
 
     uvloop.run(run_formatter())
 
