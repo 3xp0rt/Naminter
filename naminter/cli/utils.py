@@ -26,7 +26,6 @@ from naminter.core.exceptions import HttpError
 from naminter.core.models import WMNResult
 from naminter.core.network import BaseSession
 
-
 # =============================================================================
 # Filename Utilities
 # =============================================================================

@@ -5,6 +5,6 @@ services:
       dockerfile: Dockerfile
     image: naminter:latest
     volumes:
-      - ./output:/app/output
+      - ./results:/app/results
       - ./responses:/app/responses
-      - ./custom-lists:/app/custom-lists
+      - ./lists:/app/lists

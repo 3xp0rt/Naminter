@@ -32,11 +32,7 @@ from naminter.cli.constants import (
 from naminter.cli.exceptions import (
     BrowserError,
     CLIError,
-    ConfigurationError,
-    ExportError,
     FileError,
-    NetworkError,
-    ValidationError,
 )
 from naminter.cli.exporters import Exporter
 from naminter.cli.progress import ProgressBar
@@ -59,12 +55,7 @@ from naminter.core.constants import (
     MAX_CONCURRENT_TASKS,
     WMN_SCHEMA_URL,
 )
-from naminter.core.exceptions import (
-    HttpError,
-    WMNDataError,
-    WMNFormatError,
-    WMNValidationError,
-)
+from naminter.core.exceptions import NaminterError, WMNValidationError
 from naminter.core.formatter import WMNFormatter
 from naminter.core.main import Naminter
 from naminter.core.models import (
@@ -447,28 +438,7 @@ class NaminterCLI:
         return file_path
 
 
-def _handle_cli_error(ctx: click.Context, error: BaseException) -> None:
-    """Handle CLI errors and exit with appropriate code.
-
-    Args:
-        ctx: Click context.
-        error: The exception that was raised.
-    """
-    if isinstance(error, WMNValidationError):
-        display_error(str(error), end="")
-        if error.schema_errors:
-            display_errors(error.schema_errors, "Schema Errors")
-        if error.dataset_errors:
-            display_errors(error.dataset_errors, "Dataset Errors")
-    elif isinstance(error, CLIError):
-        display_error(str(error))
-    else:
-        display_error(str(error))
-
-    ctx.exit(EXIT_CODE_ERROR)
-
-
-def handle_cli_errors(
+def cli_error_handler(
     func: Callable[..., None],
 ) -> Callable[..., None]:
     """Decorator to centralize CLI error handling.
@@ -494,20 +464,16 @@ def handle_cli_errors(
         except KeyboardInterrupt:
             display_warning("Operation interrupted")
             ctx.exit(EXIT_CODE_INTERRUPTED)
-        except (
-            ConfigurationError,
-            ValidationError,
-            FileError,
-            NetworkError,
-            HttpError,
-            WMNFormatError,
-            WMNValidationError,
-            WMNDataError,
-            BrowserError,
-            ExportError,
-            CLIError,
-        ) as e:
-            _handle_cli_error(ctx, e)
+        except (CLIError, NaminterError) as e:
+            if isinstance(e, WMNValidationError):
+                display_error(str(e), end="")
+                if e.schema_errors:
+                    display_errors(e.schema_errors, "Schema Errors")
+                if e.dataset_errors:
+                    display_errors(e.dataset_errors, "Dataset Errors")
+            else:
+                display_error(str(e))
+            ctx.exit(EXIT_CODE_ERROR)
         except Exception as e:  # noqa: BLE001
             display_error(f"Unexpected error: {type(e).__name__}: {e}")
             ctx.exit(EXIT_CODE_ERROR)
@@ -768,7 +734,7 @@ def handle_cli_errors(
     help="Show only error results in console output and exports",
 )
 @click.pass_context
-@handle_cli_errors
+@cli_error_handler
 def main(ctx: click.Context, **kwargs: dict[str, Any]) -> None:
     """A Python package and CLI tool for asynchronous OSINT username enumeration.
 
@@ -802,7 +768,7 @@ def main(ctx: click.Context, **kwargs: dict[str, Any]) -> None:
 )
 @click.option("--no-color", is_flag=True, help="Disable colored console output")
 @click.pass_context
-@handle_cli_errors
+@cli_error_handler
 def validator_command(
     ctx: click.Context,
     local_schema: Path,
@@ -864,7 +830,7 @@ def validator_command(
 )
 @click.option("--no-color", is_flag=True, help="Disable colored console output")
 @click.pass_context
-@handle_cli_errors
+@cli_error_handler
 def format_command(
     _ctx: click.Context,
     local_schema: Path,
