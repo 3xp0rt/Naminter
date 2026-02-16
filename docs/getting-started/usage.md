@@ -76,7 +76,7 @@ async def main():
         async with Naminter(http_client=http_client, wmn_data=wmn_data) as naminter:
             async for result in naminter.enumerate_usernames(["example_username"]):
                 if result.status.value == "exists":
-                    print(f"✅ {result.username} found on {result.name}: {result.url}")
+                    print(f"✅ {result.username} found on {result.name}: {result.uri_pretty}")
                 elif result.status.value == "missing":
                     print(f"❌ {result.username} not found on {result.name}")
                 elif result.status.value == "error":
@@ -108,7 +108,7 @@ async def main():
             usernames = ["user1", "user2", "user3"]
             async for result in naminter.enumerate_usernames(usernames, mode=WMNMode.ANY):
                 if result.status.value == "exists":
-                    print(f"✅ {result.username} on {result.name}: {result.url}")
+                    print(f"✅ {result.username} on {result.name}: {result.uri_pretty}")
 
 asyncio.run(main())
 ```

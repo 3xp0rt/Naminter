@@ -408,11 +408,11 @@ class NaminterCLI:
             result: The WMN result containing URL information.
             file_path: Path to saved response file, if any.
         """
-        if self._config.browse and result.url:
+        if self._config.browse and result.uri_pretty:
             try:
-                await open_url(result.url)
+                await open_url(result.uri_pretty)
             except BrowserError as e:
-                display_error(f"Browser error opening {result.url}: {e}")
+                display_error(f"Browser error opening {result.uri_pretty}: {e}")
 
         if self._config.open_response and file_path:
             try:

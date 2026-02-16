@@ -199,10 +199,12 @@ naminter -u john_doe --extra-fp '{"tls_grease": true, "tls_cert_compression": "b
 
 | Option | Description |
 |---|---|
-| `--mode` | Validation mode: `all` (default) or `any`. |
+| `--mode` | Detection mode: `all` (default) or `any`. |
+
+- **`all`**: EXISTS when both the expected HTTP status and the expected body string match; MISSING when both the missing status and missing string match. If only one matches, you get PARTIAL_EXISTS or PARTIAL_MISSING (strict AND).
+- **`any`**: EXISTS when either the expected status or the expected body string matches; MISSING when either the missing status or missing string matches.
 
 ```bash
-# Use "any" mode — pass if any detection string matches
 naminter -u john_doe --mode any
 ```
 

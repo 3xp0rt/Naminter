@@ -1,10 +1,6 @@
 # Exceptions
 
-Exception classes used throughout Naminter for error handling.
-
-## Overview
-
-Naminter uses a hierarchical exception structure with `NaminterError` as the base exception class. All exceptions inherit from this base class, allowing for consistent error handling across the codebase.
+Exception hierarchy (base: `NaminterError`). See API Reference for each class.
 
 ## Core Exceptions
 

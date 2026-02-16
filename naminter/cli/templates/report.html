@@ -256,7 +256,7 @@
                         {% for field in display_fields %}
                         <td>
                             <div class="field-value">
-                                {% if 'url' in field.lower() or field.lower() in ['link', 'website'] %}
+                                {% if field == 'url' %}
                                 <a href="{{ row[field] }}" target="_blank" rel="noopener noreferrer">{{ row[field] }}</a>
                                 {% else %}
                                 {{ row[field] }}

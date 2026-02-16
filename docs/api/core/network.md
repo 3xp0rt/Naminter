@@ -1,15 +1,6 @@
 # Network
 
-HTTP client and network utilities for making requests.
-
-## Overview
-
-The network module provides HTTP session management with support for:
-- Browser impersonation
-- Proxy configuration
-- SSL verification
-- Custom timeouts and redirects
-- Custom session implementations via `BaseSession` protocol
+HTTP client and session utilities.
 
 ## Basic Usage
 
@@ -26,27 +17,9 @@ async with CurlCFFISession(
 
 ## Custom Session Implementation
 
-You can create your own HTTP session implementation by implementing the `BaseSession` protocol. This allows you to use any HTTP client library (aiohttp, httpx, etc.) with Naminter.
+Implement `BaseSession` (see API Reference) to use another HTTP client (e.g. aiohttp, httpx). Raise `HttpSessionError` or `HttpError` as appropriate.
 
-### Implementing BaseSession
-
-The `BaseSession` protocol requires the following methods:
-
-- `async open() -> None`: Initialize/open the HTTP session
-- `async close() -> None`: Clean up/close the HTTP session
-- `async get(url: str, headers: Mapping[str, str] | None = None) -> WMNResponse`: Perform HTTP GET request
-- `async post(url: str, headers: Mapping[str, str] | None = None, data: str | bytes | None = None) -> WMNResponse`: Perform HTTP POST request
-- `async request(method: HttpMethod, url: str, headers: Mapping[str, str] | None = None, data: str | bytes | None = None) -> WMNResponse`: Generic HTTP request (`HttpMethod` is `Literal["GET", "POST"]`)
-- `async __aenter__() -> BaseSession`: Async context manager entry
-- `async __aexit__(exc_type, exc_val, exc_tb) -> None`: Async context manager exit
-
-### Error Handling
-
-Your implementation should raise the following exceptions:
-- `HttpSessionError`: For session initialization/management errors
-- `HttpError`: For other network-related errors
-
-### Example: aiohttp Implementation
+### Example: aiohttp
 
 ```python
 import asyncio

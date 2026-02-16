@@ -75,4 +75,4 @@ STATUS_STYLES: Final[dict[WMNStatus, str]] = {
 # Export Field Ordering
 # =============================================================================
 
-HTML_FIELDS_ORDER: Final[list[str]] = ["name", "url", "elapsed"]
+HTML_FIELDS_ORDER: Final[list[str]] = ["name", "url", "status", "elapsed"]

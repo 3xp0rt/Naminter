@@ -526,7 +526,7 @@ class Naminter:
             WMNResult:
                 A single WMNResult instance that encapsulates the site name (from
                 "name"), category (from "cat"), the username that was tested, the
-                final URL used for reporting (may be "uri_pretty"), a high-level
+                uri_check and uri_pretty URLs, a high-level
                 status classification (e.g. EXISTS, PARTIAL_EXISTS, PARTIAL_MISSING,
                 CONFLICTING, MISSING, UNKNOWN, ERROR, or NOT_VALID),
                 status_code, text, and elapsed time
@@ -554,7 +554,7 @@ class Naminter:
 
             async with Naminter(http_client, wmn_data, wmn_schema) as naminter:
                 result = await naminter.enumerate_site(site, "torvalds")
-                print(result.name, result.username, result.status, result.url)
+                print(result.name, result.username, result.status, result.uri_pretty)
             ```
         """
         if site.get(SITE_KEY_VALID) is False:
@@ -592,7 +592,8 @@ class Naminter:
                 username=username,
                 message=f"{error_type}: {e}",
                 site=site,
-                url=uri_pretty,
+                uri_check=uri_check,
+                uri_pretty=uri_pretty,
             )
         except (OSError, RuntimeError, ValueError, TypeError) as e:
             self._logger.exception(
@@ -603,12 +604,14 @@ class Naminter:
                 username=username,
                 message=f"Unexpected error: {e}",
                 site=site,
-                url=uri_pretty,
+                uri_check=uri_check,
+                uri_pretty=uri_pretty,
             )
 
         result = WMNResult.from_response(
             username=username,
-            url=uri_pretty,
+            uri_check=uri_check,
+            uri_pretty=uri_pretty,
             response=response,
             site=site,
             mode=mode,

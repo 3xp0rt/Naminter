@@ -115,7 +115,10 @@ class ResultFormatter:
         root_label.append(" [", style=THEME.muted)
         root_label.append(site_result.name or "Unknown", style=THEME.info)
         root_label.append("] ", style=THEME.muted)
-        root_label.append(site_result.url or "No URL", style=THEME.primary)
+        root_label.append(
+            site_result.uri_pretty or "",
+            style=THEME.primary,
+        )
 
         tree = Tree(root_label, guide_style=THEME.muted)
 
@@ -166,7 +169,10 @@ class ResultFormatter:
                 )
                 url_text.append(" ", style=THEME.muted)
                 url_text.append(f"{result.username}: ", style=THEME.info)
-                url_text.append(result.url or "No URL", style=THEME.primary)
+                url_text.append(
+                    result.uri_pretty or "",
+                    style=THEME.primary,
+                )
 
                 result_node = tree.add(url_text)
 

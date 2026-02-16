@@ -1,10 +1,6 @@
 # Validator
 
-Validator for WhatsMyName JSON data.
-
-## Overview
-
-The `WMNValidator` class validates WhatsMyName JSON data against a JSON Schema. It uses the Draft7 JSON Schema validator to check data structure, types, and constraints.
+Validates WhatsMyName JSON against a JSON Schema (see API Reference).
 
 ## Basic Usage
 

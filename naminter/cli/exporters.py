@@ -167,6 +167,9 @@ class Exporter:
         Raises:
             ExportError: If template loading or rendering fails.
         """
+        for item in results:
+            item["url"] = item.get("uri_pretty")
+
         grouped: dict[str, list[ResultDict]] = {}
         for item in results:
             cat = item.get("category") or "uncategorized"
@@ -175,7 +178,7 @@ class Exporter:
         available_fields = {key for item in results for key in item}
         display_fields = [
             field for field in HTML_FIELDS_ORDER if field in available_fields
-        ] + sorted(available_fields - set(HTML_FIELDS_ORDER))
+        ]
 
         try:
             template_resource = importlib.resources.files(

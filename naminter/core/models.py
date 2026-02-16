@@ -42,8 +42,17 @@ class WMNStatus(StrEnum):
 class WMNSite(TypedDict):
     """Type definition for a single site in the WMN dataset structure.
 
-    Required fields per JSON schema: name, uri_check, e_code, e_string,
-    m_string, m_code, known, cat. Other fields are optional.
+    Required: name, uri_check, e_code, e_string, m_string, m_code, known, cat.
+
+    Optional with conditions:
+        post_body: Must contain ``{account}``. When present, ``headers``
+            is required and ``{account}`` is not required in ``uri_check``.
+        headers: Required when ``post_body`` is present. Must be dict[str, str].
+        uri_check: Must contain ``{account}`` when ``post_body`` is absent.
+        strip_bad_char: Characters to strip from username before substitution.
+        uri_pretty: Display URL template (not validated).
+        valid: Site validity flag (not validated).
+        protection: Protection mechanisms (not validated).
     """
 
     name: str
@@ -134,7 +143,8 @@ class WMNResult:
         category: Site category from the WMN dataset.
         username: Username that was tested.
         status: Detection status of the username on the site.
-        url: URL used for the check (may be the "pretty" URL).
+        uri_check: URL used for the check (request URL).
+        uri_pretty: Optional "pretty" URL for display/reporting.
         status_code: HTTP status code of the response.
         headers: HTTP response headers.
         text: Response body text.
@@ -147,7 +157,8 @@ class WMNResult:
     category: str
     username: str
     status: WMNStatus
-    url: str | None = None
+    uri_check: str | None = None
+    uri_pretty: str | None = None
     status_code: int | None = None
     headers: dict[str, str] | None = None
     text: str | None = None
@@ -162,7 +173,8 @@ class WMNResult:
         username: str,
         message: str,
         site: WMNSite,
-        url: str | None = None,
+        uri_check: str | None = None,
+        uri_pretty: str | None = None,
     ) -> WMNResult:
         """Create error result.
 
@@ -170,7 +182,8 @@ class WMNResult:
             username: Username being checked.
             message: Error message.
             site: Site configuration.
-            url: Optional URL.
+            uri_check: Optional URL used for the check.
+            uri_pretty: Optional pretty URL for display.
 
         Returns:
             WMNResult: Result with ERROR status.
@@ -179,7 +192,8 @@ class WMNResult:
             name=site.get("name", DEFAULT_UNKNOWN_VALUE),
             category=site.get("cat", DEFAULT_UNKNOWN_VALUE),
             username=username,
-            url=url,
+            uri_check=uri_check,
+            uri_pretty=uri_pretty,
             status=WMNStatus.ERROR,
             error=message,
         )
@@ -251,7 +265,8 @@ class WMNResult:
         cls,
         *,
         username: str,
-        url: str,
+        uri_check: str,
+        uri_pretty: str | None,
         response: WMNResponse,
         site: WMNSite,
         mode: WMNMode,
@@ -261,7 +276,8 @@ class WMNResult:
 
         Args:
             username: Username being checked.
-            url: URL that was checked (computed uri_pretty).
+            uri_check: URL that was checked (request URL).
+            uri_pretty: Pretty URL for display, or None to use uri_check.
             response: HTTP response object.
             site: Site configuration dictionary with detection criteria.
             mode: Detection mode (ANY or ALL).
@@ -300,7 +316,8 @@ class WMNResult:
             name=site["name"],
             category=site["cat"],
             username=username,
-            url=url,
+            uri_check=uri_check,
+            uri_pretty=uri_pretty,
             status=status,
             status_code=response.status_code,
             headers=response.headers,
@@ -328,7 +345,8 @@ class WMNResult:
             "category": self.category,
             "username": self.username,
             "status": self.status.value,
-            "url": self.url,
+            "uri_check": self.uri_check,
+            "uri_pretty": self.uri_pretty,
             "status_code": self.status_code,
             "headers": self.headers,
             "elapsed": self.elapsed.total_seconds() if self.elapsed else None,

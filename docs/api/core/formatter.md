@@ -1,10 +1,6 @@
 # Formatter
 
-Formatter for WhatsMyName JSON data.
-
-## Overview
-
-The `WMNFormatter` class provides functionality to format and sort WhatsMyName JSON data according to a JSON schema. It ensures consistent ordering of keys, alphabetical sorting of arrays, and proper formatting of site data.
+Formats and sorts WhatsMyName JSON per schema (see API Reference).
 
 ## Basic Usage
 
