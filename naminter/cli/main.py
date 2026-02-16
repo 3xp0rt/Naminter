@@ -1,468 +1,892 @@
-import asyncio
-import json
+"""CLI entry point, Click commands, and error handling for Naminter."""
+
+from collections.abc import Callable
+from functools import wraps
 import logging
-import webbrowser
 from pathlib import Path
-from typing import Annotated, Any, Dict, List, Optional, Tuple, Union
+from typing import TYPE_CHECKING, Any, Final, cast, get_args
 
-import typer
-from curl_cffi import requests
-from rich import box
-from rich.panel import Panel
-from rich.table import Table
+from curl_cffi import BrowserTypeLiteral
+import orjson
+from pathvalidate.click import validate_filepath_arg
+import rich_click as click
+import uvloop
 
-from ..cli.config import BrowserImpersonation, NaminterConfig
-from ..cli.console import (
-    console,
-    display_error,
-    display_warning,
-    display_version,
+if TYPE_CHECKING:
+    from curl_cffi import ExtraFingerprints
+
+from naminter.cli.config import NaminterConfig
+from naminter.cli.console import (
     ResultFormatter,
+    console,
+    display_diff,
+    display_error,
+    display_errors,
+    display_version,
+    display_warning,
 )
-from ..cli.exporters import Exporter
-from ..cli.progress import ProgressManager, ResultsTracker
-from ..core.models import ResultStatus, SiteResult, SelfCheckResult
-from ..core.main import Naminter
-from ..core.constants import MAX_CONCURRENT_TASKS, HTTP_REQUEST_TIMEOUT_SECONDS, HTTP_ALLOW_REDIRECTS, HTTP_SSL_VERIFY, WMN_REMOTE_URL, WMN_SCHEMA_URL
-from ..core.exceptions import DataError, ConfigurationError
-from .. import __description__, __version__
+from naminter.cli.constants import (
+    EXIT_CODE_ERROR,
+    EXIT_CODE_INTERRUPTED,
+)
+from naminter.cli.exceptions import (
+    BrowserError,
+    CLIError,
+    FileError,
+)
+from naminter.cli.exporters import Exporter
+from naminter.cli.progress import ProgressBar
+from naminter.cli.utils import (
+    fetch_json,
+    get_response_filename,
+    open_url,
+    read_file,
+    read_json,
+    write_file,
+)
+from naminter.core.constants import (
+    BROWSER_IMPERSONATE_AGENT,
+    BROWSER_IMPERSONATE_NONE,
+    DEFAULT_FILE_ENCODING,
+    HTTP_ALLOW_REDIRECTS,
+    HTTP_SSL_VERIFY,
+    HTTP_TIMEOUT,
+    LOGGING_FORMAT,
+    MAX_CONCURRENT_TASKS,
+    WMN_SCHEMA_URL,
+)
+from naminter.core.exceptions import NaminterError, WMNValidationError
+from naminter.core.formatter import WMNFormatter
+from naminter.core.main import Naminter
+from naminter.core.models import (
+    WMNDataset,
+    WMNMode,
+    WMNResult,
+    WMNStatus,
+    WMNTestResult,
+)
+from naminter.core.network import CurlCFFISession
+from naminter.core.validator import WMNValidator
 
-app = typer.Typer(
-    help=__description__,
-    add_completion=False,
-    rich_markup_mode="rich",
-    no_args_is_help=True,
-)
+
+def _version_callback(
+    ctx: click.Context,
+    _param: click.Parameter,
+    value: bool,  # noqa: FBT001
+) -> None:
+    """Eager callback to display version and exit.
+
+    Args:
+        ctx: Click context for the current invocation.
+        _param: The Click parameter that triggered this callback.
+        value: Whether the version flag was set.
+    """
+    if not value or ctx.resilient_parsing:
+        return
+    display_version()
+    ctx.exit()
+
 
 class NaminterCLI:
-    """Handles username availability checks."""
-    
+    """Handles username enumeration operations."""
+
     def __init__(self, config: NaminterConfig) -> None:
-        self.config: NaminterConfig = config
-        self._found_results: List[SiteResult] = []
-        self._formatter: ResultFormatter = ResultFormatter(show_details=config.show_details)
-        self._response_dir: Optional[Path] = self._setup_response_dir()
+        """Initialize the CLI handler with configuration.
 
-    def _setup_response_dir(self) -> Optional[Path]:
-        """Setup response directory if response saving is enabled."""
-        if not self.config.save_response:
+        Args:
+            config: Validated configuration for the CLI session.
+        """
+        self._config: NaminterConfig = config
+        self._formatter: ResultFormatter = ResultFormatter(
+            verbose=config.verbose,
+        )
+        self._response_dir: Path | None = self._setup_response_dir()
+        self._status_filters: Final[dict[WMNStatus, bool]] = (
+            self._create_status_filters()
+        )
+
+    def _create_status_filters(self) -> dict[WMNStatus, bool]:
+        """Create status filter mapping from config.
+
+        Returns:
+            dict[WMNStatus, bool]: Mapping of statuses to their filter flags.
+        """
+        return {
+            WMNStatus.EXISTS: self._config.filter_exists,
+            WMNStatus.PARTIAL_EXISTS: self._config.filter_partial,
+            WMNStatus.PARTIAL_MISSING: self._config.filter_partial,
+            WMNStatus.CONFLICTING: self._config.filter_conflicting,
+            WMNStatus.UNKNOWN: self._config.filter_unknown,
+            WMNStatus.MISSING: self._config.filter_missing,
+            WMNStatus.NOT_VALID: self._config.filter_not_valid,
+            WMNStatus.ERROR: self._config.filter_errors,
+        }
+
+    def _setup_response_dir(self) -> Path | None:
+        """Setup response directory if response saving is enabled.
+
+        Returns:
+            Path | None: Path to response directory if enabled, None otherwise.
+        """
+        if not self._config.save_response:
             return None
-        
+
+        dir_path = self._config.response_dir_path
+        if dir_path is None:
+            return None
+
         try:
-            response_dir = Path(self.config.response_path) if self.config.response_path else Path.cwd() / "responses"
-            response_dir.mkdir(parents=True, exist_ok=True)
-            return response_dir
-        except Exception as e:
-            display_error(f"Cannot create/access response directory: {e}")
+            dir_path.mkdir(parents=True, exist_ok=True)
+        except PermissionError as e:
+            display_warning(
+                f"Permission denied creating response directory: {e}",
+            )
+            return None
+        except OSError as e:
+            display_warning(
+                f"OS error creating response directory: {e}",
+            )
             return None
 
-    def _sanitize_filename(self, filename: str) -> str:
-        """Sanitize filename for cross-platform compatibility."""
-        if not filename or not str(filename).strip():
-            return "unnamed"
-            
-        invalid_chars = '<>:"|?*\\/\0'
-        sanitized = ''.join('_' if c in invalid_chars or ord(c) < 32 else c for c in str(filename))    
-        sanitized = sanitized.strip(' .')[:200] if sanitized.strip(' .') else 'unnamed'
-        return sanitized
+        return dir_path
 
-    def _load_wmn_lists(self, local_list_paths: Optional[List[Path]] = None, remote_list_urls: Optional[List[str]] = None, skip_validation: bool = False) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
-        """Load and merge WMN lists from local and remote sources."""
-        wmn_data = {"sites": [], "categories": [], "authors": [], "license": []}
-        wmn_schema = None
-        
-        def _fetch_json(url: str, timeout: int = 30) -> Dict[str, Any]:
-            """Helper to fetch and parse JSON from URL."""
-            if not url or not isinstance(url, str) or not url.strip():
-                raise ValueError(f"Invalid URL: {url}")
-            
-            try:
-                response = requests.get(url, timeout=timeout)
-                response.raise_for_status()
-                return response.json()
-            except requests.exceptions.RequestException as e:
-                raise DataError(f"Failed to fetch from {url}: {e}") from e
-            except json.JSONDecodeError as e:
-                raise DataError(f"Failed to parse JSON from {url}: {e}") from e
+    @staticmethod
+    def setup_logging(config: NaminterConfig) -> None:
+        """Configure project logging.
 
-        def _merge_data(data: Dict[str, Any]) -> None:
-            """Helper to merge data into wmn_data."""
-            if isinstance(data, dict):
-                for key in ["sites", "categories", "authors", "license"]:
-                    if key in data and isinstance(data[key], list):
-                        wmn_data[key].extend(data[key])
-        
-        if not skip_validation:
-            try:
-                if self.config.local_schema_path:
-                    wmn_schema = json.loads(Path(self.config.local_schema_path).read_text())
-                elif self.config.remote_schema_url:
-                    wmn_schema = _fetch_json(self.config.remote_schema_url)
-            except Exception:
-                pass
-        
-        sources = []
-        if remote_list_urls:
-            sources.extend([(url, True) for url in remote_list_urls])
-        if local_list_paths:
-            sources.extend([(path, False) for path in local_list_paths])
-        
-        if not sources:
-            sources = [(WMN_REMOTE_URL, True)]
-        
-        for source, is_remote in sources:
-            try:
-                if is_remote:
-                    data = _fetch_json(source)
-                else:
-                    data = json.loads(Path(source).read_text())
-                _merge_data(data)
-            except Exception as e:
-                if not sources or source == WMN_REMOTE_URL:
-                    raise DataError(f"Failed to load WMN data from {source}: {e}") from e
-        
-        if not wmn_data["sites"]:
-            raise DataError("No sites loaded from any source")
-        
-        unique_sites = {site["name"]: site for site in wmn_data["sites"] 
-                       if isinstance(site, dict) and site.get("name")}
-        wmn_data["sites"] = list(unique_sites.values())
-        wmn_data["categories"] = sorted(set(wmn_data["categories"]))
-        wmn_data["authors"] = sorted(set(wmn_data["authors"]))
-        wmn_data["license"] = list(dict.fromkeys(wmn_data["license"]))
-        
-        return wmn_data, wmn_schema
+        Args:
+            config: Configuration containing log file and level settings.
+
+        Raises:
+            OSError: If log directory or file creation fails.
+        """
+        if not config.log_file:
+            return
+
+        log_path = Path(config.log_file)
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+        except (PermissionError, OSError) as e:
+            msg = f"Failed to create log directory {log_path.parent}: {e}"
+            raise OSError(msg) from e
+
+        level_value = getattr(
+            logging,
+            str(config.log_level or "INFO").upper(),
+            logging.INFO,
+        )
+
+        logger = logging.getLogger("naminter")
+        logger.setLevel(level_value)
+        logger.propagate = False
+
+        for handler in logger.handlers[:]:
+            if isinstance(handler, logging.FileHandler):
+                handler.close()
+                logger.removeHandler(handler)
+
+        try:
+            file_handler = logging.FileHandler(
+                str(log_path),
+                mode="a",
+                encoding=DEFAULT_FILE_ENCODING,
+            )
+            formatter = logging.Formatter(LOGGING_FORMAT)
+            file_handler.setFormatter(formatter)
+            file_handler.setLevel(level_value)
+            logger.addHandler(file_handler)
+        except (PermissionError, OSError) as e:
+            msg = f"Failed to create log file {log_path}: {e}"
+            raise OSError(msg) from e
 
     async def run(self) -> None:
-        """Main execution method with progress tracking."""
-        wmn_data, wmn_schema = self._load_wmn_lists(
-            local_list_paths=self.config.local_list_paths,
-            remote_list_urls=self.config.remote_list_urls,
-            skip_validation=self.config.skip_validation
+        """Load data, validate, run enumeration or testing, and export results.
+
+        Raises:
+            FileError: If data loading or remote fetching fails.
+            NetworkError: If remote resource fetching fails.
+            ExportError: If result exporting fails.
+            HttpSessionError: If HTTP session initialization fails.
+            WMNUninitializedError: If WMN data is not provided.
+            WMNDataError: If WMN data loading fails.
+            WMNValidationError: If dataset validation fails.
+        """
+        async with CurlCFFISession(
+            proxies=self._config.proxy,
+            verify=self._config.verify_ssl,
+            timeout=self._config.timeout,
+            allow_redirects=self._config.allow_redirects,
+            impersonate=cast("BrowserTypeLiteral | None", self._config.impersonate),
+            ja3=self._config.ja3,
+            akamai=self._config.akamai,
+            extra_fp=cast("ExtraFingerprints | None", self._config.extra_fp),
+        ) as http_client:
+            wmn_data: dict[str, Any] | None = None
+            if self._config.local_list:
+                wmn_data = await read_json(self._config.local_list)
+            elif self._config.remote_list:
+                raw_list = await fetch_json(http_client, self._config.remote_list)
+                if not isinstance(raw_list, dict):
+                    msg = "Remote list must be a JSON object"
+                    raise FileError(msg)
+                wmn_data = raw_list
+
+            wmn_schema: dict[str, Any] | None = None
+            if not self._config.skip_validation:
+                if self._config.local_schema:
+                    wmn_schema = await read_json(self._config.local_schema)
+                elif self._config.remote_schema:
+                    raw_schema = await fetch_json(
+                        http_client,
+                        self._config.remote_schema,
+                    )
+                    if not isinstance(raw_schema, dict):
+                        msg = "Remote schema must be a JSON object"
+                        raise FileError(msg)
+                    wmn_schema = raw_schema
+
+            async with Naminter(
+                http_client=http_client,
+                wmn_data=wmn_data,
+                wmn_schema=wmn_schema,
+                max_tasks=self._config.max_tasks,
+            ) as naminter:
+                if self._config.test:
+                    results = await self._run_validation(naminter)
+                else:
+                    results = await self._run_check(naminter)
+
+                if self._config.export_formats and results:
+                    exporter = Exporter(self._config.usernames or [])
+                    await exporter.export(
+                        results,
+                        self._config.export_formats,
+                    )
+
+    async def _run_check(self, naminter: Naminter) -> list[WMNResult]:
+        """Run the username enumeration functionality.
+
+        Args:
+            naminter: Initialized Naminter instance to enumerate with.
+
+        Returns:
+            list[WMNResult]: Filtered results from the enumeration.
+        """
+        summary = naminter.summary(
+            site_names=self._config.sites,
+            include_categories=self._config.include_categories,
+            exclude_categories=self._config.exclude_categories,
         )
-        
-        async with Naminter(
-            wmn_data=wmn_data,
-            wmn_schema=wmn_schema,
-            max_tasks=self.config.max_tasks,
-            timeout=self.config.timeout,
-            impersonate=self.config.impersonate,
-            verify_ssl=self.config.verify_ssl,
-            allow_redirects=self.config.allow_redirects,
-            proxy=self.config.proxy,
-        ) as naminter:
-            if self.config.self_check:
-                results = await self._run_self_check(naminter)
-            else:
-                results = await self._run_check(naminter)
-            
-            filtered_results = [r for r in results if self._should_include_result(r)]
-            
-            if self.config.export_formats:
-                export_manager = Exporter(self.config.usernames or [], __version__)
-                export_manager.export(filtered_results, self.config.export_formats)
+        actual_site_count = summary.sites_count
+        username_count = len(self._config.usernames) if self._config.usernames else 0
+        total_sites = actual_site_count * username_count
 
-    async def _run_check(self, naminter: Naminter) -> List[SiteResult]:
-        """Run the username check functionality."""
-        if not self.config.usernames:
-            raise ValueError("At least one username is required")
-    
-        if self.config.site_names:
-            available_sites = naminter.list_sites()
-            actual_site_count = len([s for s in self.config.site_names if s in available_sites])
-        else:
-            actual_site_count = len(naminter._wmn_data.get("sites", []))
-        
-        total_sites = actual_site_count * len(self.config.usernames)
-        tracker = ResultsTracker(total_sites)
-        all_results = []
-        
-        with ProgressManager(console, disabled=self.config.no_progressbar) as progress_mgr:
-            progress_mgr.start(total_sites, "Checking usernames...")
-            
-            results = await naminter.check_usernames(
-                usernames=self.config.usernames,
-                site_names=self.config.site_names,
-                fuzzy_mode=self.config.fuzzy_mode,
-                as_generator=True
-            )  
-            async for result in results:
-                tracker.add_result(result)
+        results: list[WMNResult] = []
 
-                if self._should_include_result(result):
-                    response_file_path = await self._process_result(result)                    
-                    formatted_output = self._formatter.format_result(result, response_file_path)
-                    console.print(formatted_output)
-                
-                all_results.append(result)
-                progress_mgr.update(description=tracker.get_progress_text())
+        if total_sites == 0:
+            return results
 
-        return all_results
+        progress_bar = ProgressBar(console, disabled=self._config.no_progressbar)
+        progress_bar.start(
+            total_sites,
+            "[bright_cyan]Enumerating usernames...[/bright_cyan]",
+        )
 
-    async def _run_self_check(self, naminter: Naminter) -> List[SelfCheckResult]:
-        """Run the self-check functionality."""
-        sites_data = naminter._wmn_data.get("sites", [])
-        
-        if self.config.site_names:
-            available_sites = [site.get("name") for site in sites_data if site.get("name")]
-            filtered_sites = [site for site in sites_data if site.get("name") in self.config.site_names]
-            site_count = len(filtered_sites)
-        else:
-            site_count = len(sites_data)
-        
-        total_tests = 0
-        for site in sites_data:
-            if isinstance(site, dict):
-                known_accounts = site.get("known", [])
-                if isinstance(known_accounts, list) and known_accounts:
-                    total_tests += len(known_accounts)
+        async for result in naminter.enumerate_usernames(
+            usernames=self._config.usernames,
+            site_names=self._config.sites,
+            include_categories=self._config.include_categories,
+            exclude_categories=self._config.exclude_categories,
+            mode=self._config.mode,
+            exclude_text=not self._config.save_response,
+        ):
+            progress_bar.add_result(result)
 
-        tracker = ResultsTracker(total_tests)
-        all_results = []
-
-        with ProgressManager(console, disabled=self.config.no_progressbar) as progress_mgr:
-            progress_mgr.start(site_count, "Running self-check...")
-            
-            results = await naminter.self_check(
-                site_names=self.config.site_names,
-                fuzzy_mode=self.config.fuzzy_mode,
-                as_generator=True
-            )
-            async for result in results:
-                for site_result in result.results:
-                    tracker.add_result(site_result)
-                
-                if self._should_include_result(result):
-                    response_files = []
-                    for site_result in result.results:
-                        response_file_path = await self._process_result(site_result)
-                        if response_file_path:
-                            response_files.append(response_file_path)
-                    
-                    formatted_output = self._formatter.format_self_check(result, response_files)
-                    console.print(formatted_output)
-                    
-                all_results.append(result)
-                progress_mgr.update(description=tracker.get_progress_text())
-
-        return all_results
-
-    def _should_include_result(self, result: Union[SiteResult, SelfCheckResult]) -> bool:
-        """Determine if a result should be included in output based on filter settings."""
-        if isinstance(result, SelfCheckResult):
-            status = result.overall_status
-        else:
-            status = result.result_status
-        
-        if self.config.filter_all:
-            return True
-        elif self.config.filter_errors and status == ResultStatus.ERROR:
-            return True
-        elif self.config.filter_not_found and status == ResultStatus.NOT_FOUND:
-            return True
-        elif self.config.filter_unknown and status == ResultStatus.UNKNOWN:
-            return True
-        elif self.config.filter_ambiguous and status == ResultStatus.AMBIGUOUS:
-            return True
-        elif not any([self.config.filter_errors, self.config.filter_not_found, self.config.filter_unknown, self.config.filter_ambiguous]):
-            return status == ResultStatus.FOUND
-        
-        return False
-
-    async def _process_result(self, result: SiteResult) -> Optional[Path]:
-        """Process a single result: handle browser opening, response saving, and console output."""
-        response_file = None
-
-        if result.result_url:
-            self._found_results.append(result)
-            if self.config.browse:
+            if self._filter_result(result):
                 try:
-                    await asyncio.to_thread(webbrowser.open, result.result_url)
-                except Exception as e:
-                    display_error(f"Error opening browser for {result.result_url}: {e}")
-        
-        if self.config.save_response and result.response_text and self._response_dir:
+                    file_path = await self._save_response(result)
+                    await self._open_in_browser(result, file_path)
+                    formatted_output = self._formatter.format_result(result, file_path)
+                    console.print(formatted_output)
+                    results.append(result)
+                except (FileError, BrowserError) as e:
+                    display_error(
+                        f"Error processing result for {result.name} "
+                        f"(status={result.status.value}): {e}",
+                    )
+
+        progress_bar.stop()
+        return results
+
+    async def _run_validation(self, naminter: Naminter) -> list[WMNTestResult]:
+        """Run the site validation functionality.
+
+        Args:
+            naminter: Initialized Naminter instance to validate with.
+
+        Returns:
+            list[WMNTestResult]: Filtered results from site validation.
+        """
+        summary = naminter.summary(
+            site_names=self._config.sites,
+            include_categories=self._config.include_categories,
+            exclude_categories=self._config.exclude_categories,
+        )
+        total_tests = summary.known_count
+
+        results: list[WMNTestResult] = []
+
+        if total_tests == 0:
+            return results
+
+        progress_bar = ProgressBar(console, disabled=self._config.no_progressbar)
+        progress_bar.start(
+            total_tests,
+            "[bright_cyan]Running testing...[/bright_cyan]",
+        )
+
+        async for result in naminter.test_enumeration(
+            site_names=self._config.sites,
+            include_categories=self._config.include_categories,
+            exclude_categories=self._config.exclude_categories,
+            mode=self._config.mode,
+            exclude_text=not self._config.save_response,
+        ):
+            if result.results:
+                for site_result in result.results:
+                    progress_bar.add_result(site_result)
+
+            if self._filter_result(result):
+                try:
+                    response_files: list[Path | None] = []
+                    if result.results:
+                        for site_result in result.results:
+                            file_path = await self._save_response(site_result)
+                            await self._open_in_browser(site_result, file_path)
+                            response_files.append(file_path)
+                    formatted_output = self._formatter.format_validation(
+                        result,
+                        response_files,
+                    )
+                    console.print(formatted_output)
+                    results.append(result)
+                except (FileError, BrowserError) as e:
+                    display_error(
+                        f"Error processing validation result for {result.name}: {e}",
+                    )
+
+        progress_bar.stop()
+        return results
+
+    def _filter_result(self, result: WMNResult | WMNTestResult) -> bool:
+        """Determine if a result should be included based on filter settings.
+
+        Args:
+            result: The result to evaluate against active filters.
+
+        Returns:
+            bool: True if the result passes the active filters.
+        """
+        if self._config.filter_all:
+            return True
+
+        return self._status_filters.get(result.status, False)
+
+    async def _open_in_browser(self, result: WMNResult, file_path: Path | None) -> None:
+        """Open result URL and saved response file in browser if configured.
+
+        Args:
+            result: The WMN result containing URL information.
+            file_path: Path to saved response file, if any.
+        """
+        if self._config.browse and result.uri_pretty:
             try:
-                safe_site_name = self._sanitize_filename(result.site_name)
-                safe_username = self._sanitize_filename(result.username)
-                status_str = result.result_status.value
-                created_at_str = result.created_at.strftime('%Y%m%d_%H%M%S')
-                
-                base_filename = f"{status_str}_{result.response_code}_{safe_site_name}_{safe_username}_{created_at_str}.html"
-                response_file = self._response_dir / base_filename
-                
-                await asyncio.to_thread(response_file.write_text, result.response_text, encoding="utf-8")
-                
-                if self.config.open_response:
-                    try:
-                        file_uri = response_file.resolve().as_uri()
-                        await asyncio.to_thread(webbrowser.open, file_uri)
-                    except Exception as e:
-                        display_error(f"Error opening response file {response_file}: {e}")
-            except Exception as e:
-                display_error(f"Failed to save response to file: {e}")
-        
-        return response_file
+                await open_url(result.uri_pretty)
+            except BrowserError as e:
+                display_error(f"Browser error opening {result.uri_pretty}: {e}")
 
-def version_callback(value: bool):
-    """Callback to handle version display."""
-    if value:
-        display_version()
-        raise typer.Exit()
+        if self._config.open_response and file_path:
+            try:
+                await open_url(file_path)
+            except BrowserError as e:
+                display_error(f"Browser error opening response file {file_path}: {e}")
 
-def main(
-    usernames: Optional[List[str]] = typer.Option(None, "--username", "-u", help="Username(s) to search for across social media platforms", show_default=False),
-    site_names: Optional[List[str]] = typer.Option(None, "--site", "-s", help="Specific site name(s) to check (e.g., 'GitHub', 'Twitter')", show_default=False),
-    version: Annotated[Optional[bool], typer.Option("--version", help="Show version information and exit", callback=version_callback, is_eager=True)] = None,
-    no_color: bool = typer.Option(False, "--no-color", help="Disable colored console output"),
-    no_progressbar: bool = typer.Option(False, "--no-progressbar", help="Disable progress bar during execution"),
+    async def _save_response(self, result: WMNResult) -> Path | None:
+        """Save HTTP response to file if configured.
 
-    # Input lists
-    local_list: Optional[List[Path]] = typer.Option(
-        None, "--local-list", help="Path(s) to local JSON file(s) containing WhatsMyName site data", show_default=False
+        Args:
+            result: The WMN result containing the response text to save.
+
+        Returns:
+            Path | None: Path to the saved file, or None if not saved.
+        """
+        if not self._config.save_response:
+            return None
+
+        if not result.text or not self._response_dir:
+            return None
+
+        filename = get_response_filename(result)
+        file_path = self._response_dir / filename
+
+        try:
+            await write_file(file_path, result.text)
+        except FileError as e:
+            display_error(f"Failed to save response file {file_path}: {e}")
+            return None
+
+        return file_path
+
+
+def cli_error_handler(
+    func: Callable[..., None],
+) -> Callable[..., None]:
+    """Decorator to centralize CLI error handling.
+
+    Handles KeyboardInterrupt and common CLI exceptions for Click commands.
+    The decorated function must accept `ctx` as its first parameter.
+
+    Args:
+        func: The Click command function to wrap.
+
+    Returns:
+        Callable[..., None]: Wrapped function with error handling.
+    """
+
+    @wraps(func)
+    def wrapper(
+        ctx: click.Context,
+        *args: object,
+        **kwargs: object,
+    ) -> None:
+        try:
+            func(ctx, *args, **kwargs)
+        except KeyboardInterrupt:
+            display_warning("Operation interrupted")
+            ctx.exit(EXIT_CODE_INTERRUPTED)
+        except (CLIError, NaminterError) as e:
+            if isinstance(e, WMNValidationError):
+                display_error(str(e), end="")
+                if e.schema_errors:
+                    display_errors(e.schema_errors, "Schema Errors")
+                if e.dataset_errors:
+                    display_errors(e.dataset_errors, "Dataset Errors")
+            else:
+                display_error(str(e))
+            ctx.exit(EXIT_CODE_ERROR)
+        except Exception as e:  # noqa: BLE001
+            display_error(f"Unexpected error: {type(e).__name__}: {e}")
+            ctx.exit(EXIT_CODE_ERROR)
+
+    return wrapper
+
+
+@click.group(
+    invoke_without_command=True,
+    no_args_is_help=True,
+    context_settings={"help_option_names": ["-h", "--help"]},
+)
+# Version & Help
+@click.option(
+    "--version",
+    is_flag=True,
+    is_eager=True,
+    expose_value=False,
+    callback=_version_callback,
+    help="Show version information and exit",
+)
+# Display & Output Formatting
+@click.option("--no-color", is_flag=True, help="Disable colored console output")
+@click.option(
+    "--no-progressbar",
+    is_flag=True,
+    help="Disable progress bar during execution",
+)
+@click.option(
+    "--verbose",
+    "-v",
+    count=True,
+    help="Increase output verbosity (-v errors, -vv details, -vvv headers)",
+)
+# Input Specification
+@click.option(
+    "--username",
+    "-u",
+    multiple=True,
+    required=False,
+    help=(
+        "Username(s) to search for across social media platforms "
+        "(required unless --test)"
     ),
-    remote_list_url: Optional[List[str]] = typer.Option(
-        None, "--remote-list", help="URL(s) to fetch remote WhatsMyName site data", show_default=False
+)
+@click.option(
+    "--site",
+    "-s",
+    multiple=True,
+    help='Specific site name(s) to enumerate (e.g., "GitHub", "X")',
+)
+# Data Sources - Local
+@click.option(
+    "--local-list",
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to a local JSON file containing WhatsMyName site data",
+)
+@click.option(
+    "--local-schema",
+    type=click.Path(exists=True, path_type=Path),
+    help="Path to local WhatsMyName JSON schema file for validation",
+)
+# Data Sources - Remote
+@click.option("--remote-list", help="URL to fetch remote WhatsMyName site data")
+@click.option(
+    "--remote-schema",
+    default=WMN_SCHEMA_URL,
+    help=(
+        "URL to fetch WhatsMyName JSON schema for validation "
+        "(ignored with --skip-validation)"
     ),
-    local_schema: Optional[Path] = typer.Option(
-        None, "--local-schema", help="Path to local WhatsMyName JSON schema file for validation", show_default=False
+)
+# Validation
+@click.option(
+    "--skip-validation",
+    is_flag=True,
+    help="Skip JSON schema validation of WhatsMyName data",
+)
+@click.option(
+    "--test",
+    is_flag=True,
+    help="Validate site detection methods by checking known usernames",
+)
+# Category Filtering
+@click.option(
+    "--include-categories",
+    multiple=True,
+    help='Include only sites from specified categories (e.g., "social", "coding")',
+)
+@click.option(
+    "--exclude-categories",
+    multiple=True,
+    help='Exclude sites from specified categories (e.g., "adult", "gaming")',
+)
+# Network Configuration
+@click.option(
+    "--proxy",
+    help="Proxy server to use for requests (e.g., http://proxy:port, socks5://proxy:port)",
+)
+@click.option(
+    "--timeout",
+    type=click.IntRange(1, 300),
+    default=HTTP_TIMEOUT,
+    help="Maximum time in seconds to wait for each HTTP request",
+)
+@click.option(
+    "--allow-redirects/--no-allow-redirects",
+    default=HTTP_ALLOW_REDIRECTS,
+    help="Whether to follow HTTP redirects automatically",
+)
+@click.option(
+    "--verify-ssl/--no-verify-ssl",
+    default=HTTP_SSL_VERIFY,
+    help="Verify SSL certificates",
+)
+@click.option(
+    "--impersonate",
+    type=click.Choice([BROWSER_IMPERSONATE_NONE, *get_args(BrowserTypeLiteral)]),
+    default=BROWSER_IMPERSONATE_AGENT,
+    help='Browser to impersonate in HTTP requests (use "none" to disable)',
+)
+# Fingerprinting Options
+@click.option("--ja3", help="JA3 fingerprint string for TLS fingerprinting")
+@click.option(
+    "--akamai",
+    help="Akamai fingerprint string for Akamai bot detection bypass",
+)
+@click.option(
+    "--extra-fp",
+    help=(
+        "Extra fingerprinting options as JSON string (e.g., '"
+        '{"tls_grease": true, "tls_cert_compression": "brotli"}'
+        ")"
     ),
-    remote_schema_url: Optional[str] = typer.Option(
-        WMN_SCHEMA_URL, "--remote-schema", help="URL to fetch custom WhatsMyName JSON schema for validation"
-    ),
+)
+# Concurrency & Debugging
+@click.option(
+    "--max-tasks",
+    type=click.IntRange(1, 1000),
+    default=MAX_CONCURRENT_TASKS,
+    help="Maximum number of concurrent tasks",
+)
+@click.option(
+    "--mode",
+    type=click.Choice([WMNMode.ANY.value, WMNMode.ALL.value]),
+    default=WMNMode.ALL.value,
+    help="Validation mode: all or any",
+)
+@click.option(
+    "--log-level",
+    type=click.Choice(["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]),
+    help="Set logging level",
+)
+@click.option("--log-file", help="Path to log file")
+# Response Handling
+@click.option(
+    "--save-response",
+    is_flag=True,
+    help="Save HTTP responses",
+)
+@click.option(
+    "--response-dir",
+    callback=validate_filepath_arg,
+    type=click.Path(file_okay=False, dir_okay=True),
+    default=None,
+    help="Custom directory for responses",
+)
+@click.option(
+    "--open-response",
+    is_flag=True,
+    help="Open response files in browser",
+)
+@click.option("--browse", is_flag=True, help="Open found profiles in web browser")
+# Export Options
+@click.option(
+    "--csv",
+    is_flag=True,
+    help="Export results to CSV",
+)
+@click.option(
+    "--csv-path",
+    callback=validate_filepath_arg,
+    default=None,
+    help="CSV export file path",
+)
+@click.option(
+    "--json",
+    is_flag=True,
+    help="Export results to JSON",
+)
+@click.option(
+    "--json-path",
+    callback=validate_filepath_arg,
+    default=None,
+    help="JSON export file path",
+)
+@click.option(
+    "--html",
+    is_flag=True,
+    help="Export results to HTML",
+)
+@click.option(
+    "--html-path",
+    callback=validate_filepath_arg,
+    default=None,
+    help="HTML export file path",
+)
+@click.option(
+    "--pdf",
+    is_flag=True,
+    help="Export results to PDF",
+)
+@click.option(
+    "--pdf-path",
+    callback=validate_filepath_arg,
+    default=None,
+    help="PDF export file path",
+)
+# Result Filtering
+@click.option(
+    "--filter-all",
+    is_flag=True,
+    help="Include all results in console output and exports",
+)
+@click.option(
+    "--filter-exists",
+    is_flag=True,
+    help="Show only existing username results in console output and exports",
+)
+@click.option(
+    "--filter-partial",
+    is_flag=True,
+    help="Show only partial match results in console output and exports",
+)
+@click.option(
+    "--filter-conflicting",
+    is_flag=True,
+    help="Show only conflicting results in console output and exports",
+)
+@click.option(
+    "--filter-unknown",
+    is_flag=True,
+    help="Show only unknown results in console output and exports",
+)
+@click.option(
+    "--filter-missing",
+    is_flag=True,
+    help="Show only missing username results in console output and exports",
+)
+@click.option(
+    "--filter-not-valid",
+    is_flag=True,
+    help="Show only not valid results in console output and exports",
+)
+@click.option(
+    "--filter-errors",
+    is_flag=True,
+    help="Show only error results in console output and exports",
+)
+@click.pass_context
+@cli_error_handler
+def main(ctx: click.Context, **kwargs: dict[str, Any]) -> None:
+    """A Python package and CLI tool for asynchronous OSINT username enumeration.
 
-    skip_validation: bool = typer.Option(False, "--skip-validation", help="Skip JSON schema validation of WhatsMyName data"),
+    Uses the WhatsMyName dataset.
+    """
 
-    # Self-check
-    self_check: bool = typer.Option(False, "--self-check", help="Run self-check mode to validate site detection accuracy"),
+    if ctx.invoked_subcommand is not None:
+        return
 
-    # Category filters
-    include_categories: Optional[List[str]] = typer.Option(
-        None, "--include-categories", show_default=False, help="Include only sites from specified categories (e.g., 'social', 'coding')"
-    ),
-    exclude_categories: Optional[List[str]] = typer.Option(
-        None, "--exclude-categories", show_default=False, help="Exclude sites from specified categories (e.g., 'adult', 'gaming')"
-    ),
+    if kwargs.get("no_color"):
+        console.no_color = True
 
-    # Network
-    proxy: Optional[str] = typer.Option(
-        None, "--proxy", show_default=False, help="Proxy server to use for requests (e.g., http://proxy:port, socks5://proxy:port)"
-    ),
-    timeout: int = typer.Option(HTTP_REQUEST_TIMEOUT_SECONDS, "--timeout", help="Maximum time in seconds to wait for each HTTP request"),
-    allow_redirects: bool = typer.Option(HTTP_ALLOW_REDIRECTS, "--allow-redirects", help="Whether to follow HTTP redirects automatically"),
-    verify_ssl: bool = typer.Option(HTTP_SSL_VERIFY, "--verify-ssl", help="Whether to verify SSL/TLS certificates for HTTPS requests"),
-    impersonate: BrowserImpersonation = typer.Option(
-        BrowserImpersonation.CHROME, "--impersonate", "-i", help="Browser to impersonate in HTTP requests"
-    ),
-    
-    # Concurrency & Debug
-    max_tasks: int = typer.Option(MAX_CONCURRENT_TASKS, "--max-tasks", help="Maximum number of concurrent tasks"),
-    fuzzy_mode: bool = typer.Option(False, "--fuzzy", help="Enable fuzzy validation mode"),
-    log_level: Optional[str] = typer.Option(None, "--log-level", help="Set logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)", show_default=False),
-    log_file: Optional[str] = typer.Option(None, "--log-file", help="Path to log file for debug output", show_default=False),
-    show_details: bool = typer.Option(False, "--show-details", help="Show detailed information in console output"),
-    browse: bool = typer.Option(False, "--browse", help="Open found profiles in web browser"),
+    config = NaminterConfig.from_click(**kwargs)
+    NaminterCLI.setup_logging(config)
+    naminter_cli = NaminterCLI(config)
+    uvloop.run(naminter_cli.run())
 
-    # Response handling
-    save_response: bool = typer.Option(False, "--save-response", help="Save HTTP response content for each result to files"),
-    response_path: Optional[str] = typer.Option(None, "--response-path", help="Custom directory path for saving response files", show_default=False),
-    open_response: bool = typer.Option(False, "--open-response", help="Open saved response files in web browser"),
 
-    # Export
-    csv_export: bool = typer.Option(False, "--csv", help="Export results to CSV file"),
-    csv_path: Optional[str] = typer.Option(None, "--csv-path", help="Custom path for CSV export", show_default=False),
-    pdf_export: bool = typer.Option(False, "--pdf", help="Export results to PDF file"),
-    pdf_path: Optional[str] = typer.Option(None, "--pdf-path", help="Custom path for PDF export", show_default=False),
-    html_export: bool = typer.Option(False, "--html", help="Export results to HTML file"),
-    html_path: Optional[str] = typer.Option(None, "--html-path", help="Custom path for HTML export", show_default=False),
-    json_export: bool = typer.Option(False, "--json", help="Export results to JSON file"),
-    json_path: Optional[str] = typer.Option(None, "--json-path", help="Custom path for JSON export", show_default=False),
-
-    # Result filters
-    filter_all: bool = typer.Option(False, "--filter-all", help="Include all results in console output and exports"),
-    filter_errors: bool = typer.Option(False, "--filter-errors", help="Show only error results in console output and exports"),
-    filter_not_found: bool = typer.Option(False, "--filter-not-found", help="Show only not found results in console output and exports"),
-    filter_unknown: bool = typer.Option(False, "--filter-unknown", help="Show only unknown results in console output and exports"),
-    filter_ambiguous: bool = typer.Option(False, "--filter-ambiguous", help="Show only ambiguous results in console output and exports"),
+@main.command(name="validate")
+@click.option(
+    "--local-schema",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+    help="Path to local WhatsMyName JSON schema file for validation",
+)
+@click.option(
+    "--local-data",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+    help="Path to local WhatsMyName JSON data file to validate",
+)
+@click.option("--no-color", is_flag=True, help="Disable colored console output")
+@click.pass_context
+@cli_error_handler
+def validator_command(
+    ctx: click.Context,
+    local_schema: Path,
+    local_data: Path,
+    *,
+    no_color: bool,
 ) -> None:
-    """Main CLI entry point."""
-    
+    """Validate WhatsMyName JSON data against a JSON schema."""
     if no_color:
         console.no_color = True
 
-    try:
-        config = NaminterConfig(
-            usernames=usernames,
-            site_names=site_names,
-            local_list_paths=local_list,
-            remote_list_urls=remote_list_url,
-            local_schema_path=local_schema,
-            remote_schema_url=remote_schema_url,
-            skip_validation=skip_validation,
-            include_categories=include_categories,
-            exclude_categories=exclude_categories,
-            max_tasks=max_tasks,
-            timeout=timeout,
-            proxy=proxy,
-            allow_redirects=allow_redirects,
-            verify_ssl=verify_ssl,
-            impersonate=impersonate,
-            fuzzy_mode=fuzzy_mode,
-            self_check=self_check,
-            log_level=log_level,
-            log_file=log_file,
-            show_details=show_details,
-            browse=browse,
-            save_response=save_response,
-            response_path=response_path,
-            open_response=open_response,
-            csv_export=csv_export,
-            csv_path=csv_path,
-            pdf_export=pdf_export,
-            pdf_path=pdf_path,
-            html_export=html_export,
-            html_path=html_path,
-            json_export=json_export,
-            json_path=json_path,
-            filter_all=filter_all,
-            filter_errors=filter_errors,
-            filter_not_found=filter_not_found,
-            filter_unknown=filter_unknown,
-            filter_ambiguous=filter_ambiguous,
-            no_progressbar=no_progressbar,
+    async def run_validator() -> None:
+        """Run validation asynchronously."""
+        schema = await read_json(local_schema)
+        data = cast("WMNDataset", await read_json(local_data))
+
+        validator = WMNValidator(schema)
+        schema_errors = validator.validate_schema(data)
+        dataset_errors = WMNValidator.validate_dataset(data)
+
+        if schema_errors:
+            display_errors(schema_errors, "Schema Errors")
+        if dataset_errors:
+            display_errors(dataset_errors, "Dataset Errors")
+
+        if schema_errors or dataset_errors:
+            ctx.exit(EXIT_CODE_ERROR)
+
+        console.print(
+            "[green]+ [Validator] Validation passed: No errors found[/green]",
         )
 
-        if config.log_level and config.log_file:
-            log_path = Path(config.log_file)
-            log_path.parent.mkdir(parents=True, exist_ok=True)
-            logging.basicConfig(
-                level=config.log_level,
-                format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-                filename=str(log_path),
-                filemode="a"
+    uvloop.run(run_validator())
+
+
+@main.command(name="format")
+@click.option(
+    "--local-schema",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+    help="Path to local WhatsMyName JSON schema file",
+)
+@click.option(
+    "--local-data",
+    type=click.Path(exists=True, path_type=Path),
+    required=True,
+    help="Path to local WhatsMyName JSON data file to format",
+)
+@click.option(
+    "--output-dataset",
+    "-o",
+    callback=validate_filepath_arg,
+    help="Output path for formatted dataset (defaults to overwriting --local-data)",
+)
+@click.option(
+    "--output-schema",
+    callback=validate_filepath_arg,
+    help="Output path for formatted schema (defaults to overwriting --local-schema)",
+)
+@click.option("--no-color", is_flag=True, help="Disable colored console output")
+@click.pass_context
+@cli_error_handler
+def format_command(
+    _ctx: click.Context,
+    local_schema: Path,
+    local_data: Path,
+    output_dataset: Path | None,
+    output_schema: Path | None,
+    *,
+    no_color: bool,
+) -> None:
+    """Format WhatsMyName JSON data according to schema ordering and sorting."""
+    if no_color:
+        console.no_color = True
+
+    async def run_formatter() -> None:
+        """Run formatting asynchronously."""
+        original_schema_content = await read_file(local_schema)
+        original_dataset_content = await read_file(local_data)
+
+        try:
+            schema_data = orjson.loads(original_schema_content)
+        except orjson.JSONDecodeError as e:
+            msg = f"Invalid JSON in file {local_schema} at position {e.pos}: {e.msg}"
+            raise FileError(msg) from e
+
+        try:
+            data = orjson.loads(original_dataset_content)
+        except orjson.JSONDecodeError as e:
+            msg = f"Invalid JSON in file {local_data} at position {e.pos}: {e.msg}"
+            raise FileError(msg) from e
+
+        formatter = WMNFormatter(schema_data)
+        formatted_dataset_content = formatter.format_dataset(data)
+        formatted_schema_content = formatter.format_schema()
+
+        dataset_output = output_dataset or local_data
+        schema_output = output_schema or local_schema
+
+        if original_dataset_content != formatted_dataset_content:
+            await write_file(dataset_output, formatted_dataset_content)
+            display_diff(
+                original_dataset_content, formatted_dataset_content, dataset_output
             )
-        
-        naminter_cli = NaminterCLI(config)
-        asyncio.run(naminter_cli.run())
-    except KeyboardInterrupt:
-        display_warning("Operation interrupted")
-        raise typer.Exit(1)
-    except asyncio.TimeoutError:
-        display_error("Operation timed out")
-        raise typer.Exit(1)
-    except ConfigurationError as e:
-        display_error(f"Configuration error: {e}")
-        raise typer.Exit(1)
-    except DataError as e:
-        display_error(f"Data error: {e}")
-        raise typer.Exit(1)
-    except Exception as e:
-        display_error(f"Fatal error: {e}")
-        raise typer.Exit(1)
+
+        if original_schema_content != formatted_schema_content:
+            await write_file(schema_output, formatted_schema_content)
+            display_diff(
+                original_schema_content, formatted_schema_content, schema_output
+            )
+
+    uvloop.run(run_formatter())
+
 
 def entry_point() -> None:
     """Entry point for the application."""
-    typer.run(main)
+    main()
+
 
 if __name__ == "__main__":
     entry_point()

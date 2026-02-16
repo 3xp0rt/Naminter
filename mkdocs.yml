@@ -1,0 +1,143 @@
+site_name: Naminter Documentation
+site_description: A Python package and CLI tool for asynchronous OSINT username enumeration
+site_author: 3xp0rt
+site_url: https://3xp0rt.github.io/naminter/
+copyright: Copyright &copy; 2025 3xp0rt
+
+repo_name: 3xp0rt/naminter
+repo_url: https://github.com/3xp0rt/naminter
+edit_uri: edit/main/docs/
+
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: blue
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.tabs.sticky
+    - navigation.sections
+    - navigation.indexes
+    - navigation.expand
+    - navigation.path
+    - navigation.top
+    - toc.follow
+    - content.code.copy
+    - content.code.select
+    - content.tooltips
+    - search.highlight
+    - search.suggest
+    - content.code.annotate
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - admonition
+  - pymdownx.details
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - tables
+  - attr_list
+  - md_in_html
+  - pymdownx.arithmatex:
+      generic: true
+  - pymdownx.caret
+  - pymdownx.mark
+  - pymdownx.tilde
+  - toc:
+      toc_depth: 4
+
+nav:
+  - Home: index.md
+  - Getting Started:
+    - Installation: getting-started/installation.md
+    - Usage: getting-started/usage.md
+  - CLI Reference: cli/index.md
+  - API Reference:
+    - Naminter: api/core/main.md
+    - Models: api/core/models.md
+    - Network: api/core/network.md
+    - Formatter: api/core/formatter.md
+    - Validator: api/core/validator.md
+    - Constants: api/core/constants.md
+    - Exceptions: api/core/exceptions.md
+  - Contributing: contributing.md
+  - License: license.md
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [naminter]
+          options:
+            show_root_heading: true
+            show_if_no_docstring: true
+            inherited_members: true
+            members_order: source
+            separate_signature: true
+            filters:
+            - '!^_'
+            - '!^__'
+            merge_init_into_class: true
+            docstring_section_style: spacy
+            signature_crossrefs: true
+            show_symbol_type_heading: true
+            show_symbol_type_toc: true
+            show_source: false
+            show_bases: true
+            show_root_toc_entry: true
+            heading_level: 2
+            show_submodules: false
+
+extra:
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/3xp0rt/naminter
+    - icon: fontawesome/brands/python
+      link: https://pypi.org/project/naminter/
+    - icon: fontawesome/brands/x-twitter
+      link: https://x.com/3xp0rtblog
+
+# Uncomment to add Google Analytics (add under extra:)
+#  analytics:
+#    provider: google
+#    property: G-XXXXXXXXXX
+
+# Uncomment to add custom CSS/JS
+# extra_css:
+#   - stylesheets/extra.css
+# extra_javascript:
+#   - javascripts/extra.js
+
+# Watch additional directories for live reload
+watch:
+  - docs
+  - naminter
+

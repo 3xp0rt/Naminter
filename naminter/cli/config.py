@@ -1,161 +1,295 @@
-from dataclasses import dataclass, field
-from pathlib import Path
-from typing import List, Optional, Union, Dict, Any
+"""CLI configuration dataclass for Naminter runtime settings."""
 
-from ..cli.console import display_error, display_warning
-from ..core.constants import (
-    HTTP_REQUEST_TIMEOUT_SECONDS,
+from dataclasses import dataclass, field
+from functools import cached_property
+from pathlib import Path
+from typing import TYPE_CHECKING, Any
+
+import orjson
+
+from naminter.cli.console import display_warning
+from naminter.cli.exceptions import ConfigurationError
+from naminter.core.constants import (
+    BROWSER_IMPERSONATE_AGENT,
+    BROWSER_IMPERSONATE_NONE,
+    HTTP_ALLOW_REDIRECTS,
+    HTTP_SSL_VERIFY,
+    HTTP_TIMEOUT,
     MAX_CONCURRENT_TASKS,
     WMN_REMOTE_URL,
     WMN_SCHEMA_URL,
 )
-from ..core.models import BrowserImpersonation
+from naminter.core.models import WMNMode
 
-@dataclass
+if TYPE_CHECKING:
+    from curl_cffi import BrowserTypeLiteral, ExtraFingerprints
+
+
+@dataclass(frozen=True)
 class NaminterConfig:
     """Configuration for Naminter CLI tool.
-    
-    Holds all configuration parameters for username checking operations, including network settings, export options, filtering, and validation parameters.
+
+    Holds all configuration parameters for username enumeration operations,
+    including network settings, export options, filtering, and validation
+    parameters.
     """
-    # Required parameters
-    usernames: List[str]
-    site_names: Optional[List[str]] = None
-    logger: Optional[object] = None
 
-    # List and schema sources
-    local_list_paths: Optional[List[Union[Path, str]]] = None
-    remote_list_urls: Optional[List[str]] = None
-    local_schema_path: Optional[Union[Path, str]] = None
-    remote_schema_url: Optional[str] = WMN_SCHEMA_URL
+    # Input/Output
+    usernames: list[str] = field(default_factory=list)
+    sites: list[str] | None = None
+    local_list: Path | str | None = None
+    remote_list: str | None = None
+    local_schema: Path | str | None = None
+    remote_schema: str = WMN_SCHEMA_URL
 
-    # Validation and filtering
+    # Validation & Filtering
     skip_validation: bool = False
-    include_categories: List[str] = field(default_factory=list)
-    exclude_categories: List[str] = field(default_factory=list)
+    include_categories: list[str] = field(default_factory=list)
+    exclude_categories: list[str] = field(default_factory=list)
     filter_all: bool = False
-    filter_errors: bool = False
-    filter_not_found: bool = False
+    filter_exists: bool = False
+    filter_partial: bool = False
+    filter_conflicting: bool = False
     filter_unknown: bool = False
-    filter_ambiguous: bool = False
+    filter_missing: bool = False
+    filter_not_valid: bool = False
+    filter_errors: bool = False
 
-    # Network and concurrency
+    # Network/HTTP
     max_tasks: int = MAX_CONCURRENT_TASKS
-    timeout: int = HTTP_REQUEST_TIMEOUT_SECONDS
-    proxy: Optional[str] = None
-    allow_redirects: bool = False
-    verify_ssl: bool = False
-    impersonate: BrowserImpersonation = BrowserImpersonation.CHROME
-    browse: bool = False
-    fuzzy_mode: bool = False
-    self_check: bool = False
-    no_progressbar: bool = False
+    timeout: int = HTTP_TIMEOUT
+    proxy: str | None = None
+    allow_redirects: bool = HTTP_ALLOW_REDIRECTS
+    verify_ssl: bool = HTTP_SSL_VERIFY
+    impersonate: "BrowserTypeLiteral | str | None" = BROWSER_IMPERSONATE_AGENT
+    ja3: str | None = None
+    akamai: str | None = None
+    extra_fp: "ExtraFingerprints | dict[str, Any] | str | None" = None
 
-    # Logging
-    log_level: Optional[str] = None
-    log_file: Optional[str] = None
-    show_details: bool = False
+    # Behavior/Output
+    browse: bool = False
+    mode: WMNMode = field(default_factory=lambda: WMNMode.ALL)
+    test: bool = False
+    no_progressbar: bool = False
+    log_level: str | None = None
+    log_file: str | None = None
+    verbose: int = 0
 
     # Response saving
     save_response: bool = False
-    response_path: Optional[str] = None
+    response_dir: Path | str | None = None
     open_response: bool = False
 
-    # Export options
+    # Export formats
     csv_export: bool = False
-    csv_path: Optional[str] = None
+    csv_path: Path | str | None = None
     pdf_export: bool = False
-    pdf_path: Optional[str] = None
+    pdf_path: Path | str | None = None
     html_export: bool = False
-    html_path: Optional[str] = None
+    html_path: Path | str | None = None
     json_export: bool = False
-    json_path: Optional[str] = None
+    json_path: Path | str | None = None
 
     def __post_init__(self) -> None:
-        """Validate and normalize configuration after initialization."""
-        if self.self_check and self.usernames:
-            display_warning(
-                "Self-check mode enabled: provided usernames will be ignored, "
-                "using known usernames from site configurations instead."
+        """Validate and normalize configuration after initialization.
+
+        Raises:
+            ConfigurationError: If configuration values are invalid or conflicting.
+        """
+        self._validate_usernames()
+        self._validate_mode()
+        self._validate_sources()
+        self._normalize_filters()
+        self._normalize_impersonate()
+        self._normalize_fingerprint()
+
+    @classmethod
+    def from_click(cls, **kwargs: Any) -> "NaminterConfig":  # noqa: ANN401
+        """Create NaminterConfig from Click CLI arguments.
+
+        Transforms Click kwargs (CLI option names) into config field names
+        and normalizes types (tuples to lists, mode string to enum).
+
+        Args:
+            **kwargs: Raw kwargs from Click CLI (main command options).
+
+        Returns:
+            NaminterConfig: Initialized NaminterConfig instance.
+
+        Raises:
+            ConfigurationError: If validation fails.
+        """
+        parsed = kwargs.copy()
+        parsed.pop("no_color", None)
+
+        cls._rename_click_keys(parsed)
+        cls._normalize_click_types(parsed)
+
+        return cls(**parsed)
+
+    @classmethod
+    def _rename_click_keys(cls, parsed: dict[str, Any]) -> None:
+        """Rename Click CLI keys that differ from config field names.
+
+        Args:
+            parsed: Mutable dictionary of parsed kwargs to transform.
+        """
+        # Click uses singular --username / --site; config uses usernames / sites
+        if "username" in parsed:
+            parsed["usernames"] = list(parsed.pop("username") or [])
+        if "site" in parsed:
+            parsed["sites"] = list(parsed.pop("site")) or None
+
+        for fmt in ("csv", "pdf", "html", "json"):
+            if fmt in parsed:
+                parsed[f"{fmt}_export"] = parsed.pop(fmt)
+
+    @classmethod
+    def _normalize_click_types(cls, parsed: dict[str, Any]) -> None:
+        """Normalize Click argument types to config field types.
+
+        Args:
+            parsed: Mutable dictionary of parsed kwargs to normalize.
+        """
+        for list_key in ("include_categories", "exclude_categories"):
+            if list_key in parsed and isinstance(parsed[list_key], tuple):
+                parsed[list_key] = list(parsed[list_key])
+
+        if "mode" in parsed:
+            parsed["mode"] = WMNMode(parsed["mode"])
+
+    def _validate_usernames(self) -> None:
+        """Ensure usernames are provided when not running in test mode.
+
+        Raises:
+            ConfigurationError: If no usernames are provided and test mode is off.
+        """
+        if not self.usernames and not self.test:
+            msg = (
+                "At least one --username/-u is required unless --test is used. "
+                "Provide a username or run in validation mode with --test."
             )
-        if not self.self_check and not self.usernames:
-            raise ValueError("No usernames provided and self-check not enabled.")
+            raise ConfigurationError(msg)
+
+    def _validate_mode(self) -> None:
+        """Warn when test mode is enabled with usernames provided."""
+        if self.test and self.usernames:
+            display_warning(
+                "Site validation mode enabled: provided usernames will be ignored, "
+                "using known usernames from site configurations instead.",
+            )
+
+    def _validate_sources(self) -> None:
+        """Validate data source configuration (list and schema sources).
+
+        Raises:
+            ConfigurationError: If conflicting data sources are provided.
+        """
+        # Validate list sources
+        if self.local_list and self.remote_list:
+            msg = (
+                "Conflicting list sources: both local_list and remote_list "
+                "are provided. Please specify only one."
+            )
+            raise ConfigurationError(msg)
+
+        if not self.local_list and not self.remote_list:
+            object.__setattr__(self, "remote_list", WMN_REMOTE_URL)  # noqa: PLC2801
+
+        # Skip schema source validation if validation is disabled
+        if self.skip_validation:
+            return
+
+        # Validate schema sources
+        if self.local_schema and self.remote_schema != WMN_SCHEMA_URL:
+            msg = (
+                "Conflicting schema sources: both local_schema and "
+                "remote_schema are provided. Please specify only one."
+            )
+            raise ConfigurationError(msg)
+
+    def _normalize_filters(self) -> None:
+        """Normalize filter settings to ensure at least one filter is active."""
+        has_any_filter = any([
+            self.filter_all,
+            self.filter_exists,
+            self.filter_partial,
+            self.filter_conflicting,
+            self.filter_unknown,
+            self.filter_missing,
+            self.filter_not_valid,
+            self.filter_errors,
+        ])
+
+        if not has_any_filter:
+            object.__setattr__(self, "filter_exists", True)  # noqa: PLC2801
+
+    def _normalize_impersonate(self) -> None:
+        """Normalize impersonate setting to handle 'none' string value."""
+        if (
+            isinstance(self.impersonate, str)
+            and self.impersonate.lower() == BROWSER_IMPERSONATE_NONE
+        ):
+            object.__setattr__(self, "impersonate", None)  # noqa: PLC2801
+
+    def _normalize_fingerprint(self) -> None:
+        """Parse and normalize extra_fp from JSON string to dict if needed.
+
+        Raises:
+            ConfigurationError: If extra_fp is not valid JSON or not a dict.
+        """
+        if not isinstance(self.extra_fp, str):
+            return
+
+        extra_fp_str = self.extra_fp.strip()
+        if not extra_fp_str:
+            object.__setattr__(self, "extra_fp", None)  # noqa: PLC2801
+            return
+
         try:
-            if self.local_list_paths:
-                self.local_list_paths = [str(p) for p in self.local_list_paths]
-            if self.remote_list_urls:
-                self.remote_list_urls = list(self.remote_list_urls)
-            if not self.local_list_paths and not self.remote_list_urls:
-                self.remote_list_urls = [WMN_REMOTE_URL]
-        except Exception as e:
-            raise ValueError(f"Configuration validation failed: {e}") from e
-        self.impersonate = self.get_impersonation()
+            parsed = orjson.loads(extra_fp_str)
+            if not isinstance(parsed, dict):
+                msg = (
+                    f"Invalid extra_fp format: expected JSON object, "
+                    f"got {type(parsed).__name__}"
+                )
+                raise ConfigurationError(msg)
+            object.__setattr__(self, "extra_fp", parsed)  # noqa: PLC2801
+        except orjson.JSONDecodeError as e:
+            msg = f"Invalid JSON in extra_fp parameter: {e}"
+            raise ConfigurationError(msg) from e
 
-    def get_impersonation(self) -> Optional[str]:
-        """Return impersonation string or None if impersonation is NONE."""
-        return None if self.impersonate == BrowserImpersonation.NONE else self.impersonate.value
+    @cached_property
+    def response_dir_path(self) -> Path | None:
+        """Return response directory Path if save_response is enabled.
 
-    @property
-    def response_dir(self) -> Optional[Path]:
-        """Return response directory Path if save_response is enabled."""
+        Returns:
+            Path | None: Configured directory path, or None if saving is disabled.
+        """
         if not self.save_response:
             return None
-        if self.response_path:
-            return Path(self.response_path)
+
+        if self.response_dir:
+            return Path(self.response_dir)
+
         return Path.cwd()
 
-    @property
-    def export_formats(self) -> Dict[str, Optional[str]]:
-        """Return enabled export formats with their custom paths."""
-        formats: Dict[str, Optional[str]] = {}
-        if self.csv_export:
-            formats["csv"] = self.csv_path
-        if self.pdf_export:
-            formats["pdf"] = self.pdf_path
-        if self.html_export:
-            formats["html"] = self.html_path
-        if self.json_export:
-            formats["json"] = self.json_path
-        return formats
+    @cached_property
+    def export_formats(self) -> dict[str, Path | str | None]:
+        """Return enabled export formats with their custom paths.
 
-    def to_dict(self) -> Dict[str, Any]:
-        """Convert configuration to a dictionary."""
+        Returns:
+            dict[str, Path | str | None]: Mapping of format names to output paths.
+        """
+        export_configs = [
+            ("csv", self.csv_export, self.csv_path),
+            ("pdf", self.pdf_export, self.pdf_path),
+            ("html", self.html_export, self.html_path),
+            ("json", self.json_export, self.json_path),
+        ]
+
         return {
-            "usernames": self.usernames,
-            "site_names": self.site_names,
-            "local_list_paths": self.local_list_paths,
-            "remote_list_urls": self.remote_list_urls,
-            "local_schema_path": self.local_schema_path,
-            "remote_schema_url": self.remote_schema_url,
-            "skip_validation": self.skip_validation,
-            "include_categories": self.include_categories,
-            "exclude_categories": self.exclude_categories,
-            "max_tasks": self.max_tasks,
-            "timeout": self.timeout,
-            "proxy": self.proxy,
-            "allow_redirects": self.allow_redirects,
-            "verify_ssl": self.verify_ssl,
-            "impersonate": self.impersonate.value if isinstance(self.impersonate, BrowserImpersonation) else self.impersonate,
-            "browse": self.browse,
-            "fuzzy_mode": self.fuzzy_mode,
-            "self_check": self.self_check,
-            "log_level": self.log_level,
-            "log_file": self.log_file,
-            "show_details": self.show_details,
-            "save_response": self.save_response,
-            "response_path": self.response_path,
-            "open_response": self.open_response,
-            "csv_export": self.csv_export,
-            "csv_path": self.csv_path,
-            "pdf_export": self.pdf_export,
-            "pdf_path": self.pdf_path,
-            "html_export": self.html_export,
-            "html_path": self.html_path,
-            "json_export": self.json_export,
-            "json_path": self.json_path,
-            "filter_all": self.filter_all,
-            "filter_errors": self.filter_errors,
-            "filter_not_found": self.filter_not_found,
-            "filter_unknown": self.filter_unknown,
-            "filter_ambiguous": self.filter_ambiguous,
-            "no_progressbar": self.no_progressbar,
+            format_name: path
+            for format_name, is_enabled, path in export_configs
+            if is_enabled
         }

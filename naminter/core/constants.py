@@ -1,38 +1,90 @@
-from typing import Final
+"""Constants for HTTP configuration, WMN dataset keys, and application settings."""
 
-from ..core.models import BrowserImpersonation
+from typing import Final, Literal
 
-# Remote data source configuration
-WMN_REMOTE_URL: Final[str] = "https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data.json"
-WMN_SCHEMA_URL: Final[str] = "https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data-schema.json"
+# =============================================================================
+# HTTP Configuration
+# =============================================================================
 
-# HTTP request configuration
-HTTP_REQUEST_TIMEOUT_SECONDS: Final[int] = 30
+# HTTP Methods
+HttpMethod = Literal["GET", "POST"]
+HTTP_METHOD_GET: Final[HttpMethod] = "GET"
+HTTP_METHOD_POST: Final[HttpMethod] = "POST"
+
+# HTTP Request Settings
+HTTP_TIMEOUT: Final[int] = 30
 HTTP_SSL_VERIFY: Final[bool] = False
 HTTP_ALLOW_REDIRECTS: Final[bool] = False
 
-# Browser impersonation settings
-BROWSER_IMPERSONATE_AGENT: Final[str] = BrowserImpersonation.CHROME.value
+# HTTP Status Code Ranges
+HTTP_STATUS_CODE_MIN: Final[int] = 100
+HTTP_STATUS_CODE_MAX: Final[int] = 599
 
-# Concurrency settings
+# Browser Impersonation Settings
+BROWSER_IMPERSONATE_AGENT: Final[str] = "chrome"
+BROWSER_IMPERSONATE_NONE: Final[str] = "none"
+
+# =============================================================================
+# WMN (WhatsMyName) Configuration
+# =============================================================================
+
+# Remote Data Source URLs
+WMN_REMOTE_URL: Final[str] = (
+    "https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data.json"
+)
+WMN_SCHEMA_URL: Final[str] = (
+    "https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data-schema.json"
+)
+
+# WMN Dataset Structure Keys
+WMN_KEY_SITES: Final[Literal["sites"]] = "sites"
+WMN_KEY_CATEGORIES: Final[Literal["categories"]] = "categories"
+WMN_KEY_AUTHORS: Final[Literal["authors"]] = "authors"
+WMN_KEY_LICENSE: Final[Literal["license"]] = "license"
+
+# Site Object Structure Keys
+SITE_KEY_NAME: Final[Literal["name"]] = "name"
+SITE_KEY_URI_CHECK: Final[Literal["uri_check"]] = "uri_check"
+SITE_KEY_URI_PRETTY: Final[Literal["uri_pretty"]] = "uri_pretty"
+SITE_KEY_POST_BODY: Final[Literal["post_body"]] = "post_body"
+SITE_KEY_HEADERS: Final[Literal["headers"]] = "headers"
+SITE_KEY_STRIP_BAD_CHAR: Final[Literal["strip_bad_char"]] = "strip_bad_char"
+SITE_KEY_E_CODE: Final[Literal["e_code"]] = "e_code"
+SITE_KEY_E_STRING: Final[Literal["e_string"]] = "e_string"
+SITE_KEY_M_STRING: Final[Literal["m_string"]] = "m_string"
+SITE_KEY_M_CODE: Final[Literal["m_code"]] = "m_code"
+SITE_KEY_KNOWN: Final[Literal["known"]] = "known"
+SITE_KEY_CATEGORY: Final[Literal["cat"]] = "cat"
+SITE_KEY_VALID: Final[Literal["valid"]] = "valid"
+
+# =============================================================================
+# JSON Configuration
+# =============================================================================
+
+# JSON Schema Keys
+SCHEMA_KEY_PROPERTIES: Final[str] = "properties"
+SCHEMA_KEY_ITEMS: Final[str] = "items"
+
+# =============================================================================
+# Application Settings
+# =============================================================================
+
+# Concurrency Settings
 MAX_CONCURRENT_TASKS: Final[int] = 50
 
-# Validation ranges and thresholds
-MIN_TASKS: Final[int] = 1
-MAX_TASKS_LIMIT: Final[int] = 1000
-MIN_TIMEOUT: Final[int] = 0
-MAX_TIMEOUT: Final[int] = 300
-
-# Performance warning thresholds
-HIGH_CONCURRENCY_THRESHOLD: Final[int] = 100
-HIGH_CONCURRENCY_MIN_TIMEOUT: Final[int] = 10
-VERY_HIGH_CONCURRENCY_THRESHOLD: Final[int] = 50
-VERY_HIGH_CONCURRENCY_MIN_TIMEOUT: Final[int] = 5
-EXTREME_CONCURRENCY_THRESHOLD: Final[int] = 500
-LOW_TIMEOUT_WARNING_THRESHOLD: Final[int] = 3
-
-# Logging format - includes logger name to distinguish between core and cli
+# Logging Configuration
 LOGGING_FORMAT: Final[str] = "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 
-# Placeholder for account name substitution in uri_check or post_body
+# =============================================================================
+# String Constants
+# =============================================================================
+
+# Account Name Substitution
 ACCOUNT_PLACEHOLDER: Final[str] = "{account}"
+
+# Default Values
+DEFAULT_UNKNOWN_VALUE: Final[str] = "unknown"
+EMPTY_STRING: Final[str] = ""
+
+# File Operations
+DEFAULT_FILE_ENCODING: Final[str] = "utf-8"

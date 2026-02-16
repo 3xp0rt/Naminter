@@ -1,16 +1,13 @@
-[build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
-
 [project]
 name = "naminter"
-version = "1.0.6"
-description = "The most powerful and fast username availability checker that searches across hundreds of websites using WhatsMyName dataset"
+version = "1.0.7"
+description = "A Python package and command-line interface (CLI) tool for asynchronous OSINT username enumeration using the WhatsMyName dataset"
+authors = [
+    {name = "3xp0rt", email = "contact@3xp0rt.com"}
+]
+license = {text = "MIT"}
 readme = "README.md"
-authors = [{ name = "3xp0rt", email = "contact@3xp0rt.com" }]
-license = { text = "MIT" }
-requires-python = ">=3.8"
-
+requires-python = ">=3.11"
 classifiers = [
     "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
@@ -18,27 +15,12 @@ classifiers = [
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.8",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Internet",
     "Topic :: Utilities"
 ]
-
-dependencies = [
-    "typer>=0.16.0",
-    "rich>=14.0.0",
-    "curl-cffi>=0.11.4",
-    "jsonschema>=4.24.0",
-    "jinja2>=3.1.6",
-    "weasyprint>=65.1"
-]
-
-maintainers = [{ name = "3xp0rt" }]
-
 keywords = [
     "osint",
     "username",
@@ -50,25 +32,175 @@ keywords = [
     "investigation",
     "naminter"
 ]
+dependencies = [
+    "curl-cffi>=0.14.0",
+    "jsonschema>=4.26.0",
+    "orjson>=3.11.7",
+    "click>=8.3.1",
+    "rich>=14.3.2",
+    "rich-click>=1.9.7",
+    "aiofiles>=25.1.0",
+    "jinja2>=3.1.6",
+    "weasyprint>=68.1",
+    "pathvalidate>=3.3.1",
+    "uvloop>=0.22.1",
+]
+
+[project.optional-dependencies]
+core = [
+    "curl-cffi>=0.14.0",
+    "jsonschema>=4.26.0",
+    "orjson>=3.11.5",
+]
+cli = [
+    "click>=8.3.1",
+    "rich>=14.3.2",
+    "rich-click>=1.9.7",
+    "aiofiles>=25.1.0",
+    "jinja2>=3.1.6",
+    "weasyprint>=68.1",
+    "pathvalidate>=3.3.1",
+    "uvloop>=0.22.1",
+]
+dev = [
+    "ruff>=0.15.1",
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.7.1",
+    "mkdocstrings[python]>=1.0.3",
+]
 
 [project.urls]
-Homepage     = "https://github.com/3xp0rt/naminter"
-Repository   = "https://github.com/3xp0rt/naminter"
-BugTracker   = "https://github.com/3xp0rt/naminter/issues"
-Documentation= "https://github.com/3xp0rt/naminter#readme"
-Source       = "https://github.com/3xp0rt/naminter"
+Homepage = "https://github.com/3xp0rt/naminter"
+Repository = "https://github.com/3xp0rt/naminter"
+Issues = "https://github.com/3xp0rt/naminter/issues"
+Documentation = "https://3xp0rt.github.io/naminter/"
 
 [project.scripts]
 naminter = "naminter.cli.main:entry_point"
 
-[tool.setuptools]
-package-dir = {"" = "."}
-include-package-data = true
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["naminter*"]
+# Ruff configuration
+[tool.ruff]
+line-length = 88
+target-version = "py311"
+exclude = [
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".git-rewrite",
+    ".hg",
+    ".ipynb_checkpoints",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pyenv",
+    ".pytest_cache",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    ".vscode",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "site-packages",
+    "venv",
+]
+respect-gitignore = true
 
-[tool.setuptools.package-data]
-"naminter.cli.templates" = ["*.html"]
-"naminter" = ["cli/templates/*.html"]
+[tool.ruff.lint]
+preview = true
+select = [
+    'I',      # isort
+    'F',      # pyflakes
+    'E',      # pycodestyle errors
+    'W',      # pycodestyle warnings
+    'PL',     # pylint
+    'B',      # flake8-bugbear
+    'C4',     # flake8-comprehensions
+    'UP',     # pyupgrade
+    'ARG',    # flake8-unused-arguments
+    'SIM',    # flake8-simplify
+    'TCH',    # flake8-type-checking
+    'TID',    # flake8-tidy-imports
+    'Q',      # flake8-quotes
+    'RUF',    # ruff-specific rules
+    'A',      # flake8-builtins
+    'COM',    # flake8-commas
+    'DTZ',    # flake8-datetimez
+    'EM',     # flake8-errmsg
+    'G',      # flake8-logging-format
+    'ICN',    # flake8-import-conventions
+    'N',      # pep8-naming
+    'PIE',    # flake8-pie
+    'T20',    # flake8-print
+    'YTT',    # flake8-2020
+    'ANN',    # flake8-annotations
+    'ASYNC',  # flake8-async
+    'S',      # flake8-bandit
+    'BLE',    # flake8-blind-except
+    'FBT',    # flake8-boolean-trap
+    'B904',   # raise-without-from-inside-except
+    'ERA',    # eradicate
+    'PD',     # pandas-vet
+    'PGH',    # pygrep-hooks
+    'PT',     # flake8-pytest-style
+    'RET',    # flake8-return
+    'SLF',    # flake8-self
+    'SLOT',   # flake8-slots
+    'TRY',    # tryceratops
+    'FA',     # flake8-future-annotations
+    'ISC',    # flake8-implicit-str-concat
+    'PTH',    # flake8-use-pathlib
+    'PERF',   # perflint
+    'NPY',    # numpy
+]
+ignore = [
+    'COM812',  # conflicts with formatter
+]
+
+[tool.ruff.lint.per-file-ignores]
+"__init__.py" = ["F401"]  # unused imports
+"tests/**/*.py" = ["S101", "PLR2004"]  # allow assert and magic values in tests
+
+[tool.ruff.lint.isort]
+known-first-party = ["naminter"]
+force-sort-within-sections = true
+split-on-trailing-comma = true
+
+[tool.ruff.lint.flake8-quotes]
+docstring-quotes = "double"
+inline-quotes = "double"
+
+[tool.ruff.lint.mccabe]
+max-complexity = 10
+
+[tool.ruff.lint.pylint]
+max-args = 8
+max-branches = 12
+max-returns = 6
+max-statements = 50
+
+[tool.ruff.format]
+preview = true
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+docstring-code-format = true
+docstring-code-line-length = 79
+
+[tool.pyright]
+typeCheckingMode = "strict"
+reportUnknownMemberType = "none"
+reportUnknownArgumentType = "none"
+reportUnknownVariableType = "none"
+reportUnknownLambdaType = "none"

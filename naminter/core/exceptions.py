@@ -1,129 +1,163 @@
-from typing import Optional
+"""Exception hierarchy for Naminter core errors."""
+
+from typing import Any
 
 
+# Base exception
 class NaminterError(Exception):
     """Base exception class for Naminter errors.
-    
+
     Args:
         message: Error message describing what went wrong.
-        cause: Optional underlying exception that caused this error.
     """
-    
-    def __init__(self, message: str, cause: Optional[Exception] = None) -> None:
+
+    def __init__(self, message: str) -> None:
         super().__init__(message)
-        self.message = message
-        self.cause = cause
 
 
-class ConfigurationError(NaminterError):
-    """Raised when there's an error in the configuration parameters.
-    
-    This includes invalid configuration values, missing required settings,
-    or configuration file parsing errors.
-    """
-    pass
-
-
-class NetworkError(NaminterError):
+# Network/HTTP errors
+class HttpError(NaminterError):
     """Raised when network-related errors occur.
-    
+
     This includes connection failures, DNS resolution errors,
     and other network-level issues.
     """
-    pass
 
 
-class DataError(NaminterError):
-    """Raised when there are issues with data processing or validation.
-    
-    This includes malformed data, parsing errors, and data integrity issues.
-    """
-    pass
-
-
-class SessionError(NetworkError):
+class HttpSessionError(HttpError):
     """Raised when HTTP session creation or management fails.
-    
+
     This includes session initialization errors, authentication failures,
     and session state management issues.
     """
-    pass
 
 
-class SchemaValidationError(DataError):
-    """Raised when WMN schema validation fails.
-    
-    This occurs when the WhatsMyName list format doesn't match
-    the expected schema structure.
+# Data processing errors
+class WMNDataError(NaminterError):
+    """Raised when there are issues with WMN data processing or validation.
+
+    This includes malformed data, parsing errors, and data integrity issues.
     """
-    pass
 
 
-class TimeoutError(NetworkError):
-    """Raised when network requests timeout.
-    
-    This includes both connection timeouts and read timeouts
-    during HTTP requests.
+class WMNUninitializedError(WMNDataError):
+    """Raised when WMN data is not initialized or missing.
+
+    This occurs when operations require WMN data but it hasn't been provided
+    or loaded yet.
     """
-    pass
 
 
-class FileAccessError(DataError):
-    """Raised when file operations fail.
-    
-    This includes reading/writing local lists, responses, exports,
-    and other file system operations.
+class WMNUnknownSiteError(WMNDataError):
+    """Raised when a requested site name doesn't exist in the WMN dataset.
+
+    Attributes:
+        site_names: List of unknown site names that were requested.
     """
-    pass
+
+    def __init__(
+        self,
+        message: str,
+        site_names: list[str] | None = None,
+    ) -> None:
+        """Initialize WMNUnknownSiteError.
+
+        Args:
+            message: Error message describing what went wrong.
+            site_names: List of unknown site names that were requested.
+        """
+        super().__init__(message)
+        self.site_names: list[str] = site_names or []
 
 
-class LoggingError(ConfigurationError):
-    """Raised when logging configuration fails.
-    
-    This includes logger setup errors, handler configuration issues,
-    and log file access problems.
+class WMNUnknownCategoriesError(WMNDataError):
+    """Raised when requested categories don't exist in the WMN dataset.
+
+    Attributes:
+        categories: List of unknown category names that were requested.
     """
-    pass
+
+    def __init__(
+        self,
+        message: str,
+        categories: list[str] | None = None,
+    ) -> None:
+        """Initialize WMNUnknownCategoriesError.
+
+        Args:
+            message: Error message describing what went wrong.
+            categories: List of unknown category names that were requested.
+        """
+        super().__init__(message)
+        self.categories: list[str] = categories or []
 
 
-class ValidationError(DataError):
-    """Raised when input validation fails.
-    
-    This includes invalid usernames, malformed URLs,
-    and other input parameter validation errors.
+class WMNSchemaError(WMNDataError):
+    """Raised when the WMN JSON Schema itself is invalid or cannot be used."""
+
+
+class WMNValidationError(WMNDataError):
+    """Raised when WMN dataset validation fails.
+
+    Attributes:
+        schema_errors: List of JSON schema validation errors.
+        dataset_errors: List of custom dataset validation errors
+            (license, authors, categories, duplicates, and site configurations).
     """
-    pass
+
+    def __init__(
+        self,
+        message: str,
+        schema_errors: list[Any] | None = None,
+        dataset_errors: list[Any] | None = None,
+    ) -> None:
+        """Initialize WMNValidationError.
+
+        Args:
+            message: Error message describing what went wrong.
+            schema_errors: List of JSON schema validation errors.
+            dataset_errors: List of custom dataset validation errors.
+        """
+        super().__init__(message)
+        self.schema_errors: list[Any] = schema_errors or []
+        self.dataset_errors: list[Any] = dataset_errors or []
 
 
-class WMNListError(DataError):
-    """Raised when WhatsMyName list loading or processing fails.
-    
-    This includes download errors, parsing failures,
-    and list update issues.
+class WMNArgumentError(WMNDataError):
+    """Raised when invalid arguments are passed to Naminter core APIs.
+
+    This is used for programmer / caller mistakes such as providing an empty
+    username list where at least one username is required.
     """
-    pass
 
 
-class ConcurrencyError(NaminterError):
-    """Raised when concurrency-related errors occur.
-    
-    This includes semaphore acquisition failures, task management errors,
-    and thread/async coordination issues.
+class WMNEnumerationError(WMNDataError):
+    """Raised when site enumeration fails due to configuration errors.
+
+    This includes invalid headers, strip_bad_char configuration errors,
+    and other site-specific configuration issues.
     """
-    pass
+
+
+class WMNFormatError(WMNDataError):
+    """Raised when WMN data formatting fails.
+
+    This includes JSON serialization errors, invalid data structure,
+    and other formatting-related issues.
+    """
 
 
 __all__ = [
+    "HttpError",
+    "HttpSessionError",
     "NaminterError",
-    "ConfigurationError",
-    "NetworkError",
-    "DataError",
-    "SessionError",
-    "SchemaValidationError",
-    "TimeoutError",
-    "FileAccessError",
-    "LoggingError",
-    "ValidationError",
-    "WMNListError",
-    "ConcurrencyError",
+    "WMNArgumentError",
+    "WMNDataError",
+    "WMNEnumerationError",
+    "WMNFormatError",
+    "WMNSchemaError",
+    "WMNUninitializedError",
+    "WMNUnknownCategoriesError",
+    "WMNUnknownSiteError",
+    "WMNValidationError",
 ]

@@ -1,41 +1,28 @@
-FROM python:3.12-slim
+FROM python:3.11-slim
 
-# Set environment variables
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV DEBIAN_FRONTEND=noninteractive
 
-# Set working directory
 WORKDIR /app
 
-# Install system dependencies required for WeasyPrint and other packages
+# WeasyPrint runtime deps (PDF export)
+# Fonts for PDF text rendering
 RUN apt-get update && apt-get install -y \
-    fonts-liberation \
-    fonts-dejavu-core \
-    fonts-dejavu-extra \
-    libcairo2 \
     libpango-1.0-0 \
-    libpangocairo-1.0-0 \
-    libgdk-pixbuf2.0-0 \
-    libffi-dev \
-    ca-certificates \
-    curl \
-    gcc \
-    g++ \
+    libpangoft2-1.0-0 \
+    libharfbuzz-subset0 \
+    fonts-dejavu-core \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml ./
+COPY . .
 
 RUN pip install --no-cache-dir --upgrade pip setuptools wheel && \
-    pip install --no-cache-dir -e .
-
-# Copy application code
-COPY . .
+    pip install --no-cache-dir .
 
 RUN useradd --create-home --shell /bin/bash naminter && \
     chown -R naminter:naminter /app
 USER naminter
 
 ENTRYPOINT ["naminter"]
-CMD ["--help"]
