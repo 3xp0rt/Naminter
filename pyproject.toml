@@ -73,7 +73,7 @@ dev = [
 Homepage = "https://github.com/3xp0rt/naminter"
 Repository = "https://github.com/3xp0rt/naminter"
 Issues = "https://github.com/3xp0rt/naminter/issues"
-Documentation = "https://3xp0rt.github.io/naminter/"
+Documentation = "https://3xp0rt.github.io/Naminter/"
 
 [project.scripts]
 naminter = "naminter.cli.main:entry_point"

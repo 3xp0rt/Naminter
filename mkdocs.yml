@@ -1,7 +1,7 @@
 site_name: Naminter Documentation
 site_description: A Python package and CLI tool for asynchronous OSINT username enumeration
 site_author: 3xp0rt
-site_url: https://3xp0rt.github.io/naminter/
+site_url: https://3xp0rt.github.io/Naminter/
 copyright: Copyright &copy; 2025 3xp0rt
 
 repo_name: 3xp0rt/naminter
