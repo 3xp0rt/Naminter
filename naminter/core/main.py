@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import AsyncGenerator, Awaitable
 import logging
-from typing import Any, cast
+from typing import Any
 
 from naminter.core.constants import (
     ACCOUNT_PLACEHOLDER,
@@ -38,7 +38,6 @@ from naminter.core.exceptions import (
     WMNValidationError,
 )
 from naminter.core.models import (
-    WMNDataset,
     WMNError,
     WMNMode,
     WMNResponse,
@@ -142,12 +141,16 @@ class Naminter:
         schema_errors: list[WMNError] = []
         dataset_errors: list[WMNError] = []
 
-        data = cast("WMNDataset", self._wmn_data)
         try:
             if self._validator:
-                schema_errors = self._validator.validate_schema(data)
-            dataset_errors = WMNValidator.validate_dataset(data)
-        except (TypeError, ValueError, KeyError, AttributeError) as e:
+                schema_errors = self._validator.validate_schema(self._wmn_data)
+            dataset_errors = WMNValidator.validate_dataset(self._wmn_data)
+        except (
+            TypeError,
+            ValueError,
+            KeyError,
+            AttributeError,
+        ) as e:
             self._logger.exception("Unexpected error loading WMN data")
             msg = f"Unexpected error loading WMN data: {e}"
             raise WMNDataError(msg) from e

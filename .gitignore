@@ -45,6 +45,7 @@ htmlcov/
 .cache
 nosetests.xml
 coverage.xml
+coverage.json
 *.cover
 *.py,cover
 .hypothesis/
@@ -137,6 +138,10 @@ venv.bak/
 
 # mkdocs documentation
 /site
+
+# Local WhatsMyName dataset copies for manual testing
+/wmn-data.json
+/wmn-data-schema.json
 
 # mypy
 .mypy_cache/

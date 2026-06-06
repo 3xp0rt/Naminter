@@ -1,6 +1,6 @@
 """Result exporters for CSV, JSON, HTML, and PDF formats."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 import csv
 from datetime import UTC, datetime
 import importlib.resources
@@ -56,13 +56,13 @@ class Exporter:
     async def export(
         self,
         results: Sequence[WMNResult | WMNTestResult],
-        formats: dict[str, str | Path | None],
+        formats: Mapping[str, str | Path | None],
     ) -> None:
         """Export results in the given formats.
 
         Args:
             results: Sequence of results to export.
-            formats: Dictionary mapping format names to output paths (None for auto).
+            formats: Mapping of format names to output paths (None for auto).
 
         Raises:
             ExportError: If export operation fails.

@@ -4,16 +4,13 @@ from collections.abc import Callable
 from functools import wraps
 import logging
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Final, cast, get_args
+from typing import Any, Final, get_args
 
 from curl_cffi import BrowserTypeLiteral
 import orjson
 from pathvalidate.click import validate_filepath_arg
 import rich_click as click
 import uvloop
-
-if TYPE_CHECKING:
-    from curl_cffi import ExtraFingerprints
 
 from naminter.cli.config import NaminterConfig
 from naminter.cli.console import (
@@ -59,7 +56,6 @@ from naminter.core.exceptions import NaminterError, WMNValidationError
 from naminter.core.formatter import WMNFormatter
 from naminter.core.main import Naminter
 from naminter.core.models import (
-    WMNDataset,
     WMNMode,
     WMNResult,
     WMNStatus,
@@ -216,10 +212,10 @@ class NaminterCLI:
             verify=self._config.verify_ssl,
             timeout=self._config.timeout,
             allow_redirects=self._config.allow_redirects,
-            impersonate=cast("BrowserTypeLiteral | None", self._config.impersonate),
+            impersonate=self._config.impersonate,
             ja3=self._config.ja3,
             akamai=self._config.akamai,
-            extra_fp=cast("ExtraFingerprints | None", self._config.extra_fp),
+            extra_fp=self._config.extra_fp,
         ) as http_client:
             wmn_data: dict[str, Any] | None = None
             if self._config.local_list:
@@ -783,7 +779,7 @@ def validator_command(
     async def run_validator() -> None:
         """Run validation asynchronously."""
         schema = await read_json(local_schema)
-        data = cast("WMNDataset", await read_json(local_data))
+        data = await read_json(local_data)
 
         validator = WMNValidator(schema)
         schema_errors = validator.validate_schema(data)

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from jsonschema.exceptions import SchemaError as JsonSchemaError
 from jsonschema.exceptions import ValidationError
@@ -31,7 +31,7 @@ from naminter.core.constants import (
     WMN_KEY_SITES,
 )
 from naminter.core.exceptions import WMNSchemaError
-from naminter.core.models import WMN_REQUIRED_KEYS, WMNDataset, WMNError, WMNSite
+from naminter.core.models import WMN_REQUIRED_KEYS, WMNError, WMNSite
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -70,7 +70,7 @@ class WMNValidator:
             msg = f"Failed to initialize JSON schema validator: {e}"
             raise WMNSchemaError(msg) from e
 
-    def validate_schema(self, data: WMNDataset) -> list[WMNError]:
+    def validate_schema(self, data: Mapping[str, Any]) -> list[WMNError]:
         """Validate dataset against JSON schema and return errors.
 
         Args:
@@ -80,7 +80,7 @@ class WMNValidator:
             list[WMNError]: Schema validation errors, empty if valid.
         """
         errors: list[WMNError] = []
-        data_dict = cast("dict[str, Any]", dict(data))
+        data_dict: dict[str, Any] = dict(data)
         for error in self._validator.iter_errors(data_dict):
             validation_error: ValidationError = error
             data_preview = WMNValidator._preview(validation_error.instance)
@@ -94,7 +94,7 @@ class WMNValidator:
         return errors
 
     @staticmethod
-    def validate_dataset(data: WMNDataset) -> list[WMNError]:
+    def validate_dataset(data: Mapping[str, Any]) -> list[WMNError]:
         """Validate dataset fields with custom rules and return list of errors.
 
         Performs code-based validation for license, authors, categories,
@@ -141,7 +141,7 @@ class WMNValidator:
         return None
 
     @staticmethod
-    def _validate_duplicates(data: WMNDataset) -> list[WMNError]:
+    def _validate_duplicates(data: Mapping[str, Any]) -> list[WMNError]:
         """Validate that site names are unique.
 
         Args:
@@ -154,12 +154,12 @@ class WMNValidator:
         if not isinstance(sites_data, list):
             return []
 
-        sites_data_list: list[Any] = cast("list[Any]", sites_data)
+        sites_data_list: list[Any] = sites_data
         name_indices: dict[str, list[int]] = defaultdict(list)
         for index, site in enumerate(sites_data_list):
             if not isinstance(site, dict):
                 continue
-            site_dict: dict[str, Any] = cast("dict[str, Any]", site)
+            site_dict: dict[str, Any] = site
             name: Any = site_dict.get(SITE_KEY_NAME)
             if not isinstance(name, str) or not name:
                 continue
@@ -185,7 +185,7 @@ class WMNValidator:
         return errors
 
     @staticmethod
-    def _validate_license(data: WMNDataset) -> list[WMNError]:
+    def _validate_license(data: Mapping[str, Any]) -> list[WMNError]:
         """Validate license field.
 
         Args:
@@ -212,7 +212,10 @@ class WMNValidator:
         return errors
 
     @staticmethod
-    def _validate_string_list(data: WMNDataset, field_key: str) -> list[WMNError]:
+    def _validate_string_list(
+        data: Mapping[str, Any],
+        field_key: str,
+    ) -> list[WMNError]:
         """Validate a field as a non-empty list of unique non-empty strings.
 
         Args:
@@ -237,7 +240,7 @@ class WMNValidator:
                 ),
             )
         else:
-            field_list: list[Any] = cast("list[Any]", field_data)
+            field_list: list[Any] = field_data
             if not field_list:
                 errors.append(
                     WMNError(
@@ -287,7 +290,7 @@ class WMNValidator:
         return errors
 
     @staticmethod
-    def _validate_authors(data: WMNDataset) -> list[WMNError]:
+    def _validate_authors(data: Mapping[str, Any]) -> list[WMNError]:
         """Validate authors field.
 
         Args:
@@ -299,7 +302,7 @@ class WMNValidator:
         return WMNValidator._validate_string_list(data, WMN_KEY_AUTHORS)
 
     @staticmethod
-    def _validate_categories(data: WMNDataset) -> list[WMNError]:
+    def _validate_categories(data: Mapping[str, Any]) -> list[WMNError]:
         """Validate categories field.
 
         Args:
@@ -555,10 +558,7 @@ class WMNValidator:
             )
             return errors
 
-        headers_dict: dict[Any, Any] = cast(
-            "dict[Any, Any]",
-            headers,
-        )
+        headers_dict: dict[Any, Any] = headers
         for hdr_key, hdr_val in headers_dict.items():
             if not isinstance(hdr_key, str):
                 errors.append(
@@ -689,7 +689,7 @@ class WMNValidator:
             )
             return errors
 
-        known_list: list[Any] = cast("list[Any]", known)
+        known_list: list[Any] = known
         for idx, item in enumerate(known_list):
             if not isinstance(item, str):
                 errors.append(

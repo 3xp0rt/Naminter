@@ -148,7 +148,12 @@ class WMNFormatter:
         """
         try:
             return orjson.dumps(obj, option=orjson.OPT_INDENT_2).decode("utf-8")
-        except (TypeError, ValueError, RecursionError, orjson.JSONEncodeError) as error:
+        except (
+            TypeError,
+            ValueError,
+            RecursionError,
+            orjson.JSONEncodeError,
+        ) as error:
             msg = f"{what} is not JSON-serializable: {error}"
             raise WMNFormatError(msg) from error
 

@@ -2,15 +2,42 @@
 
 ## From PyPI
 
-Install Naminter with pip or uv:
+Install Naminter with pip or uv.
+
+### pip
+
+Use a [venv](https://docs.python.org/3/library/venv.html) so Naminter and its dependencies stay isolated from system Python:
 
 ```bash
-# Default installation (includes both CLI and core)
+python -m venv .venv
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
+pip install --upgrade pip
 pip install naminter
-
-# Using uv
-uvx naminter
 ```
+
+With the venv active, `naminter` is on your `PATH` (via `.venv/bin`).
+
+### uv
+
+```bash
+# Persistent CLI on your PATH (similar to pipx)
+uv tool install naminter
+```
+
+### Updating
+
+Use the same tool you installed with:
+
+```bash
+# pip (with venv active)
+pip install --upgrade naminter
+
+# uv tool (persistent install)
+uv tool upgrade naminter
+```
+
+For optional dependency groups, pass the extra on upgrade (for example,
+`pip install --upgrade "naminter[dev]"` or `uv tool upgrade "naminter[dev]"`).
 
 ### Optional Dependencies
 
@@ -99,5 +126,5 @@ You should see the version number displayed. If you encounter any issues, ensure
 
 1. Python 3.11+ is installed: `python --version`
 2. The installation completed without errors
-3. Your PATH includes the Python scripts directory
+3. Your venv is activated, or your PATH includes the Python scripts directory
 
