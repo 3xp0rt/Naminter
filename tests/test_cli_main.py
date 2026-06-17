@@ -174,7 +174,7 @@ async def test_run_check_records_result(
 
     c = NaminterConfig(
         usernames=["alice"],
-        local_list=data_path,
+        local_data=data_path,
         local_schema=schema_path,
         no_progressbar=True,
         filter_all=True,
@@ -225,7 +225,7 @@ async def test_run_validation_path(
     c = NaminterConfig(
         usernames=["alice"],
         test=True,
-        local_list=data_path,
+        local_data=data_path,
         local_schema=schema_path,
         no_progressbar=True,
         filter_all=True,
@@ -273,7 +273,7 @@ async def test_run_with_exports_calls_exporter(
 
     c = NaminterConfig(
         usernames=["alice"],
-        local_list=data_path,
+        local_data=data_path,
         local_schema=schema_path,
         no_progressbar=True,
         filter_all=True,
@@ -292,13 +292,13 @@ async def test_run_with_exports_calls_exporter(
 
 
 @pytest.mark.asyncio
-async def test_run_remote_list_branch(
+async def test_run_remote_data_branch(
     tmp_path: Path,
-    minimal_dataset: dict[str, Any],
+    minimal_data: dict[str, Any],
     minimal_json_schema: dict[str, Any],
     minimal_site: dict[str, Any],
 ) -> None:
-    schema_path = tmp_path / "schema.json"
+    schema_path = tmp_path / "wmn-data-schema.json"
     schema_path.write_bytes(orjson.dumps(minimal_json_schema))
 
     class _FN:
@@ -320,11 +320,11 @@ async def test_run_remote_list_branch(
 
     async def fake_fetch(_client: object, url: str) -> dict[str, Any]:
         assert "http" in url
-        return minimal_dataset
+        return minimal_data
 
     c = NaminterConfig(
         usernames=["alice"],
-        remote_list="https://example.com/wmn.json",
+        remote_data="https://example.com/wmn.json",
         local_schema=schema_path,
         no_progressbar=True,
         filter_all=True,
@@ -418,7 +418,7 @@ def test_cli_main_invocation_smoke(wmn_files: tuple[Path, Path]) -> None:
             [
                 "--username",
                 "alice",
-                "--local-list",
+                "--local-data",
                 str(data_path),
                 "--local-schema",
                 str(schema_path),
@@ -483,7 +483,7 @@ def test_format_command_runs(wmn_files: tuple[Path, Path]) -> None:
         patch("naminter.cli.main.WMNFormatter") as mock_fmt,
     ):
         inst = MagicMock()
-        inst.format_dataset.return_value = ds
+        inst.format_data.return_value = ds
         inst.format_schema.return_value = sc
         mock_fmt.return_value = inst
         r = runner.invoke(

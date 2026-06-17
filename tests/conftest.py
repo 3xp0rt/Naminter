@@ -11,7 +11,7 @@ import pytest
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from naminter.core.models import WMNDataset, WMNSite
+    from naminter.core.models import WMNData, WMNSite
 
 
 @pytest.fixture
@@ -30,8 +30,8 @@ def minimal_site() -> WMNSite:
 
 
 @pytest.fixture
-def minimal_dataset(minimal_site: WMNSite) -> WMNDataset:
-    """Minimal WMN-shaped dataset that passes custom validation."""
+def minimal_data(minimal_site: WMNSite) -> WMNData:
+    """Minimal WMN-shaped data that passes custom validation."""
     return {
         "license": ["MIT"],
         "authors": ["author-one"],
@@ -42,7 +42,7 @@ def minimal_dataset(minimal_site: WMNSite) -> WMNDataset:
 
 @pytest.fixture
 def minimal_json_schema() -> dict[str, Any]:
-    """Small JSON Schema sufficient to validate top-level WMN dataset keys."""
+    """Small JSON Schema sufficient to validate top-level WMN data keys."""
     return {
         "$schema": "http://json-schema.org/draft-07/schema#",
         "type": "object",
@@ -84,13 +84,13 @@ def formatter_schema() -> dict[str, Any]:
 @pytest.fixture
 def wmn_files(
     tmp_path: Path,
-    minimal_dataset: WMNDataset,
+    minimal_data: WMNData,
     minimal_json_schema: dict[str, Any],
 ) -> tuple[Path, Path]:
-    """On-disk WMN list + JSON Schema files for CLI tests."""
-    data = tmp_path / "list.json"
-    schema = tmp_path / "schema.json"
-    data.write_bytes(orjson.dumps(minimal_dataset))
+    """On-disk WMN data + JSON Schema files for CLI tests."""
+    data = tmp_path / "wmn-data.json"
+    schema = tmp_path / "wmn-data-schema.json"
+    data.write_bytes(orjson.dumps(minimal_data))
     schema.write_bytes(orjson.dumps(minimal_json_schema))
     return data, schema
 

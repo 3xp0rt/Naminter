@@ -9,7 +9,7 @@ import pytest
 
 from naminter.cli.config import NaminterConfig
 from naminter.cli.exceptions import ConfigurationError
-from naminter.core.constants import WMN_REMOTE_URL
+from naminter.core.constants import WMN_DATA_URL
 from naminter.core.models import WMNMode
 
 
@@ -24,31 +24,31 @@ def test_config_allows_test_without_usernames() -> None:
     assert c.test is True
 
 
-def test_config_default_remote_list() -> None:
+def test_config_default_remote_data() -> None:
     with patch("naminter.cli.config.display_warning"):
         c = NaminterConfig(usernames=["a"], test=True)
-    assert c.remote_list == WMN_REMOTE_URL
+    assert c.remote_data == WMN_DATA_URL
 
 
-def test_config_conflicting_list_sources(tmp_path: Path) -> None:
-    local = tmp_path / "list.json"
+def test_config_conflicting_data_sources(tmp_path: Path) -> None:
+    local = tmp_path / "wmn-data.json"
     local.write_text("{}", encoding="utf-8")
-    with pytest.raises(ConfigurationError, match="Conflicting list sources"):
+    with pytest.raises(ConfigurationError, match="Conflicting data sources"):
         NaminterConfig(
             usernames=["a"],
-            local_list=local,
-            remote_list="https://example.com/list.json",
+            local_data=local,
+            remote_data="https://example.com/wmn-data.json",
         )
 
 
 def test_config_conflicting_schema_sources(tmp_path: Path) -> None:
-    schema = tmp_path / "schema.json"
+    schema = tmp_path / "wmn-data-schema.json"
     schema.write_text("{}", encoding="utf-8")
     with pytest.raises(ConfigurationError, match="Conflicting schema sources"):
         NaminterConfig(
             usernames=["a"],
             local_schema=schema,
-            remote_schema="https://other.example/schema.json",
+            remote_schema="https://other.example/wmn-data-schema.json",
         )
 
 
@@ -59,7 +59,7 @@ def test_config_skip_validation_allows_custom_remote_schema(tmp_path: Path) -> N
         usernames=["a"],
         skip_validation=True,
         local_schema=schema,
-        remote_schema="https://custom/schema.json",
+        remote_schema="https://custom/wmn-data-schema.json",
     )
     assert c.skip_validation is True
 

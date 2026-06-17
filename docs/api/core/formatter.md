@@ -13,22 +13,22 @@ from naminter import WMNFormatter
 with open("wmn-data.json", encoding="utf-8") as f:
     data = json.load(f)
 
-with open("wmn-schema.json", encoding="utf-8") as f:
+with open("wmn-data-schema.json", encoding="utf-8") as f:
     schema = json.load(f)
 
-# Read original content for comparison
+# Read original data for comparison
 input_path = Path("wmn-data.json")
-original_content = input_path.read_text(encoding="utf-8")
+original_data = input_path.read_text(encoding="utf-8")
 
 # Create formatter with schema
 formatter = WMNFormatter(schema)
 # Format data (data is not modified)
-formatted_content = formatter.format_dataset(data)
+formatted_data = formatter.format_data(data)
 
 # Compare and write if changed
-if original_content != formatted_content:
+if original_data != formatted_data:
     output_path = Path("wmn-data-formatted.json")
-    output_path.write_text(formatted_content, encoding="utf-8")
+    output_path.write_text(formatted_data, encoding="utf-8")
     print("File was formatted and saved")
 else:
     print("File was already properly formatted")
@@ -40,9 +40,9 @@ The formatter is also available via the CLI:
 
 ```bash
 naminter format \
-    --local-schema schema.json \
-    --local-data data.json \
-    --output formatted-data.json
+    --local-schema wmn-data-schema.json \
+    --local-data wmn-data.json \
+    --output-data formatted-data.json
 ```
 
 ## API Reference

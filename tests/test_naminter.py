@@ -15,7 +15,7 @@ from naminter.core.exceptions import (
     WMNUnknownSiteError,
 )
 from naminter.core.main import Naminter
-from naminter.core.models import WMNDataset, WMNMode, WMNResponse, WMNSite, WMNStatus
+from naminter.core.models import WMNData, WMNMode, WMNResponse, WMNSite, WMNStatus
 
 if TYPE_CHECKING:
     from unittest.mock import MagicMock
@@ -24,11 +24,11 @@ if TYPE_CHECKING:
 @pytest.mark.asyncio
 async def test_naminter_open_propagates_http_session_error(
     http_session: MagicMock,
-    minimal_dataset: WMNDataset,
+    minimal_data: WMNData,
     minimal_json_schema: dict[str, Any],
 ) -> None:
     http_session.open.side_effect = HttpSessionError("boom")
-    n = Naminter(http_session, minimal_dataset, minimal_json_schema)
+    n = Naminter(http_session, minimal_data, minimal_json_schema)
     with pytest.raises(HttpSessionError, match="boom"):
         await n.open()
 
@@ -36,10 +36,10 @@ async def test_naminter_open_propagates_http_session_error(
 @pytest.mark.asyncio
 async def test_naminter_summary_counts_sites(
     http_session: MagicMock,
-    minimal_dataset: WMNDataset,
+    minimal_data: WMNData,
     minimal_json_schema: dict[str, Any],
 ) -> None:
-    async with Naminter(http_session, minimal_dataset, minimal_json_schema) as n:
+    async with Naminter(http_session, minimal_data, minimal_json_schema) as n:
         summary = n.summary()
     assert summary.sites_count == 1
 
@@ -47,12 +47,12 @@ async def test_naminter_summary_counts_sites(
 @pytest.mark.asyncio
 async def test_enumerate_site_skips_invalid_site(
     http_session: MagicMock,
-    minimal_dataset: WMNDataset,
+    minimal_data: WMNData,
     minimal_json_schema: dict[str, Any],
     minimal_site: WMNSite,
 ) -> None:
     site: WMNSite = {**minimal_site, SITE_KEY_VALID: False}
-    async with Naminter(http_session, minimal_dataset, minimal_json_schema) as n:
+    async with Naminter(http_session, minimal_data, minimal_json_schema) as n:
         result = await n.enumerate_site(site, "u", mode=WMNMode.ALL)
     assert result.status == WMNStatus.NOT_VALID
     http_session.request.assert_not_called()
@@ -61,7 +61,7 @@ async def test_enumerate_site_skips_invalid_site(
 @pytest.mark.asyncio
 async def test_enumerate_site_success(
     http_session: MagicMock,
-    minimal_dataset: WMNDataset,
+    minimal_data: WMNData,
     minimal_json_schema: dict[str, Any],
     minimal_site: WMNSite,
 ) -> None:
@@ -70,7 +70,7 @@ async def test_enumerate_site_success(
         text=f"page {minimal_site['e_string']}",
         elapsed=timedelta(seconds=0),
     )
-    async with Naminter(http_session, minimal_dataset, minimal_json_schema) as n:
+    async with Naminter(http_session, minimal_data, minimal_json_schema) as n:
         result = await n.enumerate_site(
             minimal_site,
             "alice",
@@ -83,10 +83,10 @@ async def test_enumerate_site_success(
 @pytest.mark.asyncio
 async def test_filter_unknown_site_raises(
     http_session: MagicMock,
-    minimal_dataset: WMNDataset,
+    minimal_data: WMNData,
     minimal_json_schema: dict[str, Any],
 ) -> None:
-    async with Naminter(http_session, minimal_dataset, minimal_json_schema) as n:
+    async with Naminter(http_session, minimal_data, minimal_json_schema) as n:
         with pytest.raises(WMNUnknownSiteError, match="Unknown site"):
             n.summary(site_names=["NopeSite"])
 
@@ -94,10 +94,10 @@ async def test_filter_unknown_site_raises(
 @pytest.mark.asyncio
 async def test_filter_unknown_category_raises(
     http_session: MagicMock,
-    minimal_dataset: WMNDataset,
+    minimal_data: WMNData,
     minimal_json_schema: dict[str, Any],
 ) -> None:
-    async with Naminter(http_session, minimal_dataset, minimal_json_schema) as n:
+    async with Naminter(http_session, minimal_data, minimal_json_schema) as n:
         with pytest.raises(WMNUnknownCategoriesError, match="Unknown categories"):
             n.summary(include_categories=["not-a-real-category"])
 
@@ -105,10 +105,10 @@ async def test_filter_unknown_category_raises(
 @pytest.mark.asyncio
 async def test_enumerate_usernames_empty_raises(
     http_session: MagicMock,
-    minimal_dataset: WMNDataset,
+    minimal_data: WMNData,
     minimal_json_schema: dict[str, Any],
 ) -> None:
-    async with Naminter(http_session, minimal_dataset, minimal_json_schema) as n:
+    async with Naminter(http_session, minimal_data, minimal_json_schema) as n:
         gen = n.enumerate_usernames([])
         with pytest.raises(WMNArgumentError, match="At least one username"):
             await anext(gen)
@@ -117,7 +117,7 @@ async def test_enumerate_usernames_empty_raises(
 @pytest.mark.asyncio
 async def test_enumerate_usernames_yields_result(
     http_session: MagicMock,
-    minimal_dataset: WMNDataset,
+    minimal_data: WMNData,
     minimal_json_schema: dict[str, Any],
     minimal_site: WMNSite,
 ) -> None:
@@ -126,7 +126,7 @@ async def test_enumerate_usernames_yields_result(
         text=f"x {minimal_site['e_string']}",
         elapsed=timedelta(seconds=0),
     )
-    async with Naminter(http_session, minimal_dataset, minimal_json_schema) as n:
+    async with Naminter(http_session, minimal_data, minimal_json_schema) as n:
         results = [
             r
             async for r in n.enumerate_usernames(
@@ -141,10 +141,10 @@ async def test_enumerate_usernames_yields_result(
 @pytest.mark.asyncio
 async def test_summary_filters_when_include_subset_of_exclude(
     http_session: MagicMock,
-    minimal_dataset: WMNDataset,
+    minimal_data: WMNData,
     minimal_json_schema: dict[str, Any],
 ) -> None:
-    async with Naminter(http_session, minimal_dataset, minimal_json_schema) as n:
+    async with Naminter(http_session, minimal_data, minimal_json_schema) as n:
         summary = n.summary(
             include_categories=["social"],
             exclude_categories=["social", "gaming"],
@@ -155,7 +155,7 @@ async def test_summary_filters_when_include_subset_of_exclude(
 @pytest.mark.asyncio
 async def test_test_enumeration_yields_per_site(
     http_session: MagicMock,
-    minimal_dataset: WMNDataset,
+    minimal_data: WMNData,
     minimal_json_schema: dict[str, Any],
     minimal_site: WMNSite,
 ) -> None:
@@ -164,7 +164,7 @@ async def test_test_enumeration_yields_per_site(
         text=f"x {minimal_site['e_string']}",
         elapsed=timedelta(seconds=0),
     )
-    async with Naminter(http_session, minimal_dataset, minimal_json_schema) as n:
+    async with Naminter(http_session, minimal_data, minimal_json_schema) as n:
         out = [r async for r in n.test_enumeration()]
     assert len(out) == 1
     assert out[0].name == minimal_site["name"]
@@ -175,10 +175,10 @@ async def test_test_enumeration_yields_per_site(
 @pytest.mark.asyncio
 async def test_enumerate_usernames_no_matching_sites_is_empty(
     http_session: MagicMock,
-    minimal_dataset: WMNDataset,
+    minimal_data: WMNData,
     minimal_json_schema: dict[str, Any],
 ) -> None:
-    dead = {**minimal_dataset, WMN_KEY_SITES: []}
+    dead = {**minimal_data, WMN_KEY_SITES: []}
     async with Naminter(http_session, dead, minimal_json_schema) as n:
         got = [r async for r in n.enumerate_usernames(["a"])]
     assert got == []

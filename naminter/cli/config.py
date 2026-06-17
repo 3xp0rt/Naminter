@@ -16,7 +16,7 @@ from naminter.core.constants import (
     HTTP_SSL_VERIFY,
     HTTP_TIMEOUT,
     MAX_CONCURRENT_TASKS,
-    WMN_REMOTE_URL,
+    WMN_DATA_URL,
     WMN_SCHEMA_URL,
 )
 from naminter.core.models import WMNMode
@@ -37,8 +37,8 @@ class NaminterConfig:
     # Input/Output
     usernames: list[str] = field(default_factory=list)
     sites: list[str] | None = None
-    local_list: Path | str | None = None
-    remote_list: str | None = None
+    local_data: Path | str | None = None
+    remote_data: str | None = None
     local_schema: Path | str | None = None
     remote_schema: str = WMN_SCHEMA_URL
 
@@ -134,7 +134,6 @@ class NaminterConfig:
         Args:
             parsed: Mutable dictionary of parsed kwargs to transform.
         """
-        # Click uses singular --username / --site; config uses usernames / sites
         if "username" in parsed:
             parsed["usernames"] = list(parsed.pop("username") or [])
         if "site" in parsed:
@@ -180,27 +179,24 @@ class NaminterConfig:
             )
 
     def _validate_sources(self) -> None:
-        """Validate data source configuration (list and schema sources).
+        """Validate data source configuration (data and schema sources).
 
         Raises:
             ConfigurationError: If conflicting data sources are provided.
         """
-        # Validate list sources
-        if self.local_list and self.remote_list:
+        if self.local_data and self.remote_data:
             msg = (
-                "Conflicting list sources: both local_list and remote_list "
+                "Conflicting data sources: both local_data and remote_data "
                 "are provided. Please specify only one."
             )
             raise ConfigurationError(msg)
 
-        if not self.local_list and not self.remote_list:
-            object.__setattr__(self, "remote_list", WMN_REMOTE_URL)  # noqa: PLC2801
+        if not self.local_data and not self.remote_data:
+            object.__setattr__(self, "remote_data", WMN_DATA_URL)  # noqa: PLC2801
 
-        # Skip schema source validation if validation is disabled
         if self.skip_validation:
             return
 
-        # Validate schema sources
         if self.local_schema and self.remote_schema != WMN_SCHEMA_URL:
             msg = (
                 "Conflicting schema sources: both local_schema and "

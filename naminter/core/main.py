@@ -57,16 +57,16 @@ class Naminter:
     def __init__(
         self,
         http_client: BaseSession,
-        wmn_data: dict[str, Any] | None = None,
-        wmn_schema: dict[str, Any] | None = None,
+        data: dict[str, Any] | None = None,
+        schema: dict[str, Any] | None = None,
         max_tasks: int = MAX_CONCURRENT_TASKS,
     ) -> None:
         """Initialize Naminter with configuration parameters.
 
         Args:
             http_client: Async HTTP session implementing the BaseSession protocol.
-            wmn_data: Parsed WhatsMyName dataset dictionary.
-            wmn_schema: Optional JSON Schema dictionary for dataset validation.
+            data: Parsed WhatsMyName data dictionary.
+            schema: Optional JSON Schema dictionary for data validation.
             max_tasks: Maximum number of concurrent enumeration tasks.
 
         Raises:
@@ -76,21 +76,21 @@ class Naminter:
         if not self._logger.handlers:
             self._logger.addHandler(logging.NullHandler())
 
-        self._wmn_data: dict[str, Any] | None = wmn_data
-        self._wmn_schema: dict[str, Any] | None = wmn_schema
+        self._data: dict[str, Any] | None = data
+        self._schema: dict[str, Any] | None = schema
         self._semaphore = asyncio.Semaphore(max_tasks)
         self._http: BaseSession = http_client
 
         self._validator: WMNValidator | None = None
-        if self._wmn_schema:
+        if self._schema:
             try:
-                self._validator = WMNValidator(self._wmn_schema)
+                self._validator = WMNValidator(self._schema)
             except WMNSchemaError:
                 self._logger.exception("WMN schema error during initialization")
                 raise
 
     async def open(self) -> None:
-        """Initialize the HTTP session and validate the WMN dataset.
+        """Initialize the HTTP session and validate WMN data.
 
         Use this method for long-running services where you need explicit
         lifecycle control. For scripts and CLI usage, prefer the context
@@ -100,12 +100,12 @@ class Naminter:
             HttpSessionError: If HTTP session initialization fails.
             WMNUninitializedError: If WMN data is not provided.
             WMNDataError: If WMN data loading fails.
-            WMNValidationError: If dataset validation fails.
+            WMNValidationError: If data validation fails.
 
         Example:
             ```python
             # Long-running service (FastAPI, etc.)
-            naminter = Naminter(http_client, wmn_data)
+            naminter = Naminter(http_client, data)
             await naminter.open()  # Call once at startup
 
             # ... handle many requests ...
@@ -121,30 +121,30 @@ class Naminter:
             raise
 
         try:
-            self._validate_dataset()
+            self._validate_data()
         except Exception:
             await self.close()
             raise
 
-    def _validate_dataset(self) -> None:
+    def _validate_data(self) -> None:
         """Validate WMN data and schema after HTTP session is opened.
 
         Raises:
             WMNUninitializedError: If WMN data is not provided.
             WMNDataError: If WMN data loading fails.
-            WMNValidationError: If dataset validation fails.
+            WMNValidationError: If data validation fails.
         """
-        if not self._wmn_data:
+        if not self._data:
             msg = "WMN data must be provided to Naminter constructor"
             raise WMNUninitializedError(msg)
 
         schema_errors: list[WMNError] = []
-        dataset_errors: list[WMNError] = []
+        data_errors: list[WMNError] = []
 
         try:
             if self._validator:
-                schema_errors = self._validator.validate_schema(self._wmn_data)
-            dataset_errors = WMNValidator.validate_dataset(self._wmn_data)
+                schema_errors = self._validator.validate_schema(self._data)
+            data_errors = WMNValidator.validate_data(self._data)
         except (
             TypeError,
             ValueError,
@@ -155,16 +155,16 @@ class Naminter:
             msg = f"Unexpected error loading WMN data: {e}"
             raise WMNDataError(msg) from e
 
-        if schema_errors or dataset_errors:
-            msg = "WMN dataset validation failed"
+        if schema_errors or data_errors:
+            msg = "WMN validation failed"
             raise WMNValidationError(
                 msg,
                 schema_errors=schema_errors,
-                dataset_errors=dataset_errors,
+                data_errors=data_errors,
             )
 
-        sites = self._wmn_data.get(WMN_KEY_SITES, [])
-        self._logger.info("Dataset loaded: %d sites", len(sites))
+        sites = self._data.get(WMN_KEY_SITES, [])
+        self._logger.info("Data loaded: %d sites", len(sites))
 
     async def close(self) -> None:
         """Close the HTTP session and release resources.
@@ -208,7 +208,7 @@ class Naminter:
         include_categories: list[str] | None = None,
         exclude_categories: list[str] | None = None,
     ) -> list[WMNSite]:
-        """Filter sites by names and categories for the current WMN dataset.
+        """Filter sites by names and categories for the current WMN data.
 
         Args:
             site_names: Optional list of site names to filter by.
@@ -223,11 +223,11 @@ class Naminter:
             WMNUnknownSiteError: If unknown site names are provided.
             WMNUnknownCategoriesError: If unknown categories are provided.
         """
-        if self._wmn_data is None:
+        if self._data is None:
             msg = "WMN data not initialized"
             raise WMNUninitializedError(msg)
 
-        sites: list[WMNSite] = self._wmn_data.get(WMN_KEY_SITES, [])
+        sites: list[WMNSite] = self._data.get(WMN_KEY_SITES, [])
 
         if not (site_names or include_categories or exclude_categories):
             return sites
@@ -410,7 +410,7 @@ class Naminter:
         """Get enriched WMN metadata information for diagnostics and UI.
 
         Retrieves comprehensive summary information about the loaded WhatsMyName
-        dataset, including site counts, categories, authors, and license information.
+        data, including site counts, categories, authors, and license information.
         Filters can be applied to compute statistics on a subset of sites.
 
         Args:
@@ -434,7 +434,7 @@ class Naminter:
 
         Example:
             ```python
-            async with Naminter(http_client, wmn_data, wmn_schema) as naminter:
+            async with Naminter(http_client, data, schema) as naminter:
                 # Get summary of all sites
                 summary = naminter.summary()
                 print(f"Total sites: {summary.sites_count}")
@@ -452,24 +452,16 @@ class Naminter:
             exclude_categories=exclude_categories,
         )
 
-        category_list: list[str] = [site[SITE_KEY_CATEGORY] for site in sites]
-        site_name_list: list[str] = [site[SITE_KEY_NAME] for site in sites]
+        categories = tuple(site[SITE_KEY_CATEGORY] for site in sites)
         known_count: int = sum(len(site[SITE_KEY_KNOWN]) for site in sites)
 
-        license_list: list[str] = (
-            list(self._wmn_data[WMN_KEY_LICENSE]) if self._wmn_data else []
-        )
-        authors_list: list[str] = (
-            list(self._wmn_data[WMN_KEY_AUTHORS]) if self._wmn_data else []
-        )
-
         summary = WMNSummary(
-            license=tuple(license_list),
-            authors=tuple(authors_list),
-            site_names=tuple(site_name_list),
+            license=(tuple(self._data[WMN_KEY_LICENSE]) if self._data else ()),
+            authors=(tuple(self._data[WMN_KEY_AUTHORS]) if self._data else ()),
+            site_names=tuple(site[SITE_KEY_NAME] for site in sites),
             sites_count=len(sites),
-            categories=tuple(category_list),
-            categories_count=len(set(category_list)),
+            categories=categories,
+            categories_count=len(set(categories)),
             known_count=known_count,
         )
 
@@ -491,14 +483,14 @@ class Naminter:
         """Enumerate a single site for the given username.
 
         Performs a single username lookup for a single site definition
-        from the loaded WhatsMyName (WMN) dataset. It builds the URL and optional
+        from the loaded WMN data. It builds the URL and optional
         POST body using the site's configuration, sends an HTTP request, and then
         evaluates the response using the site's detection rules to determine
         whether the username is present on that site.
 
         Args:
             site:
-                A single site configuration dictionary from the WMN dataset. This dict
+                A single site configuration dictionary from the WMN data. This dict
                 must contain, at minimum, the following keys: "name" (site name),
                 "cat" (site category), "uri_check" (URL template with "{account}"
                 placeholder), "e_code" (expected HTTP status for an existing account),
@@ -555,7 +547,7 @@ class Naminter:
                 "cat": "coding",
             }
 
-            async with Naminter(http_client, wmn_data, wmn_schema) as naminter:
+            async with Naminter(http_client, data, schema) as naminter:
                 result = await naminter.enumerate_site(site, "torvalds")
                 print(result.name, result.username, result.status, result.uri_pretty)
             ```
@@ -655,7 +647,7 @@ class Naminter:
                 Each username is tested independently on every selected site.
             site_names:
                 Optional list of site names to restrict enumeration to a subset of
-                sites. If None, all sites from the WMN dataset are considered
+                sites. If None, all sites from the WMN data are considered
                 (subject to category filters). If provided, every name must correspond
                 to a known site; otherwise a WMNUnknownSiteError is raised.
             include_categories:
@@ -684,7 +676,7 @@ class Naminter:
             WMNArgumentError: If usernames list is empty.
             WMNUninitializedError: If WMN data is not initialized.
             WMNUnknownSiteError: If any requested site name in site_names does not
-                exist in the loaded WMN dataset.
+                exist in the loaded WMN data.
             WMNUnknownCategoriesError: If include_categories or exclude_categories
                 contains unknown categories.
         """
@@ -735,10 +727,10 @@ class Naminter:
         *,
         exclude_text: bool = False,
     ) -> AsyncGenerator[WMNTestResult, None]:
-        """Test site detection rules using known usernames from the dataset.
+        """Test site detection rules using known usernames from the data.
 
         This method is intended for maintainers and automated health checks of
-        the WMN dataset. It selects sites (optionally filtered by names and
+        the WMN data. It selects sites (optionally filtered by names and
         categories), tests each site using its "known" usernames, and yields
         a WMNTestResult per site.
 

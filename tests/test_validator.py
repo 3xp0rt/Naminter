@@ -10,7 +10,7 @@ from naminter.core.exceptions import WMNSchemaError
 from naminter.core.validator import WMNValidator
 
 if TYPE_CHECKING:
-    from naminter.core.models import WMNDataset, WMNSite
+    from naminter.core.models import WMNData, WMNSite
 
 
 def test_wmn_validator_rejects_empty_schema() -> None:
@@ -24,32 +24,32 @@ def test_wmn_validator_rejects_invalid_json_schema() -> None:
         WMNValidator(bad_schema)
 
 
-def test_validate_dataset_accepts_minimal_dataset(
-    minimal_dataset: WMNDataset,
+def test_validate_data_accepts_minimal_data(
+    minimal_data: WMNData,
 ) -> None:
-    assert WMNValidator.validate_dataset(minimal_dataset) == []
+    assert WMNValidator.validate_data(minimal_data) == []
 
 
-def test_validate_dataset_duplicate_site_names(
-    minimal_dataset: WMNDataset,
+def test_validate_data_duplicate_site_names(
+    minimal_data: WMNData,
     minimal_site: WMNSite,
 ) -> None:
     other = {**minimal_site, "name": "Dup"}
     dup = {**minimal_site, "name": "Dup"}
     data: dict[str, Any] = {
-        **minimal_dataset,
+        **minimal_data,
         "sites": [other, dup],
     }
-    errors = WMNValidator.validate_dataset(data)
+    errors = WMNValidator.validate_data(data)
     assert len(errors) == 2
     assert all("Duplicate site name" in e.message for e in errors)
 
 
-def test_validate_dataset_license_must_be_list(
-    minimal_dataset: WMNDataset,
+def test_validate_data_license_must_be_list(
+    minimal_data: WMNData,
 ) -> None:
-    data = {**minimal_dataset, "license": "MIT"}
-    errors = WMNValidator.validate_dataset(data)
+    data = {**minimal_data, "license": "MIT"}
+    errors = WMNValidator.validate_data(data)
     assert len(errors) == 1
     assert "license" in errors[0].path
 
@@ -69,7 +69,7 @@ def test_validate_schema_reports_missing_required(
 
 def test_validate_schema_empty_when_valid(
     minimal_json_schema: dict[str, Any],
-    minimal_dataset: WMNDataset,
+    minimal_data: WMNData,
 ) -> None:
     validator = WMNValidator(minimal_json_schema)
-    assert validator.validate_schema(minimal_dataset) == []
+    assert validator.validate_schema(minimal_data) == []

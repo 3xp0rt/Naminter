@@ -1,4 +1,4 @@
-"""WMN dataset validator using JSON Schema and custom validation rules."""
+"""WMN data validator using JSON Schema and custom validation rules."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 from jsonschema.exceptions import SchemaError as JsonSchemaError
-from jsonschema.exceptions import ValidationError
 from jsonschema.validators import validator_for
 import orjson
 
@@ -31,7 +30,7 @@ from naminter.core.constants import (
     WMN_KEY_SITES,
 )
 from naminter.core.exceptions import WMNSchemaError
-from naminter.core.models import WMN_REQUIRED_KEYS, WMNError, WMNSite
+from naminter.core.models import WMN_REQUIRED_KEYS, WMNError
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -42,7 +41,7 @@ logger = logging.getLogger(__name__)
 
 
 class WMNValidator:
-    """Validates WMN dataset against JSON Schema and custom rules."""
+    """Validates WMN data against JSON Schema and custom rules."""
 
     __slots__ = ("_schema", "_validator")
 
@@ -71,31 +70,29 @@ class WMNValidator:
             raise WMNSchemaError(msg) from e
 
     def validate_schema(self, data: Mapping[str, Any]) -> list[WMNError]:
-        """Validate dataset against JSON schema and return errors.
+        """Validate data against JSON schema and return errors.
 
         Args:
-            data: WMN dataset to validate.
+            data: WMN data to validate.
 
         Returns:
             list[WMNError]: Schema validation errors, empty if valid.
         """
         errors: list[WMNError] = []
-        data_dict: dict[str, Any] = dict(data)
-        for error in self._validator.iter_errors(data_dict):
-            validation_error: ValidationError = error
-            data_preview = WMNValidator._preview(validation_error.instance)
+        for error in self._validator.iter_errors(dict(data)):
+            data_preview = WMNValidator._preview(error.instance)
             errors.append(
                 WMNError(
-                    path=str(validation_error.json_path),
+                    path=str(error.json_path),
                     data=data_preview,
-                    message=str(validation_error.message),
+                    message=str(error.message),
                 ),
             )
         return errors
 
     @staticmethod
-    def validate_dataset(data: Mapping[str, Any]) -> list[WMNError]:
-        """Validate dataset fields with custom rules and return list of errors.
+    def validate_data(data: Mapping[str, Any]) -> list[WMNError]:
+        """Validate data fields with custom rules and return list of errors.
 
         Performs code-based validation for license, authors, categories,
         duplicate site names, and individual site configurations
@@ -103,7 +100,7 @@ class WMNValidator:
         Does not use JSON schema.
 
         Args:
-            data: WMN dataset to validate. This will not be modified.
+            data: WMN data to validate. This will not be modified.
 
         Returns:
             list[WMNError]: Validation errors, empty if valid.
@@ -112,10 +109,10 @@ class WMNValidator:
         errors.extend(WMNValidator._validate_license(data))
         errors.extend(WMNValidator._validate_authors(data))
         errors.extend(WMNValidator._validate_categories(data))
-        errors.extend(WMNValidator._validate_duplicates(data))
 
         sites_data: Any = data.get(WMN_KEY_SITES, [])
         if isinstance(sites_data, list):
+            errors.extend(WMNValidator._validate_duplicates(sites_data))
             errors.extend(WMNValidator._validate_sites(sites_data))
 
         return errors
@@ -141,26 +138,20 @@ class WMNValidator:
         return None
 
     @staticmethod
-    def _validate_duplicates(data: Mapping[str, Any]) -> list[WMNError]:
+    def _validate_duplicates(sites_data: list[Any]) -> list[WMNError]:
         """Validate that site names are unique.
 
         Args:
-            data: WMN dataset to check.
+            sites_data: Site list from the WMN data.
 
         Returns:
             list[WMNError]: Duplicate site name errors.
         """
-        sites_data: Any = data.get(WMN_KEY_SITES, [])
-        if not isinstance(sites_data, list):
-            return []
-
-        sites_data_list: list[Any] = sites_data
         name_indices: dict[str, list[int]] = defaultdict(list)
-        for index, site in enumerate(sites_data_list):
+        for index, site in enumerate(sites_data):
             if not isinstance(site, dict):
                 continue
-            site_dict: dict[str, Any] = site
-            name: Any = site_dict.get(SITE_KEY_NAME)
+            name: Any = site.get(SITE_KEY_NAME)
             if not isinstance(name, str) or not name:
                 continue
             name_indices[name].append(index)
@@ -170,7 +161,7 @@ class WMNValidator:
             if len(indices) > 1:
                 for index in indices:
                     path_string = f"$.{WMN_KEY_SITES}[{index}].{SITE_KEY_NAME}"
-                    data_preview = WMNValidator._preview(sites_data_list[index])
+                    data_preview = WMNValidator._preview(sites_data[index])
 
                     errors.append(
                         WMNError(
@@ -189,13 +180,13 @@ class WMNValidator:
         """Validate license field.
 
         Args:
-            data: WMN dataset to check.
+            data: WMN data to check.
 
         Returns:
             list[WMNError]: License validation errors.
         """
         errors: list[WMNError] = []
-        license_data: Any = data.get("license")
+        license_data: Any = data.get(WMN_KEY_LICENSE)
 
         if not isinstance(license_data, list):
             errors.append(
@@ -219,7 +210,7 @@ class WMNValidator:
         """Validate a field as a non-empty list of unique non-empty strings.
 
         Args:
-            data: WMN dataset to check.
+            data: WMN data to check.
             field_key: The key name of the field to validate.
 
         Returns:
@@ -240,18 +231,17 @@ class WMNValidator:
                 ),
             )
         else:
-            field_list: list[Any] = field_data
-            if not field_list:
+            if not field_data:
                 errors.append(
                     WMNError(
                         path=f"$.{field_key}",
-                        data=WMNValidator._preview(field_list),
+                        data=WMNValidator._preview(field_data),
                         message=f"Invalid {field_key}: must have at least 1 item",
                     ),
                 )
 
             seen: set[str] = set()
-            for index, item in enumerate(field_list):
+            for index, item in enumerate(field_data):
                 if not isinstance(item, str):
                     errors.append(
                         WMNError(
@@ -294,7 +284,7 @@ class WMNValidator:
         """Validate authors field.
 
         Args:
-            data: WMN dataset to check.
+            data: WMN data to check.
 
         Returns:
             list[WMNError]: Authors validation errors.
@@ -306,7 +296,7 @@ class WMNValidator:
         """Validate categories field.
 
         Args:
-            data: WMN dataset to check.
+            data: WMN data to check.
 
         Returns:
             list[WMNError]: Categories validation errors.
@@ -339,7 +329,7 @@ class WMNValidator:
         )
 
     @staticmethod
-    def _validate_sites(sites: list[WMNSite]) -> list[WMNError]:
+    def _validate_sites(sites: list[Any]) -> list[WMNError]:
         """Validate all site configurations.
 
         Args:
@@ -366,7 +356,7 @@ class WMNValidator:
 
     @staticmethod
     def _validate_site(
-        site: WMNSite,
+        site: Mapping[str, Any],
         base_path: str,
     ) -> list[WMNError]:
         """Validate a single site configuration.
@@ -449,7 +439,7 @@ class WMNValidator:
 
     @staticmethod
     def _validate_site_uri_body(
-        site: WMNSite,
+        site: Mapping[str, Any],
         base_path: str,
     ) -> list[WMNError]:
         """Validate uri_check and post_body fields.
@@ -464,7 +454,8 @@ class WMNValidator:
         errors: list[WMNError] = []
 
         uri_check: Any = site.get(SITE_KEY_URI_CHECK)
-        if not isinstance(uri_check, str) or not uri_check:
+        uri_check_valid = isinstance(uri_check, str) and uri_check
+        if not uri_check_valid:
             errors.append(
                 WMNValidator._site_error(
                     base_path,
@@ -511,7 +502,12 @@ class WMNValidator:
                             post_body,
                         )
                     )
-        elif isinstance(uri_check, str) and ACCOUNT_PLACEHOLDER not in uri_check:
+
+        if (
+            post_body is None
+            and uri_check_valid
+            and ACCOUNT_PLACEHOLDER not in uri_check
+        ):
             errors.append(
                 WMNValidator._site_error(
                     base_path,
@@ -527,7 +523,7 @@ class WMNValidator:
 
     @staticmethod
     def _validate_site_headers(
-        site: WMNSite,
+        site: Mapping[str, Any],
         base_path: str,
     ) -> list[WMNError]:
         """Validate headers field.
@@ -558,28 +554,27 @@ class WMNValidator:
             )
             return errors
 
-        headers_dict: dict[Any, Any] = headers
-        for hdr_key, hdr_val in headers_dict.items():
-            if not isinstance(hdr_key, str):
+        for header_key, header_value in headers.items():
+            if not isinstance(header_key, str):
                 errors.append(
                     WMNValidator._site_error(
                         base_path,
-                        f"{SITE_KEY_HEADERS}.{hdr_key}",
+                        f"{SITE_KEY_HEADERS}.{header_key}",
                         f"Invalid {SITE_KEY_HEADERS} key: "
                         f"must be string, "
-                        f"got {type(hdr_key).__name__}",
-                        hdr_key,
+                        f"got {type(header_key).__name__}",
+                        header_key,
                     )
                 )
-            if not isinstance(hdr_val, str):
+            if not isinstance(header_value, str):
                 errors.append(
                     WMNValidator._site_error(
                         base_path,
-                        f"{SITE_KEY_HEADERS}[{hdr_key}]",
+                        f"{SITE_KEY_HEADERS}[{header_key}]",
                         f"Invalid {SITE_KEY_HEADERS} value "
-                        f"for key '{hdr_key}': must be string, "
-                        f"got {type(hdr_val).__name__}",
-                        hdr_val,
+                        f"for key '{header_key}': must be string, "
+                        f"got {type(header_value).__name__}",
+                        header_value,
                     )
                 )
 
@@ -587,7 +582,7 @@ class WMNValidator:
 
     @staticmethod
     def _validate_site_codes(
-        site: WMNSite,
+        site: Mapping[str, Any],
         base_path: str,
     ) -> list[WMNError]:
         """Validate e_code and m_code fields.
@@ -631,7 +626,7 @@ class WMNValidator:
 
     @staticmethod
     def _validate_site_strings(
-        site: WMNSite,
+        site: Mapping[str, Any],
         base_path: str,
     ) -> list[WMNError]:
         """Validate e_string and m_string fields.
@@ -662,7 +657,7 @@ class WMNValidator:
 
     @staticmethod
     def _validate_site_known(
-        site: WMNSite,
+        site: Mapping[str, Any],
         base_path: str,
     ) -> list[WMNError]:
         """Validate known usernames field.
@@ -689,8 +684,7 @@ class WMNValidator:
             )
             return errors
 
-        known_list: list[Any] = known
-        for idx, item in enumerate(known_list):
+        for idx, item in enumerate(known):
             if not isinstance(item, str):
                 errors.append(
                     WMNValidator._site_error(

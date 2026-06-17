@@ -35,22 +35,22 @@ naminter [OPTIONS]
 Validate a local WhatsMyName JSON data file against its schema.
 
 ```bash
-naminter validate --local-schema schema.json --local-data wmn-data.json
+naminter validate --local-schema wmn-data-schema.json --local-data wmn-data.json
 ```
 
 Both `--local-schema` and `--local-data` are **required**.
 
 ### `naminter format`
 
-Format a WhatsMyName JSON data file according to schema ordering and sorting rules. Use `--output-dataset` and `--output-schema` to write to separate paths; if omitted, the dataset and schema are overwritten in place.
+Format a WhatsMyName JSON data file according to schema ordering and sorting rules. Use `--output-data` and `--output-schema` to write to separate paths; if omitted, the data and schema files are overwritten in place.
 
 ```bash
 # Format in-place (overwrites both files)
-naminter format --local-schema schema.json --local-data wmn-data.json
+naminter format --local-schema wmn-data-schema.json --local-data wmn-data.json
 
 # Format both to separate output files
-naminter format --local-schema schema.json --local-data wmn-data.json \
-    --output-dataset formatted-data.json --output-schema formatted-schema.json
+naminter format --local-schema wmn-data-schema.json --local-data wmn-data.json \
+    --output-data formatted-data.json --output-schema formatted-schema.json
 ```
 
 ---
@@ -78,24 +78,24 @@ By default, Naminter fetches the WhatsMyName dataset and schema from GitHub. Ove
 
 | Option | Description |
 |---|---|
-| `--local-list` | Path to a local WMN JSON data file. |
+| `--local-data` | Path to a local WMN JSON data file. |
 | `--local-schema` | Path to a local WMN JSON schema file. |
-| `--remote-list` | URL to fetch remote WMN data. |
+| `--remote-data` | URL to fetch remote WMN data. |
 | `--remote-schema` | URL to fetch remote WMN schema. |
 
 ```bash
 # Use local data file
-naminter -u john_doe --local-list ./wmn-data.json
+naminter -u john_doe --local-data ./wmn-data.json
 
 # Use both local data and schema
-naminter -u john_doe --local-list ./wmn-data.json --local-schema ./schema.json
+naminter -u john_doe --local-data ./wmn-data.json --local-schema ./wmn-data-schema.json
 
 # Use a custom remote source
-naminter -u john_doe --remote-list https://example.com/wmn-data.json
+naminter -u john_doe --remote-data https://example.com/wmn-data.json
 ```
 
 !!! warning
-    You cannot combine `--local-list` with `--remote-list`, or `--local-schema` with a custom `--remote-schema`.
+    You cannot combine `--local-data` with `--remote-data`, or `--local-schema` with a custom `--remote-schema`.
 
 ### Category Filtering
 
@@ -149,7 +149,7 @@ naminter -u john_doe --filter-missing
 | `~+` / `~-` | partial exists / partial missing | Only some detection criteria matched (progress shows ~+ / ~-). |
 | `*` | conflicting | Both exists and missing indicators matched. |
 | `?` | unknown | Result could not be classified. |
-| `X` | not valid | Site marked invalid in dataset. |
+| `X` | not valid | Site marked invalid in data. |
 | `!` | error | Request or processing failed. |
 
 ### Network Configuration
@@ -212,7 +212,7 @@ naminter -u john_doe --mode any
 
 | Option | Description |
 |---|---|
-| `--test` | Run site validation using known usernames from the dataset. No `--username` required. |
+| `--test` | Run site validation using known usernames from the data. No `--username` required. |
 | `--skip-validation` | Skip JSON schema validation of the WMN data on load. |
 
 ```bash

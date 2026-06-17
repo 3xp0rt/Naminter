@@ -113,9 +113,9 @@ class Exporter:
                 )
                 writer.writeheader()
                 writer.writerows(results)
-                csv_content = csv_buffer.getvalue()
+                csv_text = csv_buffer.getvalue()
 
-            await write_file(output_path, csv_content)
+            await write_file(output_path, csv_text)
         except FileError as e:
             msg = f"File access error during CSV export: {e}"
             raise ExportError(msg) from e
@@ -141,10 +141,10 @@ class Exporter:
             ExportError: If JSON serialization fails or unexpected error occurs.
         """
         try:
-            json_content = orjson.dumps(results, option=orjson.OPT_INDENT_2).decode(
+            json_text = orjson.dumps(results, option=orjson.OPT_INDENT_2).decode(
                 "utf-8"
             )
-            await write_file(output_path, json_content)
+            await write_file(output_path, json_text)
         except FileError as e:
             msg = f"File access error during JSON export: {e}"
             raise ExportError(msg) from e

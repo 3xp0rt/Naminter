@@ -24,7 +24,7 @@ from naminter.core.exceptions import WMNSchemaError
 from naminter.core.formatter import WMNFormatError, WMNFormatter
 from naminter.core.main import Naminter
 from naminter.core.models import (
-    WMNDataset,
+    WMNData,
     WMNMode,
     WMNResponse,
     WMNResult,
@@ -372,25 +372,25 @@ def test_validator_init_wraps_generic_exception() -> None:
 
 def test_formatter_branches(
     formatter_schema: dict[str, Any],
-    minimal_dataset: WMNDataset,
+    minimal_data: WMNData,
 ) -> None:
     fmt = WMNFormatter(formatter_schema)
     with pytest.raises(WMNFormatError):
-        fmt.format_dataset({**minimal_dataset, "authors": "bad"})
+        fmt.format_data({**minimal_data, "authors": "bad"})
     with pytest.raises(WMNFormatError):
-        fmt.format_dataset({**minimal_dataset, "authors": []})
+        fmt.format_data({**minimal_data, "authors": []})
     with pytest.raises(WMNFormatError):
-        fmt.format_dataset({**minimal_dataset, "authors": [1]})
+        fmt.format_data({**minimal_data, "authors": [1]})
     with pytest.raises(WMNFormatError):
-        fmt.format_dataset({**minimal_dataset, "authors": [" "]})
+        fmt.format_data({**minimal_data, "authors": [" "]})
 
     bad_schema = {
         "properties": {"sites": {"items": {"properties": {"name": {"type": "string"}}}}}
     }
     bf = WMNFormatter(bad_schema)
     with pytest.raises(WMNFormatError):
-        bf.format_dataset({
-            **minimal_dataset,
+        bf.format_data({
+            **minimal_data,
             "sites": [{"extra_unknown": 1, "name": "n"}],
         })
 
@@ -406,12 +406,12 @@ async def test_naminter_bad_schema_in_constructor() -> None:
 @pytest.mark.asyncio
 async def test_naminter_enumerate_strip_bad_char_invalid(
     http_session: MagicMock,
-    minimal_dataset: WMNDataset,
+    minimal_data: WMNData,
     minimal_json_schema: dict[str, Any],
     minimal_site: WMNSite,
 ) -> None:
     bad_site = {**minimal_site, "strip_bad_char": 42}
-    async with Naminter(http_session, minimal_dataset, minimal_json_schema) as n:
+    async with Naminter(http_session, minimal_data, minimal_json_schema) as n:
         r = await n.enumerate_site(bad_site, "u")  # type: ignore[arg-type]
     assert r.status == WMNStatus.ERROR
 
@@ -432,7 +432,7 @@ def _sync_uv(coro: Any) -> Any:
 
 
 @pytest.mark.asyncio
-async def test_cli_run_remote_list_not_dict(
+async def test_cli_run_remote_data_not_dict(
     tmp_path: Path,
     minimal_json_schema: dict[str, Any],
 ) -> None:
@@ -456,7 +456,7 @@ async def test_cli_run_remote_list_not_dict(
 
     c = NaminterConfig(
         usernames=["a"],
-        remote_list="https://x",
+        remote_data="https://x",
         local_schema=schema_path,
         no_progressbar=True,
     )
@@ -469,17 +469,17 @@ async def test_cli_run_remote_list_not_dict(
         patch("naminter.cli.main.fetch_json", new_callable=AsyncMock, return_value=[]),
     ):
         cli = NaminterCLI(c)
-        with pytest.raises(FileError, match="Remote list must be a JSON object"):
+        with pytest.raises(FileError, match="Remote data must be a JSON object"):
             await cli.run()
 
 
 @pytest.mark.asyncio
 async def test_cli_run_remote_schema_not_dict(
     tmp_path: Path,
-    minimal_dataset: WMNDataset,
+    minimal_data: WMNData,
 ) -> None:
     data_path = tmp_path / "d.json"
-    data_path.write_bytes(orjson.dumps(minimal_dataset))
+    data_path.write_bytes(orjson.dumps(minimal_data))
 
     class _FN:
         def __init__(self, *a: object, **k: object) -> None:
@@ -493,7 +493,7 @@ async def test_cli_run_remote_schema_not_dict(
 
     c = NaminterConfig(
         usernames=["a"],
-        local_list=data_path,
+        local_data=data_path,
         remote_schema="https://schema",
         no_progressbar=True,
     )
@@ -510,7 +510,7 @@ async def test_cli_run_remote_schema_not_dict(
             await cli.run()
 
 
-def test_cli_error_handler_dataset_errors_branch() -> None:
+def test_cli_error_handler_data_errors_branch() -> None:
     import click
 
     from naminter.core.exceptions import WMNValidationError
@@ -523,7 +523,7 @@ def test_cli_error_handler_dataset_errors_branch() -> None:
         msg = "bad"
         raise WMNValidationError(
             msg,
-            dataset_errors=[WMNError(path="p", data="d", message="m")],
+            data_errors=[WMNError(path="p", data="d", message="m")],
         )
 
     runner = CliRunner()
@@ -552,10 +552,10 @@ def test_setup_logging_removes_previous_file_handlers(tmp_path: Path) -> None:
 @pytest.mark.asyncio
 async def test_run_remote_schema_fetch_not_dict(
     tmp_path: Path,
-    minimal_dataset: WMNDataset,
+    minimal_data: WMNData,
 ) -> None:
     data_path = tmp_path / "d.json"
-    data_path.write_bytes(orjson.dumps(minimal_dataset))
+    data_path.write_bytes(orjson.dumps(minimal_data))
 
     class _FN:
         def __init__(self, *a: object, **k: object) -> None:
@@ -569,7 +569,7 @@ async def test_run_remote_schema_fetch_not_dict(
 
     c = NaminterConfig(
         usernames=["a"],
-        local_list=data_path,
+        local_data=data_path,
         remote_schema="https://schema-only",
         no_progressbar=True,
     )
@@ -619,7 +619,7 @@ async def test_run_check_format_result_raises_file_error(
 
     c = NaminterConfig(
         usernames=["alice"],
-        local_list=data_path,
+        local_data=data_path,
         local_schema=schema_path,
         no_progressbar=True,
         filter_all=True,
@@ -670,7 +670,7 @@ async def test_run_validation_early_exit_zero_tests(
     c = NaminterConfig(
         usernames=["a"],
         test=True,
-        local_list=data_path,
+        local_data=data_path,
         local_schema=schema_path,
         no_progressbar=True,
     )
@@ -718,7 +718,7 @@ async def test_run_validation_format_raises(
     c = NaminterConfig(
         usernames=["a"],
         test=True,
-        local_list=data_path,
+        local_data=data_path,
         local_schema=schema_path,
         no_progressbar=True,
         filter_all=True,
@@ -792,11 +792,11 @@ async def test_save_response_write_failure_displays_error(tmp_path: Path) -> Non
 @pytest.mark.asyncio
 async def test_run_loads_remote_schema_dict(
     tmp_path: Path,
-    minimal_dataset: WMNDataset,
+    minimal_data: WMNData,
     minimal_json_schema: dict[str, Any],
 ) -> None:
     data_path = tmp_path / "d.json"
-    data_path.write_bytes(orjson.dumps(minimal_dataset))
+    data_path.write_bytes(orjson.dumps(minimal_data))
 
     class _FN:
         def __init__(self, *a: object, **k: object) -> None:
@@ -815,9 +815,9 @@ async def test_run_loads_remote_schema_dict(
 
     c = NaminterConfig(
         usernames=["a"],
-        local_list=data_path,
+        local_data=data_path,
         local_schema=None,
-        remote_schema="https://example.com/schema.json",
+        remote_schema="https://example.com/wmn-data-schema.json",
         no_progressbar=True,
     )
     with (
@@ -871,7 +871,7 @@ def test_cli_error_handler_invoked_directly_covers_display_paths() -> None:
         raise cli_main.WMNValidationError(
             msg,
             schema_errors=[WMNError(path="s", data=None, message="sm")],
-            dataset_errors=[WMNError(path="d", data=None, message="dm")],
+            data_errors=[WMNError(path="d", data=None, message="dm")],
         )
 
     with (
@@ -884,7 +884,7 @@ def test_cli_error_handler_invoked_directly_covers_display_paths() -> None:
     assert des.call_count >= 2
 
 
-def test_cli_error_handler_schema_and_dataset_errors() -> None:
+def test_cli_error_handler_schema_and_data_errors() -> None:
     import click
 
     from naminter.core.exceptions import WMNValidationError
@@ -898,7 +898,7 @@ def test_cli_error_handler_schema_and_dataset_errors() -> None:
         raise WMNValidationError(
             msg,
             schema_errors=[WMNError(path="s", data=None, message="sm")],
-            dataset_errors=[WMNError(path="d", data=None, message="dm")],
+            data_errors=[WMNError(path="d", data=None, message="dm")],
         )
 
     runner = CliRunner()
@@ -931,12 +931,12 @@ def test_validate_no_color(wmn_files: tuple[Path, Path]) -> None:
 def test_format_no_color(
     tmp_path: Path,
     formatter_schema: dict[str, Any],
-    minimal_dataset: WMNDataset,
+    minimal_data: WMNData,
 ) -> None:
-    schema_path = tmp_path / "schema.json"
-    data_path = tmp_path / "data.json"
+    schema_path = tmp_path / "wmn-data-schema.json"
+    data_path = tmp_path / "wmn-data.json"
     schema_path.write_bytes(orjson.dumps(formatter_schema))
-    data_path.write_bytes(orjson.dumps(minimal_dataset))
+    data_path.write_bytes(orjson.dumps(minimal_data))
     runner = CliRunner()
     with patch("naminter.cli.main.uvloop.run", side_effect=_sync_uv):
         r = runner.invoke(
@@ -981,12 +981,12 @@ def test_format_command_invalid_schema_json(
 def test_format_command_writes_when_output_differs(
     tmp_path: Path,
     formatter_schema: dict[str, Any],
-    minimal_dataset: WMNDataset,
+    minimal_data: WMNData,
 ) -> None:
-    schema_path = tmp_path / "schema.json"
-    data_path = tmp_path / "data.json"
+    schema_path = tmp_path / "wmn-data-schema.json"
+    data_path = tmp_path / "wmn-data.json"
     schema_path.write_bytes(orjson.dumps(formatter_schema))
-    data_path.write_bytes(orjson.dumps(minimal_dataset))
+    data_path.write_bytes(orjson.dumps(minimal_data))
     ds = data_path.read_text(encoding="utf-8")
     sc = schema_path.read_text(encoding="utf-8")
     runner = CliRunner()
@@ -997,7 +997,7 @@ def test_format_command_writes_when_output_differs(
         patch("naminter.cli.main.display_diff") as dd,
     ):
         inst = MagicMock()
-        inst.format_dataset.return_value = ds + "\n"
+        inst.format_data.return_value = ds + "\n"
         inst.format_schema.return_value = sc + "\n"
         mock_fmt.return_value = inst
         r = runner.invoke(
@@ -1077,7 +1077,7 @@ def test_main_no_color_flag(wmn_files: tuple[Path, Path]) -> None:
                 "--no-color",
                 "--username",
                 "a",
-                "--local-list",
+                "--local-data",
                 str(data_path),
                 "--local-schema",
                 str(schema_path),

@@ -10,23 +10,23 @@ from naminter.core.exceptions import WMNFormatError, WMNSchemaError
 from naminter.core.formatter import WMNFormatter
 
 
-def test_format_dataset_sorts_and_orders(
+def test_format_data_sorts_and_orders(
     formatter_schema: dict[str, Any],
-    minimal_dataset: dict[str, Any],
+    minimal_data: dict[str, Any],
 ) -> None:
     z_site = {
-        **minimal_dataset["sites"][0],
+        **minimal_data["sites"][0],
         "name": "Zebra",
         "headers": {"B": "2", "a": "1"},
     }
-    a_site = {**minimal_dataset["sites"][0], "name": "apple"}
+    a_site = {**minimal_data["sites"][0], "name": "apple"}
     data = {
-        **minimal_dataset,
+        **minimal_data,
         "sites": [z_site, a_site],
         "authors": ["zebra", "alpha"],
     }
     fmt = WMNFormatter(formatter_schema)
-    out = fmt.format_dataset(data)
+    out = fmt.format_data(data)
     assert '"apple"' in out
     assert out.index("apple") < out.index("Zebra")
     assert '"a"' in out
@@ -34,21 +34,21 @@ def test_format_dataset_sorts_and_orders(
     assert out.index('"a"') < out.index('"B"')
 
 
-def test_format_dataset_rejects_non_object_site(
+def test_format_data_rejects_non_object_site(
     formatter_schema: dict[str, Any],
-    minimal_dataset: dict[str, Any],
+    minimal_data: dict[str, Any],
 ) -> None:
     fmt = WMNFormatter(formatter_schema)
-    data = {**minimal_dataset, "sites": [[]]}
+    data = {**minimal_data, "sites": [[]]}
     with pytest.raises(WMNFormatError, match="must be an object"):
-        fmt.format_dataset(data)
+        fmt.format_data(data)
 
 
 def test_get_site_key_order_missing_raises() -> None:
     bad = {"properties": {"sites": {"items": {}}}}
     fmt = WMNFormatter(bad)
     with pytest.raises(WMNSchemaError, match="Site schema properties not found"):
-        fmt.format_dataset(
+        fmt.format_data(
             {
                 "license": ["MIT"],
                 "authors": ["a"],
@@ -58,33 +58,33 @@ def test_get_site_key_order_missing_raises() -> None:
         )
 
 
-def test_format_dataset_rejects_unknown_top_level_key(
+def test_format_data_rejects_unknown_top_level_key(
     formatter_schema: dict[str, Any],
-    minimal_dataset: dict[str, Any],
+    minimal_data: dict[str, Any],
 ) -> None:
     fmt = WMNFormatter(formatter_schema)
-    data = {**minimal_dataset, "extra_field": 1}
-    with pytest.raises(WMNFormatError, match="Unknown keys found in dataset"):
-        fmt.format_dataset(data)
+    data = {**minimal_data, "extra_field": 1}
+    with pytest.raises(WMNFormatError, match="Unknown keys found in data"):
+        fmt.format_data(data)
 
 
-def test_format_dataset_rejects_unknown_site_key(
+def test_format_data_rejects_unknown_site_key(
     formatter_schema: dict[str, Any],
-    minimal_dataset: dict[str, Any],
+    minimal_data: dict[str, Any],
 ) -> None:
     fmt = WMNFormatter(formatter_schema)
-    site = {**minimal_dataset["sites"][0], "unknown_site_key": True}
-    data = {**minimal_dataset, "sites": [site]}
+    site = {**minimal_data["sites"][0], "unknown_site_key": True}
+    data = {**minimal_data, "sites": [site]}
     with pytest.raises(WMNFormatError, match="Unknown keys found in site"):
-        fmt.format_dataset(data)
+        fmt.format_data(data)
 
 
 def test_sort_site_headers_rejects_non_object(
     formatter_schema: dict[str, Any],
-    minimal_dataset: dict[str, Any],
+    minimal_data: dict[str, Any],
 ) -> None:
     fmt = WMNFormatter(formatter_schema)
-    site = {**minimal_dataset["sites"][0], "headers": []}
-    data = {**minimal_dataset, "sites": [site]}
+    site = {**minimal_data["sites"][0], "headers": []}
+    data = {**minimal_data, "sites": [site]}
     with pytest.raises(WMNFormatError, match="'headers' must be an object"):
-        fmt.format_dataset(data)
+        fmt.format_data(data)

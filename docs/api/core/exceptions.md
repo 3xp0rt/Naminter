@@ -66,8 +66,8 @@ except WMNValidationError as e:
     # Access validation errors
     for error in e.schema_errors:
         print(f"Schema error: {error}")
-    for error in e.dataset_errors:
-        print(f"Dataset error: {error}")
+    for error in e.data_errors:
+        print(f"Data error: {error}")
 except WMNDataError:
     # Handle any other data error
     pass

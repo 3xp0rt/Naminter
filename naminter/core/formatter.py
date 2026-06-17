@@ -25,11 +25,10 @@ class WMNFormatter:
         """Initialize formatter with schema.
 
         Args:
-            schema: JSON Schema for the dataset.
+            schema: JSON Schema for the data.
         """
         self._schema = schema
         self._site_key_order: list[str] | None = None
-        self._site_key_order_set: set[str] | None = None
 
     @staticmethod
     def _sort_array_alphabetically(array: list[str]) -> list[str]:
@@ -105,8 +104,8 @@ class WMNFormatter:
 
         return result
 
+    @staticmethod
     def _reorder_site_keys(
-        self,
         site_data: Mapping[str, Any],
         key_order: list[str],
     ) -> dict[str, Any]:
@@ -122,10 +121,7 @@ class WMNFormatter:
         Raises:
             WMNFormatError: If site_data contains unknown keys.
         """
-        if self._site_key_order_set is None:
-            self._site_key_order_set = set(key_order)
-        allowed = self._site_key_order_set
-        unknown = set(site_data) - allowed
+        unknown = set(site_data) - set(key_order)
         if unknown:
             msg = f"Unknown keys found in site data: {sorted(unknown)}"
             raise WMNFormatError(msg)
@@ -165,11 +161,11 @@ class WMNFormatter:
         """
         return self._dumps(self._schema, what="Schema")
 
-    def format_dataset(self, data: dict[str, Any]) -> str:
+    def format_data(self, data: dict[str, Any]) -> str:
         """Return formatted data JSON string per schema.
 
         Args:
-            data: WMN dataset to format. This will not be modified.
+            data: WMN data to format. This will not be modified.
 
         Returns:
             str: Formatted JSON string.
@@ -190,7 +186,7 @@ class WMNFormatter:
         }
         unknown_keys = set(data.keys()) - allowed_keys
         if unknown_keys:
-            msg = f"Unknown keys found in dataset: {sorted(unknown_keys)}"
+            msg = f"Unknown keys found in data: {sorted(unknown_keys)}"
             raise WMNFormatError(msg)
 
         formatted_data: dict[str, Any] = {
@@ -232,14 +228,13 @@ class WMNFormatter:
             raise WMNSchemaError(msg)
 
         self._site_key_order = list(site_schema.keys())
-        self._site_key_order_set = set(self._site_key_order)
         return self._site_key_order
 
     def _format_string_array(self, data: Mapping[str, Any], key: str) -> list[str]:
         """Sort a string array field alphabetically.
 
         Args:
-            data: Dataset mapping containing the array field.
+            data: Data mapping containing the array field.
             key: Key name of the string array to sort.
 
         Returns:
@@ -294,7 +289,7 @@ class WMNFormatter:
         """Sort and format site data per schema.
 
         Args:
-            data: Dataset mapping containing the sites array.
+            data: Data mapping containing the sites array.
 
         Returns:
             list[dict[str, Any]]: Sorted and formatted site dicts.

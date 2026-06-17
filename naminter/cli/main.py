@@ -205,7 +205,7 @@ class NaminterCLI:
             HttpSessionError: If HTTP session initialization fails.
             WMNUninitializedError: If WMN data is not provided.
             WMNDataError: If WMN data loading fails.
-            WMNValidationError: If dataset validation fails.
+            WMNValidationError: If data validation fails.
         """
         async with CurlCFFISession(
             proxies=self._config.proxy,
@@ -217,34 +217,32 @@ class NaminterCLI:
             akamai=self._config.akamai,
             extra_fp=self._config.extra_fp,
         ) as http_client:
-            wmn_data: dict[str, Any] | None = None
-            if self._config.local_list:
-                wmn_data = await read_json(self._config.local_list)
-            elif self._config.remote_list:
-                raw_list = await fetch_json(http_client, self._config.remote_list)
-                if not isinstance(raw_list, dict):
-                    msg = "Remote list must be a JSON object"
+            data = None
+            if self._config.local_data:
+                data = await read_json(self._config.local_data)
+            elif self._config.remote_data:
+                data = await fetch_json(http_client, self._config.remote_data)
+                if not isinstance(data, dict):
+                    msg = "Remote data must be a JSON object"
                     raise FileError(msg)
-                wmn_data = raw_list
 
-            wmn_schema: dict[str, Any] | None = None
+            schema = None
             if not self._config.skip_validation:
                 if self._config.local_schema:
-                    wmn_schema = await read_json(self._config.local_schema)
+                    schema = await read_json(self._config.local_schema)
                 elif self._config.remote_schema:
-                    raw_schema = await fetch_json(
+                    schema = await fetch_json(
                         http_client,
                         self._config.remote_schema,
                     )
-                    if not isinstance(raw_schema, dict):
+                    if not isinstance(schema, dict):
                         msg = "Remote schema must be a JSON object"
                         raise FileError(msg)
-                    wmn_schema = raw_schema
 
             async with Naminter(
                 http_client=http_client,
-                wmn_data=wmn_data,
-                wmn_schema=wmn_schema,
+                data=data,
+                schema=schema,
                 max_tasks=self._config.max_tasks,
             ) as naminter:
                 if self._config.test:
@@ -302,8 +300,8 @@ class NaminterCLI:
                 try:
                     file_path = await self._save_response(result)
                     await self._open_in_browser(result, file_path)
-                    formatted_output = self._formatter.format_result(result, file_path)
-                    console.print(formatted_output)
+                    result_tree = self._formatter.format_result(result, file_path)
+                    console.print(result_tree)
                     results.append(result)
                 except (FileError, BrowserError) as e:
                     display_error(
@@ -360,11 +358,11 @@ class NaminterCLI:
                             file_path = await self._save_response(site_result)
                             await self._open_in_browser(site_result, file_path)
                             response_files.append(file_path)
-                    formatted_output = self._formatter.format_validation(
+                    result_tree = self._formatter.format_validation(
                         result,
                         response_files,
                     )
-                    console.print(formatted_output)
+                    console.print(result_tree)
                     results.append(result)
                 except (FileError, BrowserError) as e:
                     display_error(
@@ -465,8 +463,8 @@ def cli_error_handler(
                 display_error(str(e), end="")
                 if e.schema_errors:
                     display_errors(e.schema_errors, "Schema Errors")
-                if e.dataset_errors:
-                    display_errors(e.dataset_errors, "Dataset Errors")
+                if e.data_errors:
+                    display_errors(e.data_errors, "Data Errors")
             else:
                 display_error(str(e))
             ctx.exit(EXIT_CODE_ERROR)
@@ -523,9 +521,9 @@ def cli_error_handler(
 )
 # Data Sources - Local
 @click.option(
-    "--local-list",
+    "--local-data",
     type=click.Path(exists=True, path_type=Path),
-    help="Path to a local JSON file containing WhatsMyName site data",
+    help="Path to local WhatsMyName JSON data file",
 )
 @click.option(
     "--local-schema",
@@ -533,7 +531,7 @@ def cli_error_handler(
     help="Path to local WhatsMyName JSON schema file for validation",
 )
 # Data Sources - Remote
-@click.option("--remote-list", help="URL to fetch remote WhatsMyName site data")
+@click.option("--remote-data", help="URL to fetch remote WhatsMyName site data")
 @click.option(
     "--remote-schema",
     default=WMN_SCHEMA_URL,
@@ -760,7 +758,7 @@ def main(ctx: click.Context, **kwargs: dict[str, Any]) -> None:
     "--local-data",
     type=click.Path(exists=True, path_type=Path),
     required=True,
-    help="Path to local WhatsMyName JSON data file to validate",
+    help="Path to local WhatsMyName JSON data file",
 )
 @click.option("--no-color", is_flag=True, help="Disable colored console output")
 @click.pass_context
@@ -783,14 +781,14 @@ def validator_command(
 
         validator = WMNValidator(schema)
         schema_errors = validator.validate_schema(data)
-        dataset_errors = WMNValidator.validate_dataset(data)
+        data_errors = WMNValidator.validate_data(data)
 
         if schema_errors:
             display_errors(schema_errors, "Schema Errors")
-        if dataset_errors:
-            display_errors(dataset_errors, "Dataset Errors")
+        if data_errors:
+            display_errors(data_errors, "Data Errors")
 
-        if schema_errors or dataset_errors:
+        if schema_errors or data_errors:
             ctx.exit(EXIT_CODE_ERROR)
 
         console.print(
@@ -811,13 +809,13 @@ def validator_command(
     "--local-data",
     type=click.Path(exists=True, path_type=Path),
     required=True,
-    help="Path to local WhatsMyName JSON data file to format",
+    help="Path to local WhatsMyName JSON data file",
 )
 @click.option(
-    "--output-dataset",
+    "--output-data",
     "-o",
     callback=validate_filepath_arg,
-    help="Output path for formatted dataset (defaults to overwriting --local-data)",
+    help="Output path for formatted data (defaults to overwriting --local-data)",
 )
 @click.option(
     "--output-schema",
@@ -831,7 +829,7 @@ def format_command(
     _ctx: click.Context,
     local_schema: Path,
     local_data: Path,
-    output_dataset: Path | None,
+    output_data: Path | None,
     output_schema: Path | None,
     *,
     no_color: bool,
@@ -842,39 +840,35 @@ def format_command(
 
     async def run_formatter() -> None:
         """Run formatting asynchronously."""
-        original_schema_content = await read_file(local_schema)
-        original_dataset_content = await read_file(local_data)
+        original_schema = await read_file(local_schema)
+        original_data = await read_file(local_data)
 
         try:
-            schema_data = orjson.loads(original_schema_content)
+            schema = orjson.loads(original_schema)
         except orjson.JSONDecodeError as e:
             msg = f"Invalid JSON in file {local_schema} at position {e.pos}: {e.msg}"
             raise FileError(msg) from e
 
         try:
-            data = orjson.loads(original_dataset_content)
+            data = orjson.loads(original_data)
         except orjson.JSONDecodeError as e:
             msg = f"Invalid JSON in file {local_data} at position {e.pos}: {e.msg}"
             raise FileError(msg) from e
 
-        formatter = WMNFormatter(schema_data)
-        formatted_dataset_content = formatter.format_dataset(data)
-        formatted_schema_content = formatter.format_schema()
+        formatter = WMNFormatter(schema)
+        formatted_data = formatter.format_data(data)
+        formatted_schema = formatter.format_schema()
 
-        dataset_output = output_dataset or local_data
-        schema_output = output_schema or local_schema
+        data_path = output_data or local_data
+        schema_path = output_schema or local_schema
 
-        if original_dataset_content != formatted_dataset_content:
-            await write_file(dataset_output, formatted_dataset_content)
-            display_diff(
-                original_dataset_content, formatted_dataset_content, dataset_output
-            )
+        if original_data != formatted_data:
+            await write_file(data_path, formatted_data)
+            display_diff(original_data, formatted_data, data_path)
 
-        if original_schema_content != formatted_schema_content:
-            await write_file(schema_output, formatted_schema_content)
-            display_diff(
-                original_schema_content, formatted_schema_content, schema_output
-            )
+        if original_schema != formatted_schema:
+            await write_file(schema_path, formatted_schema)
+            display_diff(original_schema, formatted_schema, schema_path)
 
     uvloop.run(run_formatter())
 

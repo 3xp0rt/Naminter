@@ -306,10 +306,11 @@ class CurlCFFISession:
             msg = "HTTP session not initialized."
             raise HttpSessionError(msg)
 
+        upper = method.upper()
         method_upper: HttpMethod
-        if method.upper() == HTTP_METHOD_GET:
+        if upper == HTTP_METHOD_GET:
             method_upper = HTTP_METHOD_GET
-        elif method.upper() == HTTP_METHOD_POST:
+        elif upper == HTTP_METHOD_POST:
             method_upper = HTTP_METHOD_POST
         else:
             msg = (

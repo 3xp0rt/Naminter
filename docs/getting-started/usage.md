@@ -35,12 +35,12 @@ naminter --username jane_smith \
 # Using custom schema validation
 naminter --username alice_bob \
     --local-schema ./custom-schema.json \
-    --local-list ./my-sites.json
+    --local-data ./my-sites.json
 
-# Using remote schema with custom list
+# Using remote schema with custom data
 naminter --username test_user \
     --remote-schema https://example.com/custom-schema.json \
-    --remote-list https://example.com/my-sites.json
+    --remote-data https://example.com/my-sites.json
 
 # Export results in multiple formats
 naminter --username alice_bob \
@@ -67,13 +67,13 @@ naminter --test \
 
 ```python
 import asyncio
-from naminter import Naminter, CurlCFFISession, WMN_REMOTE_URL
+from naminter import Naminter, CurlCFFISession, WMN_DATA_URL
 
 async def main():
     async with CurlCFFISession() as http_client:
-        wmn_data = (await http_client.get(WMN_REMOTE_URL)).json()
+        data = (await http_client.get(WMN_DATA_URL)).json()
 
-        async with Naminter(http_client=http_client, wmn_data=wmn_data) as naminter:
+        async with Naminter(http_client=http_client, data=data) as naminter:
             async for result in naminter.enumerate_usernames(["example_username"]):
                 if result.status.value == "exists":
                     print(f"✅ {result.username} found on {result.name}: {result.uri_pretty}")
@@ -89,7 +89,7 @@ asyncio.run(main())
 
 ```python
 import asyncio
-from naminter import Naminter, CurlCFFISession, WMNMode, WMN_REMOTE_URL
+from naminter import Naminter, CurlCFFISession, WMNMode, WMN_DATA_URL
 
 async def main():
     async with CurlCFFISession(
@@ -98,11 +98,11 @@ async def main():
         verify=True,
         proxies="http://proxy:8080"
     ) as http_client:
-        wmn_data = (await http_client.get(WMN_REMOTE_URL)).json()
+        data = (await http_client.get(WMN_DATA_URL)).json()
 
         async with Naminter(
             http_client=http_client,
-            wmn_data=wmn_data,
+            data=data,
             max_tasks=100
         ) as naminter:
             usernames = ["user1", "user2", "user3"]
@@ -117,13 +117,13 @@ asyncio.run(main())
 
 ```python
 import asyncio
-from naminter import Naminter, CurlCFFISession, WMN_REMOTE_URL
+from naminter import Naminter, CurlCFFISession, WMN_DATA_URL
 
 async def main():
     async with CurlCFFISession() as http_client:
-        wmn_data = (await http_client.get(WMN_REMOTE_URL)).json()
+        data = (await http_client.get(WMN_DATA_URL)).json()
 
-        async with Naminter(http_client=http_client, wmn_data=wmn_data) as naminter:
+        async with Naminter(http_client=http_client, data=data) as naminter:
             async for site_result in naminter.test_enumeration():
                 if site_result.error:
                     print(f"❌ {site_result.name}: {site_result.error}")
@@ -139,18 +139,18 @@ asyncio.run(main())
 
 ```python
 import asyncio
-from naminter import Naminter, CurlCFFISession, WMN_REMOTE_URL, WMN_SCHEMA_URL
+from naminter import Naminter, CurlCFFISession, WMN_DATA_URL, WMN_SCHEMA_URL
 
 async def main():
     async with CurlCFFISession() as http_client:
         # Load data and (optionally) schema using public constants
-        wmn_data = (await http_client.get(WMN_REMOTE_URL)).json()
-        wmn_schema = (await http_client.get(WMN_SCHEMA_URL)).json()
+        data = (await http_client.get(WMN_DATA_URL)).json()
+        schema = (await http_client.get(WMN_SCHEMA_URL)).json()
 
         async with Naminter(
             http_client=http_client,
-            wmn_data=wmn_data,
-            wmn_schema=wmn_schema,
+            data=data,
+            schema=schema,
         ) as naminter:
             summary = naminter.summary()
             print(f"Total sites: {summary.sites_count}")

@@ -28,7 +28,7 @@ def test_wmn_validation_error_stores_error_lists() -> None:
     err = WMNValidationError(
         "bad",
         schema_errors=[{"s": 1}],
-        dataset_errors=[{"d": 2}],
+        data_errors=[{"d": 2}],
     )
     assert err.schema_errors == [{"s": 1}]
-    assert err.dataset_errors == [{"d": 2}]
+    assert err.data_errors == [{"d": 2}]
