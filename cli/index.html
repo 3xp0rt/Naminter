@@ -25,7 +25,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -1584,17 +1584,17 @@
 </span></code></pre></div>
 <h3 id="naminter-validate"><code>naminter validate</code></h3>
 <p>Validate a local WhatsMyName JSON data file against its schema.</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>naminter<span class="w"> </span>validate<span class="w"> </span>--local-schema<span class="w"> </span>schema.json<span class="w"> </span>--local-data<span class="w"> </span>wmn-data.json
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>naminter<span class="w"> </span>validate<span class="w"> </span>--local-schema<span class="w"> </span>wmn-data-schema.json<span class="w"> </span>--local-data<span class="w"> </span>wmn-data.json
 </span></code></pre></div>
 <p>Both <code>--local-schema</code> and <code>--local-data</code> are <strong>required</strong>.</p>
 <h3 id="naminter-format"><code>naminter format</code></h3>
-<p>Format a WhatsMyName JSON data file according to schema ordering and sorting rules. Use <code>--output-dataset</code> and <code>--output-schema</code> to write to separate paths; if omitted, the dataset and schema are overwritten in place.</p>
+<p>Format a WhatsMyName JSON data file according to schema ordering and sorting rules. Use <code>--output-data</code> and <code>--output-schema</code> to write to separate paths; if omitted, the data and schema files are overwritten in place.</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># Format in-place (overwrites both files)</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>naminter<span class="w"> </span>format<span class="w"> </span>--local-schema<span class="w"> </span>schema.json<span class="w"> </span>--local-data<span class="w"> </span>wmn-data.json
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>naminter<span class="w"> </span>format<span class="w"> </span>--local-schema<span class="w"> </span>wmn-data-schema.json<span class="w"> </span>--local-data<span class="w"> </span>wmn-data.json
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
 </span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># Format both to separate output files</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>naminter<span class="w"> </span>format<span class="w"> </span>--local-schema<span class="w"> </span>schema.json<span class="w"> </span>--local-data<span class="w"> </span>wmn-data.json<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">    </span>--output-dataset<span class="w"> </span>formatted-data.json<span class="w"> </span>--output-schema<span class="w"> </span>formatted-schema.json
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>naminter<span class="w"> </span>format<span class="w"> </span>--local-schema<span class="w"> </span>wmn-data-schema.json<span class="w"> </span>--local-data<span class="w"> </span>wmn-data.json<span class="w"> </span><span class="se">\</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="w">    </span>--output-data<span class="w"> </span>formatted-data.json<span class="w"> </span>--output-schema<span class="w"> </span>formatted-schema.json
 </span></code></pre></div>
 <hr />
 <h2 id="options-reference">Options Reference</h2>
@@ -1637,7 +1637,7 @@
 </thead>
 <tbody>
 <tr>
-<td><code>--local-list</code></td>
+<td><code>--local-data</code></td>
 <td>Path to a local WMN JSON data file.</td>
 </tr>
 <tr>
@@ -1645,7 +1645,7 @@
 <td>Path to a local WMN JSON schema file.</td>
 </tr>
 <tr>
-<td><code>--remote-list</code></td>
+<td><code>--remote-data</code></td>
 <td>URL to fetch remote WMN data.</td>
 </tr>
 <tr>
@@ -1655,17 +1655,17 @@
 </tbody>
 </table>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># Use local data file</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>naminter<span class="w"> </span>-u<span class="w"> </span>john_doe<span class="w"> </span>--local-list<span class="w"> </span>./wmn-data.json
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>naminter<span class="w"> </span>-u<span class="w"> </span>john_doe<span class="w"> </span>--local-data<span class="w"> </span>./wmn-data.json
 </span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
 </span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="c1"># Use both local data and schema</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>naminter<span class="w"> </span>-u<span class="w"> </span>john_doe<span class="w"> </span>--local-list<span class="w"> </span>./wmn-data.json<span class="w"> </span>--local-schema<span class="w"> </span>./schema.json
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>naminter<span class="w"> </span>-u<span class="w"> </span>john_doe<span class="w"> </span>--local-data<span class="w"> </span>./wmn-data.json<span class="w"> </span>--local-schema<span class="w"> </span>./wmn-data-schema.json
 </span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>
 </span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="c1"># Use a custom remote source</span>
-</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>naminter<span class="w"> </span>-u<span class="w"> </span>john_doe<span class="w"> </span>--remote-list<span class="w"> </span>https://example.com/wmn-data.json
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>naminter<span class="w"> </span>-u<span class="w"> </span>john_doe<span class="w"> </span>--remote-data<span class="w"> </span>https://example.com/wmn-data.json
 </span></code></pre></div>
 <div class="admonition warning">
 <p class="admonition-title">Warning</p>
-<p>You cannot combine <code>--local-list</code> with <code>--remote-list</code>, or <code>--local-schema</code> with a custom <code>--remote-schema</code>.</p>
+<p>You cannot combine <code>--local-data</code> with <code>--remote-data</code>, or <code>--local-schema</code> with a custom <code>--remote-schema</code>.</p>
 </div>
 <h3 id="category-filtering">Category Filtering</h3>
 <p>Filter which site categories are included or excluded from enumeration.</p>
@@ -1784,7 +1784,7 @@
 <tr>
 <td><code>X</code></td>
 <td>not valid</td>
-<td>Site marked invalid in dataset.</td>
+<td>Site marked invalid in data.</td>
 </tr>
 <tr>
 <td><code>!</code></td>
@@ -1909,7 +1909,7 @@
 <tbody>
 <tr>
 <td><code>--test</code></td>
-<td>Run site validation using known usernames from the dataset. No <code>--username</code> required.</td>
+<td>Run site validation using known usernames from the data. No <code>--username</code> required.</td>
 </tr>
 <tr>
 <td><code>--skip-validation</code></td>

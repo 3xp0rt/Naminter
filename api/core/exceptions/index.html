@@ -25,7 +25,7 @@
       
       
       <link rel="icon" href="../../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -1084,10 +1084,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#naminter.core.exceptions.WMNValidationError.dataset_errors" class="md-nav__link">
+  <a href="#naminter.core.exceptions.WMNValidationError.data_errors" class="md-nav__link">
     <span class="md-ellipsis">
       
-        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;dataset_errors
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;data_errors
       
     </span>
   </a>
@@ -1475,10 +1475,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#naminter.core.exceptions.WMNValidationError.dataset_errors" class="md-nav__link">
+  <a href="#naminter.core.exceptions.WMNValidationError.data_errors" class="md-nav__link">
     <span class="md-ellipsis">
       
-        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;dataset_errors
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;data_errors
       
     </span>
   </a>
@@ -1936,7 +1936,7 @@ or loaded yet.</p>
 
 
 
-        <p>Raised when a requested site name doesn't exist in the WMN dataset.</p>
+        <p>Raised when a requested site name doesn't exist in the WMN data.</p>
 
 
 <table>
@@ -2088,7 +2088,7 @@ or loaded yet.</p>
 
 
 
-        <p>Raised when requested categories don't exist in the WMN dataset.</p>
+        <p>Raised when requested categories don't exist in the WMN data.</p>
 
 
 <table>
@@ -2280,7 +2280,9 @@ or loaded yet.</p>
 
 
 </h2>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">WMNValidationError</span><span class="p">(</span><span class="n">message</span><span class="p">,</span> <span class="n">schema_errors</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">dataset_errors</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">WMNValidationError</span><span class="p">(</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">message</span><span class="p">,</span> <span class="n">schema_errors</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">data_errors</span><span class="o">=</span><span class="kc">None</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="p">)</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents first">
@@ -2289,7 +2291,7 @@ or loaded yet.</p>
 
 
 
-        <p>Raised when WMN dataset validation fails.</p>
+        <p>Raised when WMN validation fails.</p>
 
 
 <table>
@@ -2320,15 +2322,15 @@ or loaded yet.</p>
             </td>
           </tr>
           <tr class="doc-section-item">
-            <td><code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;dataset_errors&lt;/span&gt;
+            <td><code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;data_errors&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-instance-attribute&quot;&gt;&lt;code&gt;instance-attribute&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt; (&lt;code&gt;naminter.core.exceptions.WMNValidationError.dataset_errors&lt;/code&gt;)" href="#naminter.core.exceptions.WMNValidationError.dataset_errors">dataset_errors</a></code></td>
+  &lt;/span&gt; (&lt;code&gt;naminter.core.exceptions.WMNValidationError.data_errors&lt;/code&gt;)" href="#naminter.core.exceptions.WMNValidationError.data_errors">data_errors</a></code></td>
             <td class="doc-attribute-details">
               <div class="doc-md-description">
-                <p>List of custom dataset validation errors
+                <p>List of custom data validation errors
 (license, authors, categories, duplicates, and site configurations).</p>
               </div>
               <p>
@@ -2391,11 +2393,11 @@ or loaded yet.</p>
           </tr>
           <tr class="doc-section-item">
             <td>
-                <code>dataset_errors</code>
+                <code>data_errors</code>
             </td>
             <td class="doc-param-details">
               <div class="doc-md-description">
-                <p>List of custom dataset validation errors.</p>
+                <p>List of custom data validation errors.</p>
               </div>
               <p>
                   <span class="doc-param-annotation">
@@ -2456,8 +2458,8 @@ or loaded yet.</p>
 
 
 
-<h3 id="naminter.core.exceptions.WMNValidationError.dataset_errors" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">dataset_errors</span>
+<h3 id="naminter.core.exceptions.WMNValidationError.data_errors" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">data_errors</span>
 
 
   <span class="doc doc-labels">
@@ -2465,7 +2467,7 @@ or loaded yet.</p>
   </span>
 
 </h3>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">dataset_errors</span> <span class="o">=</span> <span class="n"><span title="naminter.core.exceptions.WMNValidationError(dataset_errors)">dataset_errors</span></span> <span class="ow">or</span> <span class="p">[]</span>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">data_errors</span> <span class="o">=</span> <span class="n"><span title="naminter.core.exceptions.WMNValidationError(data_errors)">data_errors</span></span> <span class="ow">or</span> <span class="p">[]</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents ">
@@ -2671,8 +2673,8 @@ and other formatting-related issues.</p>
 </span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>    <span class="c1"># Access validation errors</span>
 </span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a>    <span class="k">for</span> <span class="n">error</span> <span class="ow">in</span> <span class="n">e</span><span class="o">.</span><span class="n">schema_errors</span><span class="p">:</span>
 </span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a>        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Schema error: </span><span class="si">{</span><span class="n">error</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
-</span><span id="__span-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>    <span class="k">for</span> <span class="n">error</span> <span class="ow">in</span> <span class="n">e</span><span class="o">.</span><span class="n">dataset_errors</span><span class="p">:</span>
-</span><span id="__span-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Dataset error: </span><span class="si">{</span><span class="n">error</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</span><span id="__span-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a>    <span class="k">for</span> <span class="n">error</span> <span class="ow">in</span> <span class="n">e</span><span class="o">.</span><span class="n">data_errors</span><span class="p">:</span>
+</span><span id="__span-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a>        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Data error: </span><span class="si">{</span><span class="n">error</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </span><span id="__span-1-23"><a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="k">except</span> <span class="n">WMNDataError</span><span class="p">:</span>
 </span><span id="__span-1-24"><a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a>    <span class="c1"># Handle any other data error</span>
 </span><span id="__span-1-25"><a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a>    <span class="k">pass</span>

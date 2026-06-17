@@ -25,7 +25,7 @@
       
       
       <link rel="icon" href="../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -1277,27 +1277,36 @@
 <p>Install in editable mode with dev dependencies:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>uv<span class="w"> </span>sync<span class="w"> </span>--extra<span class="w"> </span>dev
 </span></code></pre></div>
-<p>Alternatively, using <code>uv pip</code>:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>uv<span class="w"> </span>pip<span class="w"> </span>install<span class="w"> </span>-e<span class="w"> </span><span class="s2">&quot;.[dev]&quot;</span>
-</span></code></pre></div>
+<p><code>pyproject.toml</code> sets a <strong>30-day dependency cooldown</strong> (<code>[tool.uv] exclude-newer</code>) so
+resolution ignores PyPI uploads from the last month.</p>
 </li>
 <li>
-<p>Run linting:
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>uv<span class="w"> </span>run<span class="w"> </span>ruff<span class="w"> </span>format
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>uv<span class="w"> </span>run<span class="w"> </span>ruff<span class="w"> </span>check
-</span></code></pre></div></p>
+<p>Before pushing, run the same checks as <a href="https://github.com/3xp0rt/naminter/blob/main/.github/workflows/ci.yml">CI</a>:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>uv<span class="w"> </span>run<span class="w"> </span>ruff<span class="w"> </span>format
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>uv<span class="w"> </span>run<span class="w"> </span>ruff<span class="w"> </span>check
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest
+</span></code></pre></div>
+<p>Optional — run Ruff on staged files at commit time: <code>uv run pre-commit install</code>
+(uses the same project Ruff as above; does not run pytest).</p>
+<p>Coverage must stay at <strong>90% or above</strong> on <code>naminter</code> (see <code>pyproject.toml</code>).
+Prioritize tests for public behavior: CLI commands, <code>Naminter</code> enumeration flows,
+validation of real datasets, and network error handling. You do not need tests for
+every defensive branch in the validator.</p>
+<p>Boilerplate (<code>TYPE_CHECKING</code>, <code>if __name__ == "__main__"</code>, abstract methods, and
+similar) is excluded via <code>exclude_also</code> in <code>[tool.coverage.report]</code>. Avoid
+<code># pragma: no cover</code> unless you have a rare script-style entry point.</p>
 </li>
 </ol>
 <h2 id="documentation">Documentation</h2>
 <p>This project uses <a href="https://www.mkdocs.org/">MkDocs</a> with <a href="https://squidfunk.github.io/mkdocs-material/">Material for MkDocs</a> for documentation.</p>
 <h3 id="serving-docs-locally">Serving docs locally</h3>
 <p>To preview documentation changes locally:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>mkdocs<span class="w"> </span>serve
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>uv<span class="w"> </span>run<span class="w"> </span>mkdocs<span class="w"> </span>serve
 </span></code></pre></div>
 <p>This starts a local server at <code>http://127.0.0.1:8000/</code> with live reload.</p>
 <h3 id="building-docs">Building docs</h3>
 <p>To build the static documentation site:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>mkdocs<span class="w"> </span>build
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>uv<span class="w"> </span>run<span class="w"> </span>mkdocs<span class="w"> </span>build
 </span></code></pre></div>
 <p>The built site will be in the <code>site/</code> directory.</p>
 <h3 id="documentation-structure">Documentation structure</h3>
@@ -1307,9 +1316,7 @@
 <li>API documentation is auto-generated from docstrings using <code>mkdocstrings</code></li>
 </ul>
 <h2 id="code-style">Code Style</h2>
-<p>This project uses:</p>
 <ul>
-<li><strong>Ruff</strong> for linting and formatting</li>
 <li><strong>Google-style</strong> docstrings</li>
 <li><strong>Type hints</strong> for all function signatures</li>
 </ul>
@@ -1318,18 +1325,17 @@
 <li>Fork the repository</li>
 <li>Create a feature branch (<code>git checkout -b feature/amazing-feature</code>)</li>
 <li>Make your changes following the code style guidelines</li>
-<li>Run linting and ensure all checks pass</li>
 <li>Commit your changes using <a href="https://www.conventionalcommits.org/en/v1.0.0/">Conventional Commits</a> format</li>
 <li>Push to your fork (<code>git push origin feature/amazing-feature</code>)</li>
 <li>Open a pull request with a detailed description of your changes</li>
 </ol>
 <h2 id="commit-message-guidelines">Commit Message Guidelines</h2>
 <p>This project follows the <a href="https://www.conventionalcommits.org/en/v1.0.0/">Conventional Commits</a> specification. Each commit message should be structured as follows:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>&lt;type&gt;[optional scope]: &lt;description&gt;
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>[optional body]
-</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>
-</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>[optional footer(s)]
+<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>&lt;type&gt;[optional scope]: &lt;description&gt;
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>[optional body]
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>[optional footer(s)]
 </span></code></pre></div>
 <h3 id="commit-types">Commit Types</h3>
 <table>
@@ -1383,17 +1389,16 @@
 </tbody>
 </table>
 <h3 id="examples">Examples</h3>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>feat:<span class="w"> </span>add<span class="w"> </span>validation<span class="w"> </span>support
-</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a>fix:<span class="w"> </span>resolve<span class="w"> </span>timeout<span class="w"> </span>issue<span class="w"> </span><span class="k">in</span><span class="w"> </span>network<span class="w"> </span>requests
-</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>docs:<span class="w"> </span>update<span class="w"> </span>installation<span class="w"> </span>instructions
-</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a>refactor<span class="o">(</span>core<span class="o">)</span>:<span class="w"> </span>simplify<span class="w"> </span>validation<span class="w"> </span>logic
-</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a>chore<span class="o">(</span>release<span class="o">)</span>:<span class="w"> </span>bump<span class="w"> </span>version<span class="w"> </span>to<span class="w"> </span><span class="m">1</span>.0.7
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>feat:<span class="w"> </span>add<span class="w"> </span>validation<span class="w"> </span>support
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>fix:<span class="w"> </span>resolve<span class="w"> </span>timeout<span class="w"> </span>issue<span class="w"> </span><span class="k">in</span><span class="w"> </span>network<span class="w"> </span>requests
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>docs:<span class="w"> </span>update<span class="w"> </span>installation<span class="w"> </span>instructions
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a>refactor<span class="o">(</span>core<span class="o">)</span>:<span class="w"> </span>simplify<span class="w"> </span>validation<span class="w"> </span>logic
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>chore<span class="o">(</span>release<span class="o">)</span>:<span class="w"> </span>bump<span class="w"> </span>version<span class="w"> </span>to<span class="w"> </span><span class="m">1</span>.0.7
 </span></code></pre></div>
 <h2 id="pull-request-guidelines">Pull Request Guidelines</h2>
 <ul>
 <li>Provide a clear description of what the PR does</li>
 <li>Reference any related issues</li>
-<li>Ensure code follows the project's style guidelines</li>
 <li>Update documentation if needed</li>
 </ul>
 

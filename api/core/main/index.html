@@ -25,7 +25,7 @@
       
       
       <link rel="icon" href="../../../assets/images/favicon.png">
-      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.1">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
     
     
       
@@ -1276,13 +1276,13 @@
 <p>Main class for username enumeration.</p>
 <h2 id="basic-usage">Basic Usage</h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">naminter</span><span class="w"> </span><span class="kn">import</span> <span class="n">Naminter</span><span class="p">,</span> <span class="n">CurlCFFISession</span><span class="p">,</span> <span class="n">WMN_REMOTE_URL</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">naminter</span><span class="w"> </span><span class="kn">import</span> <span class="n">Naminter</span><span class="p">,</span> <span class="n">CurlCFFISession</span><span class="p">,</span> <span class="n">WMN_DATA_URL</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="k">async</span> <span class="k">with</span> <span class="n">CurlCFFISession</span><span class="p">()</span> <span class="k">as</span> <span class="n">http_client</span><span class="p">:</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>        <span class="n">wmn_data</span> <span class="o">=</span> <span class="p">(</span><span class="k">await</span> <span class="n">http_client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">WMN_REMOTE_URL</span><span class="p">))</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>        <span class="n">data</span> <span class="o">=</span> <span class="p">(</span><span class="k">await</span> <span class="n">http_client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">WMN_DATA_URL</span><span class="p">))</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>        <span class="k">async</span> <span class="k">with</span> <span class="n">Naminter</span><span class="p">(</span><span class="n">http_client</span><span class="o">=</span><span class="n">http_client</span><span class="p">,</span> <span class="n">wmn_data</span><span class="o">=</span><span class="n">wmn_data</span><span class="p">)</span> <span class="k">as</span> <span class="n">naminter</span><span class="p">:</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>        <span class="k">async</span> <span class="k">with</span> <span class="n">Naminter</span><span class="p">(</span><span class="n">http_client</span><span class="o">=</span><span class="n">http_client</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">)</span> <span class="k">as</span> <span class="n">naminter</span><span class="p">:</span>
 </span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>            <span class="k">async</span> <span class="k">for</span> <span class="n">result</span> <span class="ow">in</span> <span class="n">naminter</span><span class="o">.</span><span class="n">enumerate_usernames</span><span class="p">([</span><span class="s2">&quot;username&quot;</span><span class="p">]):</span>
 </span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">result</span><span class="o">.</span><span class="n">status</span><span class="o">.</span><span class="n">value</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
 </span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
@@ -1290,13 +1290,13 @@
 </span></code></pre></div>
 <h2 id="test-usage">Test Usage</h2>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">naminter</span><span class="w"> </span><span class="kn">import</span> <span class="n">Naminter</span><span class="p">,</span> <span class="n">CurlCFFISession</span><span class="p">,</span> <span class="n">WMN_REMOTE_URL</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">naminter</span><span class="w"> </span><span class="kn">import</span> <span class="n">Naminter</span><span class="p">,</span> <span class="n">CurlCFFISession</span><span class="p">,</span> <span class="n">WMN_DATA_URL</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
 </span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">():</span>
 </span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="k">async</span> <span class="k">with</span> <span class="n">CurlCFFISession</span><span class="p">()</span> <span class="k">as</span> <span class="n">http_client</span><span class="p">:</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>        <span class="n">wmn_data</span> <span class="o">=</span> <span class="p">(</span><span class="k">await</span> <span class="n">http_client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">WMN_REMOTE_URL</span><span class="p">))</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>        <span class="n">data</span> <span class="o">=</span> <span class="p">(</span><span class="k">await</span> <span class="n">http_client</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">WMN_DATA_URL</span><span class="p">))</span><span class="o">.</span><span class="n">json</span><span class="p">()</span>
 </span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>
-</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>        <span class="k">async</span> <span class="k">with</span> <span class="n">Naminter</span><span class="p">(</span><span class="n">http_client</span><span class="o">=</span><span class="n">http_client</span><span class="p">,</span> <span class="n">wmn_data</span><span class="o">=</span><span class="n">wmn_data</span><span class="p">)</span> <span class="k">as</span> <span class="n">naminter</span><span class="p">:</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>        <span class="k">async</span> <span class="k">with</span> <span class="n">Naminter</span><span class="p">(</span><span class="n">http_client</span><span class="o">=</span><span class="n">http_client</span><span class="p">,</span> <span class="n">data</span><span class="o">=</span><span class="n">data</span><span class="p">)</span> <span class="k">as</span> <span class="n">naminter</span><span class="p">:</span>
 </span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>            <span class="k">async</span> <span class="k">for</span> <span class="n">site_result</span> <span class="ow">in</span> <span class="n">naminter</span><span class="o">.</span><span class="n">test_enumeration</span><span class="p">():</span>
 </span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>                <span class="k">if</span> <span class="n">site_result</span><span class="o">.</span><span class="n">error</span><span class="p">:</span>
 </span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a>                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;ERROR </span><span class="si">{</span><span class="n">site_result</span><span class="o">.</span><span class="n">name</span><span class="si">}</span><span class="s2">: </span><span class="si">{</span><span class="n">site_result</span><span class="o">.</span><span class="n">error</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
@@ -1319,12 +1319,17 @@
 
 
 </h2>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">Naminter</span><span class="p">(</span><span class="n">http_client</span><span class="p">,</span> <span class="n">wmn_data</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">wmn_schema</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">max_tasks</span><span class="o">=</span><span class="n"><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;MAX_CONCURRENT_TASKS&lt;/span&gt;
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">Naminter</span><span class="p">(</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">http_client</span><span class="p">,</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">data</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">schema</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">max_tasks</span><span class="o">=</span><span class="n"><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;MAX_CONCURRENT_TASKS&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-module-attribute&quot;&gt;&lt;code&gt;module-attribute&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt; (&lt;code&gt;naminter.core.constants.MAX_CONCURRENT_TASKS&lt;/code&gt;)" href="../constants/#naminter.core.constants.MAX_CONCURRENT_TASKS">MAX_CONCURRENT_TASKS</a></span><span class="p">)</span>
+  &lt;/span&gt; (&lt;code&gt;naminter.core.constants.MAX_CONCURRENT_TASKS&lt;/code&gt;)" href="../constants/#naminter.core.constants.MAX_CONCURRENT_TASKS">MAX_CONCURRENT_TASKS</a></span><span class="p">,</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="p">)</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents first">
@@ -1362,11 +1367,11 @@
           </tr>
           <tr class="doc-section-item">
             <td>
-                <code>wmn_data</code>
+                <code>data</code>
             </td>
             <td class="doc-param-details">
               <div class="doc-md-description">
-                <p>Parsed WhatsMyName dataset dictionary.</p>
+                <p>Parsed WhatsMyName data dictionary.</p>
               </div>
               <p>
                   <span class="doc-param-annotation">
@@ -1382,11 +1387,11 @@
           </tr>
           <tr class="doc-section-item">
             <td>
-                <code>wmn_schema</code>
+                <code>schema</code>
             </td>
             <td class="doc-param-details">
               <div class="doc-md-description">
-                <p>Optional JSON Schema dictionary for dataset validation.</p>
+                <p>Optional JSON Schema dictionary for data validation.</p>
               </div>
               <p>
                   <span class="doc-param-annotation">
@@ -1490,7 +1495,7 @@
 
     <div class="doc doc-contents ">
 
-        <p>Initialize the HTTP session and validate the WMN dataset.</p>
+        <p>Initialize the HTTP session and validate WMN data.</p>
 <p>Use this method for long-running services where you need explicit
 lifecycle control. For scripts and CLI usage, prefer the context
 manager pattern: <code>async with Naminter(...) as naminter:</code>.</p>
@@ -1548,7 +1553,7 @@ manager pattern: <code>async with Naminter(...) as naminter:</code>.</p>
             </td>
             <td class="doc-raises-details">
               <div class="doc-md-description">
-                <p>If dataset validation fails.</p>
+                <p>If data validation fails.</p>
               </div>
             </td>
           </tr>
@@ -1559,7 +1564,7 @@ manager pattern: <code>async with Naminter(...) as naminter:</code>.</p>
 <details class="example" open>
   <summary>Example</summary>
   <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># Long-running service (FastAPI, etc.)</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">naminter</span> <span class="o">=</span> <span class="n">Naminter</span><span class="p">(</span><span class="n">http_client</span><span class="p">,</span> <span class="n">wmn_data</span><span class="p">)</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="n">naminter</span> <span class="o">=</span> <span class="n">Naminter</span><span class="p">(</span><span class="n">http_client</span><span class="p">,</span> <span class="n">data</span><span class="p">)</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="k">await</span> <span class="n">naminter</span><span class="o">.</span><span class="n">open</span><span class="p">()</span>  <span class="c1"># Call once at startup</span>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># ... handle many requests ...</span>
@@ -1632,14 +1637,18 @@ handling.</p>
 
 
 </h3>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">summary</span><span class="p">(</span><span class="n">site_names</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">include_categories</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">exclude_categories</span><span class="o">=</span><span class="kc">None</span><span class="p">)</span>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">summary</span><span class="p">(</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">site_names</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">include_categories</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">exclude_categories</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="p">)</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents ">
 
         <p>Get enriched WMN metadata information for diagnostics and UI.</p>
 <p>Retrieves comprehensive summary information about the loaded WhatsMyName
-dataset, including site counts, categories, authors, and license information.
+data, including site counts, categories, authors, and license information.
 Filters can be applied to compute statistics on a subset of sites.</p>
 
 
@@ -1804,7 +1813,7 @@ contains unknown categories.</p>
 
 <details class="example" open>
   <summary>Example</summary>
-  <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">async</span> <span class="k">with</span> <span class="n">Naminter</span><span class="p">(</span><span class="n">http_client</span><span class="p">,</span> <span class="n">wmn_data</span><span class="p">,</span> <span class="n">wmn_schema</span><span class="p">)</span> <span class="k">as</span> <span class="n">naminter</span><span class="p">:</span>
+  <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">async</span> <span class="k">with</span> <span class="n">Naminter</span><span class="p">(</span><span class="n">http_client</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">schema</span><span class="p">)</span> <span class="k">as</span> <span class="n">naminter</span><span class="p">:</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="c1"># Get summary of all sites</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">summary</span> <span class="o">=</span> <span class="n">naminter</span><span class="o">.</span><span class="n">summary</span><span class="p">()</span>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Total sites: </span><span class="si">{</span><span class="n">summary</span><span class="o">.</span><span class="n">sites_count</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
@@ -1833,20 +1842,22 @@ contains unknown categories.</p>
   </span>
 
 </h3>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">enumerate_site</span><span class="p">(</span><span class="n">site</span><span class="p">,</span> <span class="n">username</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="n"><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;ALL&lt;/span&gt;
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">enumerate_site</span><span class="p">(</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">site</span><span class="p">,</span> <span class="n">username</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="n"><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;ALL&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-class-attribute&quot;&gt;&lt;code&gt;class-attribute&lt;/code&gt;&lt;/small&gt;
       &lt;small class=&quot;doc doc-label doc-label-instance-attribute&quot;&gt;&lt;code&gt;instance-attribute&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt; (&lt;code&gt;naminter.core.models.WMNMode.ALL&lt;/code&gt;)" href="../models/#naminter.core.models.WMNMode.ALL">ALL</a></span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">exclude_text</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+  &lt;/span&gt; (&lt;code&gt;naminter.core.models.WMNMode.ALL&lt;/code&gt;)" href="../models/#naminter.core.models.WMNMode.ALL">ALL</a></span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">exclude_text</span><span class="o">=</span><span class="kc">False</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="p">)</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents ">
 
         <p>Enumerate a single site for the given username.</p>
 <p>Performs a single username lookup for a single site definition
-from the loaded WhatsMyName (WMN) dataset. It builds the URL and optional
+from the loaded WMN data. It builds the URL and optional
 POST body using the site's configuration, sends an HTTP request, and then
 evaluates the response using the site's detection rules to determine
 whether the username is present on that site.</p>
@@ -1866,7 +1877,7 @@ whether the username is present on that site.</p>
             </td>
             <td class="doc-param-details">
               <div class="doc-md-description">
-                <p>A single site configuration dictionary from the WMN dataset. This dict
+                <p>A single site configuration dictionary from the WMN data. This dict
 must contain, at minimum, the following keys: "name" (site name),
 "cat" (site category), "uri_check" (URL template with "{account}"
 placeholder), "e_code" (expected HTTP status for an existing account),
@@ -2050,7 +2061,7 @@ is in progress.</p>
 </span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="s2">&quot;cat&quot;</span><span class="p">:</span> <span class="s2">&quot;coding&quot;</span><span class="p">,</span>
 </span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="p">}</span>
 </span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>
-</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="k">async</span> <span class="k">with</span> <span class="n">Naminter</span><span class="p">(</span><span class="n">http_client</span><span class="p">,</span> <span class="n">wmn_data</span><span class="p">,</span> <span class="n">wmn_schema</span><span class="p">)</span> <span class="k">as</span> <span class="n">naminter</span><span class="p">:</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="k">async</span> <span class="k">with</span> <span class="n">Naminter</span><span class="p">(</span><span class="n">http_client</span><span class="p">,</span> <span class="n">data</span><span class="p">,</span> <span class="n">schema</span><span class="p">)</span> <span class="k">as</span> <span class="n">naminter</span><span class="p">:</span>
 </span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    <span class="n">result</span> <span class="o">=</span> <span class="k">await</span> <span class="n">naminter</span><span class="o">.</span><span class="n">enumerate_site</span><span class="p">(</span><span class="n">site</span><span class="p">,</span> <span class="s2">&quot;torvalds&quot;</span><span class="p">)</span>
 </span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">result</span><span class="o">.</span><span class="n">name</span><span class="p">,</span> <span class="n">result</span><span class="o">.</span><span class="n">username</span><span class="p">,</span> <span class="n">result</span><span class="o">.</span><span class="n">status</span><span class="p">,</span> <span class="n">result</span><span class="o">.</span><span class="n">uri_pretty</span><span class="p">)</span>
 </span></code></pre></div>
@@ -2072,13 +2083,21 @@ is in progress.</p>
   </span>
 
 </h3>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">enumerate_usernames</span><span class="p">(</span><span class="n">usernames</span><span class="p">,</span> <span class="n">site_names</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">include_categories</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">exclude_categories</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="n"><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;ALL&lt;/span&gt;
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">enumerate_usernames</span><span class="p">(</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">usernames</span><span class="p">,</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">site_names</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">include_categories</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">exclude_categories</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="n">mode</span><span class="o">=</span><span class="n"><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;ALL&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-class-attribute&quot;&gt;&lt;code&gt;class-attribute&lt;/code&gt;&lt;/small&gt;
       &lt;small class=&quot;doc doc-label doc-label-instance-attribute&quot;&gt;&lt;code&gt;instance-attribute&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt; (&lt;code&gt;naminter.core.models.WMNMode.ALL&lt;/code&gt;)" href="../models/#naminter.core.models.WMNMode.ALL">ALL</a></span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">exclude_text</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+  &lt;/span&gt; (&lt;code&gt;naminter.core.models.WMNMode.ALL&lt;/code&gt;)" href="../models/#naminter.core.models.WMNMode.ALL">ALL</a></span><span class="p">,</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="o">*</span><span class="p">,</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">exclude_text</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="p">)</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents ">
@@ -2123,7 +2142,7 @@ Each username is tested independently on every selected site.</p>
             <td class="doc-param-details">
               <div class="doc-md-description">
                 <p>Optional list of site names to restrict enumeration to a subset of
-sites. If None, all sites from the WMN dataset are considered
+sites. If None, all sites from the WMN data are considered
 (subject to category filters). If provided, every name must correspond
 to a known site; otherwise a WMNUnknownSiteError is raised.</p>
               </div>
@@ -2313,7 +2332,7 @@ guaranteed to match submission order.</p>
             <td class="doc-raises-details">
               <div class="doc-md-description">
                 <p>If any requested site name in site_names does not
-exist in the loaded WMN dataset.</p>
+exist in the loaded WMN data.</p>
               </div>
             </td>
           </tr>
@@ -2350,20 +2369,27 @@ contains unknown categories.</p>
   </span>
 
 </h3>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">test_enumeration</span><span class="p">(</span><span class="n">site_names</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">include_categories</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">exclude_categories</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span> <span class="n">mode</span><span class="o">=</span><span class="n"><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;ALL&lt;/span&gt;
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">test_enumeration</span><span class="p">(</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">site_names</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">include_categories</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">exclude_categories</span><span class="o">=</span><span class="kc">None</span><span class="p">,</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">mode</span><span class="o">=</span><span class="n"><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;ALL&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-class-attribute&quot;&gt;&lt;code&gt;class-attribute&lt;/code&gt;&lt;/small&gt;
       &lt;small class=&quot;doc doc-label doc-label-instance-attribute&quot;&gt;&lt;code&gt;instance-attribute&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt; (&lt;code&gt;naminter.core.models.WMNMode.ALL&lt;/code&gt;)" href="../models/#naminter.core.models.WMNMode.ALL">ALL</a></span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">exclude_text</span><span class="o">=</span><span class="kc">False</span><span class="p">)</span>
+  &lt;/span&gt; (&lt;code&gt;naminter.core.models.WMNMode.ALL&lt;/code&gt;)" href="../models/#naminter.core.models.WMNMode.ALL">ALL</a></span><span class="p">,</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>    <span class="o">*</span><span class="p">,</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="n">exclude_text</span><span class="o">=</span><span class="kc">False</span><span class="p">,</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="p">)</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents ">
 
-        <p>Test site detection rules using known usernames from the dataset.</p>
+        <p>Test site detection rules using known usernames from the data.</p>
 <p>This method is intended for maintainers and automated health checks of
-the WMN dataset. It selects sites (optionally filtered by names and
+the WMN data. It selects sites (optionally filtered by names and
 categories), tests each site using its "known" usernames, and yields
 a WMNTestResult per site.</p>
 
