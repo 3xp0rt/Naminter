@@ -1,4 +1,4 @@
-"""Data models for WMN dataset structures, enumeration results, and responses."""
+"""Data models for WMN data structures, enumeration results, and responses."""
 
 from __future__ import annotations
 
@@ -12,7 +12,13 @@ import orjson
 from naminter.core.constants import (
     DEFAULT_UNKNOWN_VALUE,
     SITE_KEY_CATEGORY,
+    SITE_KEY_E_CODE,
+    SITE_KEY_E_STRING,
+    SITE_KEY_KNOWN,
+    SITE_KEY_M_CODE,
+    SITE_KEY_M_STRING,
     SITE_KEY_NAME,
+    SITE_KEY_URI_CHECK,
 )
 
 
@@ -40,7 +46,7 @@ class WMNStatus(StrEnum):
 
 
 class WMNSite(TypedDict):
-    """Type definition for a single site in the WMN dataset structure.
+    """Type definition for a single site in the WMN data structure.
 
     Required: name, uri_check, e_code, e_string, m_string, m_code, known, cat.
 
@@ -72,19 +78,19 @@ class WMNSite(TypedDict):
 
 
 WMN_REQUIRED_KEYS: frozenset[str] = frozenset({
-    "name",
-    "uri_check",
-    "e_code",
-    "e_string",
-    "m_string",
-    "m_code",
-    "known",
-    "cat",
+    SITE_KEY_NAME,
+    SITE_KEY_URI_CHECK,
+    SITE_KEY_E_CODE,
+    SITE_KEY_E_STRING,
+    SITE_KEY_M_STRING,
+    SITE_KEY_M_CODE,
+    SITE_KEY_KNOWN,
+    SITE_KEY_CATEGORY,
 })
 
 
-class WMNDataset(TypedDict):
-    """Type definition for WMN dataset structure.
+class WMNData(TypedDict):
+    """Type definition for WMN data structure.
 
     All fields are required per JSON schema.
     """
@@ -97,11 +103,11 @@ class WMNDataset(TypedDict):
 
 @dataclass(slots=True, frozen=True, kw_only=True)
 class WMNSummary:
-    """Summary of the loaded WhatsMyName dataset and filters applied.
+    """Summary of the loaded WhatsMyName data and filters applied.
 
     Attributes:
-        license: License information from the dataset.
-        authors: Authors of the dataset.
+        license: License information from the data.
+        authors: Authors of the data.
         site_names: Names of all sites included.
         sites_count: Total number of sites.
         categories: Categories of the included sites.
@@ -139,8 +145,8 @@ class WMNResult:
     """Result of testing a username on a site.
 
     Attributes:
-        name: Site name from the WMN dataset.
-        category: Site category from the WMN dataset.
+        name: Site name from the WMN data.
+        category: Site category from the WMN data.
         username: Username that was tested.
         status: Detection status of the username on the site.
         uri_check: URL used for the check (request URL).
@@ -189,8 +195,8 @@ class WMNResult:
             WMNResult: Result with ERROR status.
         """
         return cls(
-            name=site.get("name", DEFAULT_UNKNOWN_VALUE),
-            category=site.get("cat", DEFAULT_UNKNOWN_VALUE),
+            name=site.get(SITE_KEY_NAME, DEFAULT_UNKNOWN_VALUE),
+            category=site.get(SITE_KEY_CATEGORY, DEFAULT_UNKNOWN_VALUE),
             username=username,
             uri_check=uri_check,
             uri_pretty=uri_pretty,
@@ -215,8 +221,8 @@ class WMNResult:
             WMNResult: Result with NOT_VALID status.
         """
         return cls(
-            name=site.get("name", DEFAULT_UNKNOWN_VALUE),
-            category=site.get("cat", DEFAULT_UNKNOWN_VALUE),
+            name=site.get(SITE_KEY_NAME, DEFAULT_UNKNOWN_VALUE),
+            category=site.get(SITE_KEY_CATEGORY, DEFAULT_UNKNOWN_VALUE),
             username=username,
             status=WMNStatus.NOT_VALID,
         )
@@ -286,10 +292,10 @@ class WMNResult:
         Returns:
             WMNResult: Result with determined status.
         """
-        exists_code_match = response.status_code == site["e_code"]
-        exists_text_match = site["e_string"] in response.text
-        missing_code_match = response.status_code == site["m_code"]
-        missing_text_match = site["m_string"] in response.text
+        exists_code_match = response.status_code == site[SITE_KEY_E_CODE]
+        exists_text_match = site[SITE_KEY_E_STRING] in response.text
+        missing_code_match = response.status_code == site[SITE_KEY_M_CODE]
+        missing_text_match = site[SITE_KEY_M_STRING] in response.text
 
         partial_exists = (exists_code_match and not exists_text_match) or (
             exists_text_match and not exists_code_match
@@ -313,8 +319,8 @@ class WMNResult:
         )
 
         return cls(
-            name=site["name"],
-            category=site["cat"],
+            name=site[SITE_KEY_NAME],
+            category=site[SITE_KEY_CATEGORY],
             username=username,
             uri_check=uri_check,
             uri_pretty=uri_pretty,
@@ -367,8 +373,8 @@ class WMNTestResult:
     """Result of validation testing for a site's detection methods.
 
     Attributes:
-        name: Site name from the WMN dataset.
-        category: Site category from the WMN dataset.
+        name: Site name from the WMN data.
+        category: Site category from the WMN data.
         results: List of individual WMNResult objects, or None.
         error: Error message if testing failed.
         created_at: Timestamp when the test result was created.
@@ -532,7 +538,7 @@ class WMNError:
 
 __all__ = [
     "WMN_REQUIRED_KEYS",
-    "WMNDataset",
+    "WMNData",
     "WMNError",
     "WMNMode",
     "WMNResponse",

@@ -1,6 +1,6 @@
 """Result exporters for CSV, JSON, HTML, and PDF formats."""
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 import csv
 from datetime import UTC, datetime
 import importlib.resources
@@ -56,13 +56,13 @@ class Exporter:
     async def export(
         self,
         results: Sequence[WMNResult | WMNTestResult],
-        formats: dict[str, str | Path | None],
+        formats: Mapping[str, str | Path | None],
     ) -> None:
         """Export results in the given formats.
 
         Args:
             results: Sequence of results to export.
-            formats: Dictionary mapping format names to output paths (None for auto).
+            formats: Mapping of format names to output paths (None for auto).
 
         Raises:
             ExportError: If export operation fails.
@@ -113,9 +113,9 @@ class Exporter:
                 )
                 writer.writeheader()
                 writer.writerows(results)
-                csv_content = csv_buffer.getvalue()
+                csv_text = csv_buffer.getvalue()
 
-            await write_file(output_path, csv_content)
+            await write_file(output_path, csv_text)
         except FileError as e:
             msg = f"File access error during CSV export: {e}"
             raise ExportError(msg) from e
@@ -141,10 +141,10 @@ class Exporter:
             ExportError: If JSON serialization fails or unexpected error occurs.
         """
         try:
-            json_content = orjson.dumps(results, option=orjson.OPT_INDENT_2).decode(
+            json_text = orjson.dumps(results, option=orjson.OPT_INDENT_2).decode(
                 "utf-8"
             )
-            await write_file(output_path, json_content)
+            await write_file(output_path, json_text)
         except FileError as e:
             msg = f"File access error during JSON export: {e}"
             raise ExportError(msg) from e

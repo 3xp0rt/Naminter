@@ -3,7 +3,7 @@
 import asyncio
 from collections.abc import Mapping
 import logging
-from typing import Any, Protocol, cast, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, cast, runtime_checkable
 
 from curl_cffi import BrowserTypeLiteral, ExtraFingerprints
 from curl_cffi.requests import AsyncSession, ProxySpec, Response
@@ -22,6 +22,9 @@ from naminter.core.exceptions import (
     HttpSessionError,
 )
 from naminter.core.models import WMNResponse
+
+if TYPE_CHECKING:
+    from curl_cffi.requests.impersonate import ExtraFpDict
 
 
 @runtime_checkable
@@ -99,7 +102,7 @@ class BaseSession(Protocol):
 
     async def request(
         self,
-        method: HttpMethod,
+        method: HttpMethod | str,
         url: str,
         headers: Mapping[str, str] | None = None,
         data: str | bytes | None = None,
@@ -145,14 +148,14 @@ class CurlCFFISession:
     def __init__(
         self,
         *,
-        proxies: str | dict[str, str] | None = None,
+        proxies: str | ProxySpec | None = None,
         verify: bool = True,
         timeout: int = HTTP_TIMEOUT,
         allow_redirects: bool = True,
-        impersonate: BrowserTypeLiteral | None = None,
+        impersonate: BrowserTypeLiteral | str | None = None,
         ja3: str | None = None,
         akamai: str | None = None,
-        extra_fp: ExtraFingerprints | dict[str, Any] | None = None,
+        extra_fp: ExtraFingerprints | dict[str, Any] | str | None = None,
     ) -> None:
         """Initialize CurlCFFISession with configuration.
 
@@ -170,16 +173,16 @@ class CurlCFFISession:
         self._session: AsyncSession | None = None
 
         if isinstance(proxies, str):
-            proxies = {"http": proxies, "https": proxies}
-
-        self._proxies: dict[str, str] | None = proxies
+            self._proxies: ProxySpec | None = {"http": proxies, "https": proxies}
+        else:
+            self._proxies = proxies
         self._verify: bool = verify
         self._timeout: int = timeout
         self._allow_redirects: bool = allow_redirects
-        self._impersonate: BrowserTypeLiteral | None = impersonate
+        self._impersonate: BrowserTypeLiteral | str | None = impersonate
         self._ja3: str | None = ja3
         self._akamai: str | None = akamai
-        self._extra_fp: ExtraFingerprints | dict[str, Any] | None = extra_fp
+        self._extra_fp: ExtraFingerprints | dict[str, Any] | str | None = extra_fp
 
         self._lock = asyncio.Lock()
 
@@ -194,17 +197,18 @@ class CurlCFFISession:
                 return
 
             try:
-                proxies_spec: ProxySpec | None = cast("ProxySpec | None", self._proxies)
-                extra_fp_spec: Any = self._extra_fp
                 self._session = AsyncSession(
-                    proxies=proxies_spec,
+                    proxies=self._proxies,
                     verify=self._verify,
                     timeout=self._timeout,
                     allow_redirects=self._allow_redirects,
-                    impersonate=self._impersonate,
+                    impersonate=cast("BrowserTypeLiteral | None", self._impersonate),
                     ja3=self._ja3,
                     akamai=self._akamai,
-                    extra_fp=extra_fp_spec,
+                    extra_fp=cast(
+                        "ExtraFingerprints | ExtraFpDict | None",
+                        self._extra_fp,
+                    ),
                 )
             except Exception as e:
                 msg = f"Failed to initialize HTTP session: {e}"
@@ -278,7 +282,7 @@ class CurlCFFISession:
 
     async def request(
         self,
-        method: HttpMethod,
+        method: HttpMethod | str,
         url: str,
         headers: Mapping[str, str] | None = None,
         data: str | bytes | None = None,
@@ -302,10 +306,11 @@ class CurlCFFISession:
             msg = "HTTP session not initialized."
             raise HttpSessionError(msg)
 
+        upper = method.upper()
         method_upper: HttpMethod
-        if method.upper() == HTTP_METHOD_GET:
+        if upper == HTTP_METHOD_GET:
             method_upper = HTTP_METHOD_GET
-        elif method.upper() == HTTP_METHOD_POST:
+        elif upper == HTTP_METHOD_POST:
             method_upper = HTTP_METHOD_POST
         else:
             msg = (

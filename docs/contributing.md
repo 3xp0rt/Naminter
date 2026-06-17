@@ -16,17 +16,28 @@ cd naminter
     uv sync --extra dev
     ```
 
-    Alternatively, using `uv pip`:
+    `pyproject.toml` sets a **30-day dependency cooldown** (`[tool.uv] exclude-newer`) so
+    resolution ignores PyPI uploads from the last month.
+
+3. Before pushing, run the same checks as [CI](https://github.com/3xp0rt/naminter/blob/main/.github/workflows/ci.yml):
 
     ```bash
-    uv pip install -e ".[dev]"
+    uv run ruff format
+    uv run ruff check
+    uv run pytest
     ```
 
-3. Run linting:
-```bash
-uv run ruff format
-uv run ruff check
-```
+    Optional — run Ruff on staged files at commit time: `uv run pre-commit install`
+    (uses the same project Ruff as above; does not run pytest).
+
+    Coverage must stay at **90% or above** on `naminter` (see `pyproject.toml`).
+    Prioritize tests for public behavior: CLI commands, `Naminter` enumeration flows,
+    validation of real datasets, and network error handling. You do not need tests for
+    every defensive branch in the validator.
+
+    Boilerplate (`TYPE_CHECKING`, `if __name__ == "__main__"`, abstract methods, and
+    similar) is excluded via `exclude_also` in `[tool.coverage.report]`. Avoid
+    `# pragma: no cover` unless you have a rare script-style entry point.
 
 ## Documentation
 
@@ -37,7 +48,7 @@ This project uses [MkDocs](https://www.mkdocs.org/) with [Material for MkDocs](h
 To preview documentation changes locally:
 
 ```bash
-mkdocs serve
+uv run mkdocs serve
 ```
 
 This starts a local server at `http://127.0.0.1:8000/` with live reload.
@@ -47,7 +58,7 @@ This starts a local server at `http://127.0.0.1:8000/` with live reload.
 To build the static documentation site:
 
 ```bash
-mkdocs build
+uv run mkdocs build
 ```
 
 The built site will be in the `site/` directory.
@@ -60,9 +71,6 @@ The built site will be in the `site/` directory.
 
 ## Code Style
 
-This project uses:
-
-- **Ruff** for linting and formatting
 - **Google-style** docstrings
 - **Type hints** for all function signatures
 
@@ -71,10 +79,9 @@ This project uses:
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Make your changes following the code style guidelines
-4. Run linting and ensure all checks pass
-5. Commit your changes using [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) format
-6. Push to your fork (`git push origin feature/amazing-feature`)
-7. Open a pull request with a detailed description of your changes
+4. Commit your changes using [Conventional Commits](https://www.conventionalcommits.org/en/v1.0.0/) format
+5. Push to your fork (`git push origin feature/amazing-feature`)
+6. Open a pull request with a detailed description of your changes
 
 ## Commit Message Guidelines
 
@@ -117,6 +124,5 @@ chore(release): bump version to 1.0.7
 
 - Provide a clear description of what the PR does
 - Reference any related issues
-- Ensure code follows the project's style guidelines
 - Update documentation if needed
 

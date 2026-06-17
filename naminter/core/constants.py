@@ -1,4 +1,4 @@
-"""Constants for HTTP configuration, WMN dataset keys, and application settings."""
+"""Constants for HTTP configuration, WMN data keys, and application settings."""
 
 from typing import Final, Literal
 
@@ -28,15 +28,15 @@ BROWSER_IMPERSONATE_NONE: Final[str] = "none"
 # WMN (WhatsMyName) Configuration
 # =============================================================================
 
-# Remote Data Source URLs
-WMN_REMOTE_URL: Final[str] = (
+# WMN data and schema URLs
+WMN_DATA_URL: Final[str] = (
     "https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data.json"
 )
 WMN_SCHEMA_URL: Final[str] = (
     "https://raw.githubusercontent.com/WebBreacher/WhatsMyName/main/wmn-data-schema.json"
 )
 
-# WMN Dataset Structure Keys
+# WMN Data Structure Keys
 WMN_KEY_SITES: Final[Literal["sites"]] = "sites"
 WMN_KEY_CATEGORIES: Final[Literal["categories"]] = "categories"
 WMN_KEY_AUTHORS: Final[Literal["authors"]] = "authors"

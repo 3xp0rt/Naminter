@@ -121,7 +121,7 @@ class AiohttpSession:
 
 # Usage with Naminter
 async with AiohttpSession() as http_client:
-    async with Naminter(http_client=http_client, wmn_data=wmn_data) as naminter:
+    async with Naminter(http_client=http_client, data=data) as naminter:
         async for result in naminter.enumerate_usernames(["username"]):
             print(f"{result.name}: {result.status.value}")
 ```

@@ -49,7 +49,7 @@ class WMNUninitializedError(WMNDataError):
 
 
 class WMNUnknownSiteError(WMNDataError):
-    """Raised when a requested site name doesn't exist in the WMN dataset.
+    """Raised when a requested site name doesn't exist in the WMN data.
 
     Attributes:
         site_names: List of unknown site names that were requested.
@@ -71,7 +71,7 @@ class WMNUnknownSiteError(WMNDataError):
 
 
 class WMNUnknownCategoriesError(WMNDataError):
-    """Raised when requested categories don't exist in the WMN dataset.
+    """Raised when requested categories don't exist in the WMN data.
 
     Attributes:
         categories: List of unknown category names that were requested.
@@ -97,11 +97,11 @@ class WMNSchemaError(WMNDataError):
 
 
 class WMNValidationError(WMNDataError):
-    """Raised when WMN dataset validation fails.
+    """Raised when WMN validation fails.
 
     Attributes:
         schema_errors: List of JSON schema validation errors.
-        dataset_errors: List of custom dataset validation errors
+        data_errors: List of custom data validation errors
             (license, authors, categories, duplicates, and site configurations).
     """
 
@@ -109,18 +109,18 @@ class WMNValidationError(WMNDataError):
         self,
         message: str,
         schema_errors: list[Any] | None = None,
-        dataset_errors: list[Any] | None = None,
+        data_errors: list[Any] | None = None,
     ) -> None:
         """Initialize WMNValidationError.
 
         Args:
             message: Error message describing what went wrong.
             schema_errors: List of JSON schema validation errors.
-            dataset_errors: List of custom dataset validation errors.
+            data_errors: List of custom data validation errors.
         """
         super().__init__(message)
         self.schema_errors: list[Any] = schema_errors or []
-        self.dataset_errors: list[Any] = dataset_errors or []
+        self.data_errors: list[Any] = data_errors or []
 
 
 class WMNArgumentError(WMNDataError):
