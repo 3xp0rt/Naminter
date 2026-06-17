@@ -1,6 +1,6 @@
 [project]
 name = "naminter"
-version = "1.0.7"
+version = "1.0.8"
 description = "A Python package and command-line interface (CLI) tool for asynchronous OSINT username enumeration using the WhatsMyName dataset"
 authors = [
     {name = "3xp0rt", email = "contact@3xp0rt.com"}
