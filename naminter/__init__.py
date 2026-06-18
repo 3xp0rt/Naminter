@@ -1,6 +1,10 @@
 """Naminter: Async OSINT username enumeration using the WhatsMyName dataset."""
 
-from naminter._metadata import __description__, __email__, __license__, __url__
+from __future__ import annotations
+
+from email.utils import parseaddr
+from importlib.metadata import metadata, version
+
 from naminter.core.constants import WMN_DATA_URL, WMN_SCHEMA_URL
 from naminter.core.exceptions import (
     HttpError,
@@ -19,8 +23,20 @@ from naminter.core.models import (
 from naminter.core.network import BaseSession, CurlCFFISession
 from naminter.core.validator import WMNValidator
 
-__version__ = "1.0.7"
-__author__ = "3xp0rt"
+_distribution = "naminter"
+_meta = metadata(_distribution)
+
+__version__ = version(_distribution)
+__author__, __email__ = parseaddr(_meta.get("Author-email", ""))
+__description__ = _meta.get("Summary", "")
+__license__ = _meta.get("License", "")
+__url__ = ""
+for _entry in _meta.get_all("Project-URL") or []:
+    _name, _, _url = _entry.partition(", ")
+    if _name == "Homepage" and _url:
+        __url__ = _url
+        break
+
 __all__ = [
     "WMN_DATA_URL",
     "WMN_SCHEMA_URL",
