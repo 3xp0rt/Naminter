@@ -76,7 +76,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Getting Started:
-    - Installation: getting-started/installation.md
+    - Setup: getting-started/setup.md
     - Usage: getting-started/usage.md
   - CLI Reference: cli/index.md
   - API Reference:
