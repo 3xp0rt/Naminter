@@ -11,7 +11,6 @@ Naminter is a Python package and command-line interface (CLI) tool for asynchron
 ## Documentation
 
 Documentation is available at [https://3xp0rt.github.io/Naminter/](https://3xp0rt.github.io/Naminter/), including:
-
 - [Setup Guide](https://3xp0rt.github.io/Naminter/getting-started/setup/) - Install, update, verify, and uninstall instructions
 - [Usage Examples](https://3xp0rt.github.io/Naminter/getting-started/usage/) - CLI and Python API examples
 - [API Reference](https://3xp0rt.github.io/Naminter/api/core/main/) - API documentation
