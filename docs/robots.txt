@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://3xp0rt.github.io/Naminter/sitemap.xml
