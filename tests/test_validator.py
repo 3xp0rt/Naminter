@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-from pathlib import Path
 from typing import TYPE_CHECKING, Any
 from unittest.mock import MagicMock
 
-import orjson
 import pytest
 
 from naminter.core.exceptions import WMNSchemaError, WMNValidationError
@@ -15,13 +13,6 @@ from naminter.core.validator import WMNValidator
 
 if TYPE_CHECKING:
     from naminter.core.models import WMNData, WMNSite
-
-
-@pytest.fixture
-def wmn_data_schema() -> dict[str, Any]:
-    """Official WMN JSON Schema from the repository."""
-    schema_path = Path(__file__).resolve().parents[1] / "wmn-data-schema.json"
-    return orjson.loads(schema_path.read_bytes())
 
 
 def test_wmn_validator_rejects_empty_schema() -> None:

@@ -41,6 +41,99 @@ def minimal_data(minimal_site: WMNSite) -> WMNData:
 
 
 @pytest.fixture
+def wmn_data_schema(minimal_site: WMNSite) -> dict[str, Any]:
+    """JSON Schema with WMN site constraints for schema-vs-rules tests."""
+    return {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": ["license", "authors", "categories", "sites"],
+        "additionalProperties": False,
+        "properties": {
+            "license": {"type": "array", "items": {"type": "string"}},
+            "authors": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"type": "string", "minLength": 1},
+            },
+            "categories": {
+                "type": "array",
+                "minItems": 1,
+                "items": {"type": "string", "minLength": 1},
+            },
+            "sites": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "required": [
+                        "name",
+                        "uri_check",
+                        "e_code",
+                        "e_string",
+                        "m_string",
+                        "m_code",
+                        "known",
+                        "cat",
+                    ],
+                    "additionalProperties": False,
+                    "properties": {
+                        "name": {"type": "string", "minLength": 1},
+                        "uri_check": {
+                            "type": "string",
+                            "pattern": "^(http|https)://.+$",
+                        },
+                        "e_code": {
+                            "type": "integer",
+                            "minimum": 100,
+                            "maximum": 599,
+                        },
+                        "e_string": {"type": "string"},
+                        "m_string": {"type": "string"},
+                        "m_code": {
+                            "type": "integer",
+                            "minimum": 100,
+                            "maximum": 599,
+                        },
+                        "known": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {"type": "string", "minLength": 1},
+                        },
+                        "cat": {
+                            "type": "string",
+                            "enum": [minimal_site["cat"]],
+                        },
+                    },
+                    "allOf": [
+                        {
+                            "if": {
+                                "properties": {
+                                    "post_body": {
+                                        "type": "string",
+                                        "minLength": 1,
+                                    },
+                                },
+                                "required": ["post_body"],
+                            },
+                            "then": {
+                                "required": ["headers"],
+                                "properties": {
+                                    "post_body": {"pattern": "\\{account\\}"},
+                                },
+                            },
+                            "else": {
+                                "properties": {
+                                    "uri_check": {"pattern": "\\{account\\}"},
+                                },
+                            },
+                        },
+                    ],
+                },
+            },
+        },
+    }
+
+
+@pytest.fixture
 def minimal_json_schema() -> dict[str, Any]:
     """Small JSON Schema sufficient to validate top-level WMN data keys."""
     return {
