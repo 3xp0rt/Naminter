@@ -101,8 +101,7 @@ class WMNValidationError(WMNDataError):
 
     Attributes:
         schema_errors: List of JSON schema validation errors.
-        data_errors: List of custom data validation errors
-            (license, authors, categories, duplicates, and site configurations).
+        data_errors: List of custom rule validation errors.
     """
 
     def __init__(
@@ -116,7 +115,7 @@ class WMNValidationError(WMNDataError):
         Args:
             message: Error message describing what went wrong.
             schema_errors: List of JSON schema validation errors.
-            data_errors: List of custom data validation errors.
+            data_errors: List of custom rule validation errors.
         """
         super().__init__(message)
         self.schema_errors: list[Any] = schema_errors or []

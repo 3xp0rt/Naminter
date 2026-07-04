@@ -144,7 +144,9 @@ class Naminter:
         try:
             if self._validator:
                 schema_errors = self._validator.validate_schema(self._data)
-            data_errors = WMNValidator.validate_data(self._data)
+                data_errors = WMNValidator.validate_rules(self._data)
+            else:
+                data_errors = WMNValidator.validate_rules(self._data)
         except (
             TypeError,
             ValueError,

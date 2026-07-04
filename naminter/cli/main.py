@@ -781,7 +781,7 @@ def validator_command(
 
         validator = WMNValidator(schema)
         schema_errors = validator.validate_schema(data)
-        data_errors = WMNValidator.validate_data(data)
+        data_errors = WMNValidator.validate_rules(data)
 
         if schema_errors:
             display_errors(schema_errors, "Schema Errors")

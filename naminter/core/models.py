@@ -19,6 +19,9 @@ from naminter.core.constants import (
     SITE_KEY_M_STRING,
     SITE_KEY_NAME,
     SITE_KEY_URI_CHECK,
+    WMN_KEY_AUTHORS,
+    WMN_KEY_CATEGORIES,
+    WMN_KEY_LICENSE,
 )
 
 
@@ -56,9 +59,9 @@ class WMNSite(TypedDict):
         headers: Required when ``post_body`` is present. Must be dict[str, str].
         uri_check: Must contain ``{account}`` when ``post_body`` is absent.
         strip_bad_char: Characters to strip from username before substitution.
-        uri_pretty: Display URL template (not validated).
-        valid: Site validity flag (not validated).
-        protection: Protection mechanisms (not validated).
+        uri_pretty: Display URL template.
+        valid: Site validity flag.
+        protection: Anti-automation measures on the site.
     """
 
     name: str
@@ -86,6 +89,12 @@ WMN_REQUIRED_KEYS: frozenset[str] = frozenset({
     SITE_KEY_M_CODE,
     SITE_KEY_KNOWN,
     SITE_KEY_CATEGORY,
+})
+
+WMN_METADATA_KEYS: frozenset[str] = frozenset({
+    WMN_KEY_LICENSE,
+    WMN_KEY_AUTHORS,
+    WMN_KEY_CATEGORIES,
 })
 
 
@@ -537,6 +546,7 @@ class WMNError:
 
 
 __all__ = [
+    "WMN_METADATA_KEYS",
     "WMN_REQUIRED_KEYS",
     "WMNData",
     "WMNError",

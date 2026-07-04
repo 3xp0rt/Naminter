@@ -33,7 +33,7 @@ def minimal_site() -> WMNSite:
 def minimal_data(minimal_site: WMNSite) -> WMNData:
     """Minimal WMN-shaped data that passes custom validation."""
     return {
-        "license": ["MIT"],
+        "license": ["test-license"],
         "authors": ["author-one"],
         "categories": ["social"],
         "sites": [minimal_site],
