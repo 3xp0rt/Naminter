@@ -27,6 +27,7 @@ def test_format_data_sorts_and_orders(
     }
     fmt = WMNFormatter(formatter_schema)
     out = fmt.format_data(data)
+    assert out.endswith("\n")
     assert '"apple"' in out
     assert out.index("apple") < out.index("Zebra")
     assert '"a"' in out

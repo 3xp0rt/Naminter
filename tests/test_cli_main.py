@@ -456,7 +456,7 @@ def test_validate_command_errors_exit(wmn_files: tuple[Path, Path]) -> None:
     runner = CliRunner()
     with (
         patch("naminter.cli.main.uvloop.run", side_effect=_sync_uvloop),
-        patch("naminter.cli.main.display_errors"),
+        patch("naminter.cli.main.display_validation_errors"),
         patch("naminter.cli.main.console.print"),
     ):
         r = runner.invoke(
@@ -536,7 +536,7 @@ def test_cli_error_handler_validation_error() -> None:
         )
 
     runner = CliRunner()
-    with patch("naminter.cli.main.display_errors"):
+    with patch("naminter.cli.main.display_validation_errors"):
         r = runner.invoke(_cmd, [])
     assert r.exit_code == 1
 

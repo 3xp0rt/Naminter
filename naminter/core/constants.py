@@ -56,6 +56,7 @@ SITE_KEY_M_CODE: Final[Literal["m_code"]] = "m_code"
 SITE_KEY_KNOWN: Final[Literal["known"]] = "known"
 SITE_KEY_CATEGORY: Final[Literal["cat"]] = "cat"
 SITE_KEY_VALID: Final[Literal["valid"]] = "valid"
+SITE_KEY_PROTECTION: Final[Literal["protection"]] = "protection"
 
 # =============================================================================
 # JSON Configuration

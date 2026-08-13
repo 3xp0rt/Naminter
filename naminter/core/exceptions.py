@@ -101,8 +101,7 @@ class WMNValidationError(WMNDataError):
 
     Attributes:
         schema_errors: List of JSON schema validation errors.
-        data_errors: List of custom data validation errors
-            (license, authors, categories, duplicates, and site configurations).
+        data_errors: List of custom data validation errors.
     """
 
     def __init__(

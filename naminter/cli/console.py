@@ -135,33 +135,33 @@ class ResultFormatter:
 
         return tree
 
-    def format_validation(
+    def format_test_result(
         self,
-        validation_result: WMNTestResult,
+        test_result: WMNTestResult,
         response_files: list[Path | None] | None = None,
     ) -> Tree:
-        """Format validation results into a tree structure.
+        """Format a site test result as a tree-style output.
 
         Args:
-            validation_result: The validation result to format.
+            test_result: The site test result to format.
             response_files: Optional list of response file paths for debugging.
 
         Returns:
-            Tree: Rich Tree containing the formatted validation results.
+            Tree: Rich Tree containing the formatted test result.
         """
         root_label = Text()
         root_label.append(
-            _get_status_symbol(validation_result.status),
-            style=_get_status_style(validation_result.status),
+            _get_status_symbol(test_result.status),
+            style=_get_status_style(test_result.status),
         )
         root_label.append(" [", style=THEME.muted)
-        root_label.append(validation_result.name, style=THEME.info)
+        root_label.append(test_result.name, style=THEME.info)
         root_label.append("]", style=THEME.muted)
 
         tree = Tree(root_label, guide_style=THEME.muted, expanded=True)
 
-        if validation_result.results:
-            for i, result in enumerate(validation_result.results):
+        if test_result.results:
+            for i, result in enumerate(test_result.results):
                 url_text = Text()
                 url_text.append(
                     _get_status_symbol(result.status),
@@ -237,30 +237,6 @@ class ResultFormatter:
                 headers_node.add(Text(f"{key}: {value}", style=THEME.muted))
 
 
-def display_version() -> None:
-    """Display version and metadata of the application."""
-
-    version_table = Table.grid(padding=(0, 2))
-    version_table.add_column(style=THEME.info)
-    version_table.add_column(style="bold")
-
-    version_table.add_row("Version:", __version__)
-    version_table.add_row("Author:", __author__)
-    version_table.add_row("Description:", __description__)
-    version_table.add_row("License:", __license__)
-    version_table.add_row("Email:", __email__)
-    version_table.add_row("GitHub:", __url__)
-
-    panel = Panel(
-        version_table,
-        title="[bold]:mag: Naminter[/]",
-        border_style=THEME.muted,
-        box=box.ROUNDED,
-    )
-
-    console.print(panel)
-
-
 def _display_message(
     message: str,
     style: str,
@@ -311,26 +287,8 @@ def display_warning(message: str) -> None:
     _display_message(message, THEME.warning, "?", "WARNING")
 
 
-def display_errors(errors: list[Any], title: str | None = None) -> None:
-    """Display validation errors in a formatted tree structure.
-
-    Args:
-        errors: List of validation errors to display.
-        title: Optional title to display above the errors.
-    """
-    if not errors:
-        return
-
-    if title:
-        root_label = Text()
-        root_label.append(f"{title} ", style=THEME.error)
-        root_label.append(f"({len(errors)})", style=THEME.muted)
-    else:
-        root_label = Text()
-    console.print()
-
-    tree = Tree(root_label, guide_style=THEME.muted, expanded=True)
-
+def _add_error_nodes(parent: Tree, errors: list[Any]) -> None:
+    """Add validation error entries as children of a tree node."""
     for error in errors:
         path = str(getattr(error, "path", "N/A") or "N/A")
         message = str(getattr(error, "message", "Unknown error"))
@@ -341,13 +299,79 @@ def display_errors(errors: list[Any], title: str | None = None) -> None:
         error_text.append(f"{path}: ", style=THEME.info)
         error_text.append(message, style=THEME.warning)
 
-        error_node = tree.add(error_text)
+        error_node = parent.add(error_text)
 
         if data is not None:
             error_node.add(Text(f"Data: {data}", style=THEME.muted))
 
+
+def display_validation_errors(
+    message: str,
+    *,
+    schema_errors: list[Any] | None = None,
+    data_errors: list[Any] | None = None,
+) -> None:
+    """Display WMN validation failures as one tree rooted at the error message.
+
+    Args:
+        message: Top-level error message.
+        schema_errors: Optional JSON schema validation errors.
+        data_errors: Optional custom data validation errors.
+    """
+    schema_errors = schema_errors or []
+    data_errors = data_errors or []
+
+    if not schema_errors and not data_errors:
+        display_error(message)
+        return
+
+    root_label = Text()
+    root_label.append("!", style=THEME.error)
+    root_label.append(" [ERROR] ", style=THEME.error)
+    root_label.append(message)
+
+    tree = Tree(root_label, guide_style=THEME.muted, expanded=True)
+
+    if schema_errors:
+        schema_label = Text()
+        schema_label.append("Schema Errors ", style=THEME.error)
+        schema_label.append(f"({len(schema_errors)})", style=THEME.muted)
+        schema_node = tree.add(schema_label)
+        _add_error_nodes(schema_node, schema_errors)
+
+    if data_errors:
+        data_label = Text()
+        data_label.append("Data Errors ", style=THEME.error)
+        data_label.append(f"({len(data_errors)})", style=THEME.muted)
+        data_node = tree.add(data_label)
+        _add_error_nodes(data_node, data_errors)
+
     console.print(tree)
     console.file.flush()
+
+
+def display_version() -> None:
+    """Display version and metadata of the application."""
+
+    version_table = Table.grid(padding=(0, 2))
+    version_table.add_column(style=THEME.info)
+    version_table.add_column(style="bold")
+
+    version_table.add_row("Version:", __version__)
+    version_table.add_row("Author:", __author__)
+    version_table.add_row("Description:", __description__)
+    version_table.add_row("License:", __license__)
+    version_table.add_row("Email:", __email__)
+    version_table.add_row("GitHub:", __url__)
+
+    panel = Panel(
+        version_table,
+        title="[bold]:mag: Naminter[/]",
+        border_style=THEME.muted,
+        box=box.ROUNDED,
+    )
+
+    console.print(panel)
 
 
 def display_diff(original: str, formatted: str, file_path: Path) -> None:

@@ -143,7 +143,7 @@ class WMNFormatter:
             WMNFormatError: If the object is not JSON-serializable.
         """
         try:
-            return orjson.dumps(obj, option=orjson.OPT_INDENT_2).decode("utf-8")
+            return orjson.dumps(obj, option=orjson.OPT_INDENT_2).decode("utf-8") + "\n"
         except (
             TypeError,
             ValueError,
