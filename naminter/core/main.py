@@ -38,6 +38,7 @@ from naminter.core.exceptions import (
     WMNValidationError,
 )
 from naminter.core.models import (
+    WMNData,
     WMNError,
     WMNMode,
     WMNResponse,
@@ -57,7 +58,7 @@ class Naminter:
     def __init__(
         self,
         http_client: BaseSession,
-        data: dict[str, Any] | None = None,
+        data: WMNData | dict[str, Any] | None = None,
         schema: dict[str, Any] | None = None,
         max_tasks: int = MAX_CONCURRENT_TASKS,
     ) -> None:
@@ -76,7 +77,7 @@ class Naminter:
         if not self._logger.handlers:
             self._logger.addHandler(logging.NullHandler())
 
-        self._data: dict[str, Any] | None = data
+        self._data: dict[str, Any] | None = dict(data) if data is not None else None
         self._schema: dict[str, Any] | None = schema
         self._semaphore = asyncio.Semaphore(max_tasks)
         self._http: BaseSession = http_client
@@ -144,7 +145,7 @@ class Naminter:
         try:
             if self._validator:
                 schema_errors = self._validator.validate_schema(self._data)
-            data_errors = WMNValidator.validate_rules(self._data)
+            data_errors = WMNValidator.validate_data(self._data)
         except (
             TypeError,
             ValueError,

@@ -38,18 +38,6 @@ if TYPE_CHECKING:
     from collections.abc import Callable
 
 
-def test_display_errors_blank_title_uses_empty_root() -> None:
-    from naminter.cli.console import display_errors
-    from naminter.core.models import WMNError
-
-    buf = StringIO()
-    con = Console(file=buf, width=88, force_terminal=True, color_system=None)
-    err = WMNError(path="p", data=None, message="m")
-    with patch("naminter.cli.console.console", con):
-        display_errors([err], title="")
-    assert "m" in buf.getvalue()
-
-
 def test_display_diff_non_special_line_style() -> None:
     from naminter.cli.console import display_diff
 
@@ -527,7 +515,7 @@ def test_cli_error_handler_data_errors_branch() -> None:
         )
 
     runner = CliRunner()
-    with patch("naminter.cli.main.display_errors"):
+    with patch("naminter.cli.main.display_validation_errors"):
         r = runner.invoke(_cmd, [])
     assert r.exit_code == 1
 
@@ -735,7 +723,7 @@ async def test_run_validation_format_raises(
                 "naminter.cli.console",
                 fromlist=["ResultFormatter"],
             ).ResultFormatter,
-            "format_validation",
+            "format_test_result",
             side_effect=FileError("fmt"),
         ),
         patch("naminter.cli.main.display_error") as de,
@@ -853,7 +841,7 @@ def test_cli_error_handler_schema_errors_branch() -> None:
         )
 
     runner = CliRunner()
-    with patch("naminter.cli.main.display_errors"):
+    with patch("naminter.cli.main.display_validation_errors"):
         r = runner.invoke(_cmd, [])
     assert r.exit_code == 1
 
@@ -875,13 +863,11 @@ def test_cli_error_handler_invoked_directly_covers_display_paths() -> None:
         )
 
     with (
-        patch("naminter.cli.main.display_error") as de,
-        patch("naminter.cli.main.display_errors") as des,
+        patch("naminter.cli.main.display_validation_errors") as dve,
         pytest.raises(SystemExit),
     ):
         _inner(ctx)
-    de.assert_called()
-    assert des.call_count >= 2
+    dve.assert_called_once()
 
 
 def test_cli_error_handler_schema_and_data_errors() -> None:
@@ -902,7 +888,7 @@ def test_cli_error_handler_schema_and_data_errors() -> None:
         )
 
     runner = CliRunner()
-    with patch("naminter.cli.main.display_errors"):
+    with patch("naminter.cli.main.display_validation_errors"):
         r = runner.invoke(_cmd, [])
     assert r.exit_code == 1
 

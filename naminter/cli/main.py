@@ -18,7 +18,7 @@ from naminter.cli.console import (
     console,
     display_diff,
     display_error,
-    display_errors,
+    display_validation_errors,
     display_version,
     display_warning,
 )
@@ -358,7 +358,7 @@ class NaminterCLI:
                             file_path = await self._save_response(site_result)
                             await self._open_in_browser(site_result, file_path)
                             response_files.append(file_path)
-                    result_tree = self._formatter.format_validation(
+                    result_tree = self._formatter.format_test_result(
                         result,
                         response_files,
                     )
@@ -460,11 +460,11 @@ def cli_error_handler(
             ctx.exit(EXIT_CODE_INTERRUPTED)
         except (CLIError, NaminterError) as e:
             if isinstance(e, WMNValidationError):
-                display_error(str(e), end="")
-                if e.schema_errors:
-                    display_errors(e.schema_errors, "Schema Errors")
-                if e.data_errors:
-                    display_errors(e.data_errors, "Data Errors")
+                display_validation_errors(
+                    str(e),
+                    schema_errors=e.schema_errors,
+                    data_errors=e.data_errors,
+                )
             else:
                 display_error(str(e))
             ctx.exit(EXIT_CODE_ERROR)
@@ -781,14 +781,14 @@ def validator_command(
 
         validator = WMNValidator(schema)
         schema_errors = validator.validate_schema(data)
-        data_errors = WMNValidator.validate_rules(data)
-
-        if schema_errors:
-            display_errors(schema_errors, "Schema Errors")
-        if data_errors:
-            display_errors(data_errors, "Data Errors")
+        data_errors = WMNValidator.validate_data(data)
 
         if schema_errors or data_errors:
+            display_validation_errors(
+                "Validation failed",
+                schema_errors=schema_errors,
+                data_errors=data_errors,
+            )
             ctx.exit(EXIT_CODE_ERROR)
 
         console.print(

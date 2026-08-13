@@ -47,7 +47,7 @@ logger = logging.getLogger(__name__)
 
 
 class WMNValidator:
-    """Validates WMN data against JSON Schema and custom rules."""
+    """Validates WMN data against JSON Schema and custom data checks."""
 
     __slots__ = ("_schema", "_validator")
 
@@ -94,8 +94,8 @@ class WMNValidator:
         ]
 
     @staticmethod
-    def validate_rules(data: Mapping[str, Any]) -> list[WMNError]:
-        """Validate WMN data with custom Naminter rules.
+    def validate_data(data: Mapping[str, Any]) -> list[WMNError]:
+        """Validate WMN data with custom Naminter checks.
 
         Args:
             data: WMN data to validate.

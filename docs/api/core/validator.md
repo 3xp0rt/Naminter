@@ -20,9 +20,9 @@ with open("wmn-data-schema.json", encoding="utf-8") as f:
 validator = WMNValidator(schema)
 
 # Validate against JSON schema (WMN spec: enums, patterns, ranges, etc.)
-# and custom rules (required keys, types, placeholders, status ranges, etc.)
+# and custom data checks (required keys, types, placeholders, status ranges, etc.)
 schema_errors = validator.validate_schema(data)
-data_errors = WMNValidator.validate_rules(data)
+data_errors = WMNValidator.validate_data(data)
 
 if schema_errors or data_errors:
     print(f"Validation failed:")
@@ -35,10 +35,10 @@ else:
 ```
 
 When no JSON Schema is available (for example with `--skip-validation`), run custom
-rules only:
+data checks only:
 
 ```python
-data_errors = WMNValidator.validate_rules(data)
+data_errors = WMNValidator.validate_data(data)
 ```
 
 ## CLI Usage
